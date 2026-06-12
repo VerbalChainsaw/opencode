@@ -292,7 +292,34 @@ describe("readGoalFromSdk", () => {
     expect(isGoalStateShape(nested)).toBe(false)
   })
 
-  // Adversarial: prototype-pollution-style payloads (e.g. __proto__ or
+  // Adversarial: NaN and Infinity pass `typeof === "number"` in JS,
+  // so a state file with corrupted numeric fields (e.g. from a
+  // non-standard JSON serializer) would clear isGoalStateShape and
+  // render garbage in the UI — turnsEvaluated="NaN", progress bar
+  // NaN%, division-by-zero in progressPct, etc. The validator must
+  // reject NaN and Infinity explicitly.
+  test("rejects NaN in numeric fields (typeof NaN === 'number' attack)", () => {
+    expect(isGoalStateShape({ ...validState, turnsEvaluated: NaN })).toBe(false)
+    expect(isGoalStateShape({ ...validState, startedAt: NaN })).toBe(false)
+    const nanConstraints = {
+      ...validState,
+      constraints: { maxTurns: 5, maxTimeMinutes: NaN, maxTokens: 1000 },
+    }
+    expect(isGoalStateShape(nanConstraints)).toBe(false)
+  })
+
+  test("rejects Infinity in numeric fields (typeof Infinity === 'number')", () => {
+    expect(isGoalStateShape({ ...validState, turnsEvaluated: Infinity })).toBe(false)
+    expect(isGoalStateShape({ ...validState, startedAt: -Infinity })).toBe(false)
+    expect(isGoalStateShape({ ...validState, turnsEvaluated: -Infinity })).toBe(false)
+    const infConstraints = {
+      ...validState,
+      constraints: { maxTurns: Infinity, maxTimeMinutes: 10, maxTokens: 1000 },
+    }
+    expect(isGoalStateShape(infConstraints)).toBe(false)
+  })
+
+  // Adversarial: prototype-pollution-style payloads
   // constructor) must not crash isGoalStateShape and must not yield a
   // valid state. JSON.parse by spec does NOT honor __proto__ in plain
   // object literals (the property is set, not the prototype), so this
@@ -349,6 +376,40 @@ describe("readGoalFromSdk", () => {
       constraints: { maxTurns: null, maxTimeMinutes: 10, maxTokens: 1000 },
     }
     expect(isGoalStateShape(nullNumeric)).toBe(false)
+  })
+
+  // Adversarial: a state file that starts with a UTF-8 BOM (Byte Order
+  // Mark \uFEFF) would cause JSON.parse to throw (BOM before '{' is
+  // invalid JSON). The plugin strips BOM on write but the renderer
+  // reads the file blindly. Corrupt is the correct defensive outcome.
+  test("BOM-prefixed content is treated as corrupt", async () => {
+    const sdk = mockSdk({ read: async () => ({ data: `\uFEFF${JSON.stringify(validState)}` }) })
+    const { state, corrupt } = await readGoalFromSdk(sdk)
+    expect(corrupt).toBe(true)
+    expect(state).toBeNull()
+  })
+
+  // Adversarial: trailing garbage after valid JSON (e.g. an appended
+  // log line or a half-written sync) must be treated as corrupt, not
+  // silently truncated.
+  test("trailing garbage after valid JSON is treated as corrupt", async () => {
+    const sdk = mockSdk({
+      read: async () => ({ data: `${JSON.stringify(validState)} garbage` }),
+    })
+    const { state, corrupt } = await readGoalFromSdk(sdk)
+    expect(corrupt).toBe(true)
+  })
+
+  // Adversarial: duplicate keys in JSON (parser-dependent: last key
+  // wins). Validating the OUTCOME shape is sufficient — if someone
+  // plants a file with duplicate keys, the parser picks the last and
+  // isGoalStateShape validates normally.
+  test("duplicate JSON keys resolve to last value and validate normally", async () => {
+    const duped = '{"status":"active","status":"cleared","id":"x","condition":"y","startedAt":0,"turnsEvaluated":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}'
+    const sdk = mockSdk({ read: async () => ({ data: duped }) })
+    const { state, corrupt } = await readGoalFromSdk(sdk)
+    expect(corrupt).toBe(false)
+    expect(state?.status).toBe("cleared")
   })
 })
 
@@ -519,5 +580,47 @@ describe("useGoal hook", () => {
       })
     })
     expect(callsAfterDispose).toBe(0)
+  })
+
+  // Adversarial: concurrent refresh() calls can race. If the poll
+  // interval fires while a slow read is in-flight, two reads may
+  // resolve out of order. The store is eventually-consistent (next
+  // poll corrects it), but we must never crash, hang, or produce a
+  // store state that isn't a recognized GoalStore.
+  test("hook: concurrent refresh() calls do not crash or corrupt the store", async () => {
+    // Control the mock read's completion via a manual delay: the
+    // first call waits on a gate, the second resolves immediately.
+    let releaseSlow: (() => void) | null = null
+    let slowResolved = false
+    const origRead = sdkRef.client.file.read
+    sdkRef.client.file.read = async (args) => {
+      if (!slowResolved) {
+        // First call: the "slow" read. Park it until released.
+        slowResolved = true
+        await new Promise<void>((r) => {
+          releaseSlow = r
+        })
+        return { data: JSON.stringify({ ...validState, id: "slow" }) }
+      }
+      // Subsequent calls: fast reads.
+      return { data: JSON.stringify({ ...validState, id: "fast" }) }
+    }
+
+    await withRoot(async (goal) => {
+      // Trigger two concurrent refreshes: one slow, one fast.
+      setMockResponse({ data: JSON.stringify({ ...validState, id: "slow" }) })
+      const slow = goal.refresh()
+      setMockResponse({ data: JSON.stringify({ ...validState, id: "fast" }) })
+      await goal.refresh()
+      expect(goal.store.state?.id).toBe("fast")
+      // Release the slow read now — it will arrive second and
+      // overwrite the store with "slow" (last-writer race).
+      releaseSlow!()
+      await slow
+      expect(goal.store.state?.id).toBe("slow")
+      expect(goal.store.loaded).toBe(true)
+      expect(goal.store.corrupt).toBe(false)
+      expect(goal.store.state).not.toBeNull()
+    })
   })
 })

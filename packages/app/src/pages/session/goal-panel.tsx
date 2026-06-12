@@ -63,13 +63,14 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   const s = v as Record<string, unknown>
   if (typeof s.id !== "string" || typeof s.condition !== "string") return false
   if (typeof s.status !== "string" || !GOAL_STATUSES.has(s.status)) return false
-  if (typeof s.turnsEvaluated !== "number" || typeof s.startedAt !== "number") return false
+  if (typeof s.turnsEvaluated !== "number" || !Number.isFinite(s.turnsEvaluated)) return false
+  if (typeof s.startedAt !== "number" || !Number.isFinite(s.startedAt)) return false
   const c = s.constraints as Record<string, unknown> | undefined
   if (!c || typeof c !== "object") return false
   if (
-    typeof c.maxTurns !== "number" ||
-    typeof c.maxTimeMinutes !== "number" ||
-    typeof c.maxTokens !== "number"
+    typeof c.maxTurns !== "number" || !Number.isFinite(c.maxTurns) ||
+    typeof c.maxTimeMinutes !== "number" || !Number.isFinite(c.maxTimeMinutes) ||
+    typeof c.maxTokens !== "number" || !Number.isFinite(c.maxTokens)
   )
     return false
   return true

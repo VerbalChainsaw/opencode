@@ -160,13 +160,17 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
-  // Goal tab (opencode-autogoal plugin): visible while a goal exists
-  // (active/paused/achieved) or the state file is corrupt; hidden when
-  // there is no goal or it was cleared. If the goal disappears while
-  // the tab is focused, close it so the panel falls back gracefully.
+  // Goal tab (opencode-autogoal plugin): visible during initial load
+  // (to render the spinner), then only while a goal exists
+  // (active/paused/achieved) or the state file is corrupt. Hidden when
+  // there is no goal or it was cleared. If the goal disappears during
+  // a tab session, the close-when-hidden effect fires and removes it.
   const goal = useGoal()
   const goalVisible = createMemo(
-    () => goal.store.loaded && (goal.store.corrupt || (goal.store.state !== null && goal.store.state.status !== "cleared")),
+    () =>
+      !goal.store.loaded ||
+      goal.store.corrupt ||
+      (goal.store.state !== null && goal.store.state.status !== "cleared"),
   )
   createEffect(() => {
     if (goal.store.loaded && !goalVisible() && tabs().all().includes("goal")) {
