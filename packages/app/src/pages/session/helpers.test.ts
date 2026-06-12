@@ -187,4 +187,65 @@ describe("createSessionTabs", () => {
       dispose()
     })
   })
+
+  // F-5: the "goal" tab is a fixed trigger like "context" and "review".
+  // It must NOT appear in openedTabs (no normalized file entry, no
+  // duplicated path), and activeTab must return "goal" when it's the
+  // active tab.
+  describe("goal tab (F-5 integration)", () => {
+    test('openedTabs excludes "goal" — it is a trigger, not a file tab', () => {
+      createRoot((dispose) => {
+        const [state] = createStore({
+          active: "goal" as string | undefined,
+          all: ["goal", "file://src/a.ts", "context", "review"],
+        })
+        const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+        const result = createSessionTabs({
+          tabs,
+          pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
+          normalizeTab: (tab) => (tab.startsWith("file://") ? `norm:${tab.slice("file://".length)}` : tab),
+        })
+        // "goal" must not appear in openedTabs; only the normalized file
+        // tab should be there.
+        expect(result.openedTabs()).toEqual(["norm:src/a.ts"])
+        dispose()
+      })
+    })
+
+    test('activeTab returns "goal" when goal is the active tab', () => {
+      createRoot((dispose) => {
+        const [state] = createStore({
+          active: "goal" as string | undefined,
+          all: ["goal"],
+        })
+        const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+        const result = createSessionTabs({
+          tabs,
+          pathFromTab: () => undefined,
+          normalizeTab: (tab) => tab,
+        })
+        expect(result.activeTab()).toBe("goal")
+        dispose()
+      })
+    })
+
+    test('activeTab returns "goal" when only "goal" is in the tab list', () => {
+      // No context, no review, no file. Just goal.
+      createRoot((dispose) => {
+        const [state] = createStore({
+          active: "goal" as string | undefined,
+          all: ["goal"],
+        })
+        const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+        const result = createSessionTabs({
+          tabs,
+          pathFromTab: () => undefined,
+          normalizeTab: (tab) => tab,
+        })
+        expect(result.activeTab()).toBe("goal")
+        expect(result.activeFileTab()).toBeUndefined()
+        dispose()
+      })
+    })
+  })
 })

@@ -18,6 +18,13 @@ import { useSDK } from "@/context/sdk"
 
 const POLL_MS = 2000
 const STATE_PATH = ".opencode/.goal-state.json"
+/** Hard cap on the state-file body we are willing to JSON.parse.
+ *  The opencode-autogoal plugin caps writes at 256KB, but the renderer
+ *  can't import that constant across repos. A 1MB cap gives a generous
+ *  margin (4x the plugin's max) and prevents an accidentally-huge or
+ *  malicious state file from OOM-ing the SolidJS renderer's reactivity
+ *  layer (which would touch the parsed object on every poll). */
+const MAX_RENDERER_STATE_BYTES = 1 * 1024 * 1024
 
 /** Minimal mirror of the plugin's GoalState — only the fields this
  *  panel renders. The plugin's own validateGoalState is not importable
@@ -104,6 +111,13 @@ export async function readGoalFromSdk(sdk: GoalSdkClient): Promise<GoalStore> {
           : null
     if (!content || content.trim().length === 0) {
       return { state: null, corrupt: false, loaded: true }
+    }
+    // Cap BEFORE JSON.parse: a multi-GB string would force the parser
+    // to allocate proportional memory, and the resulting object would
+    // pin the renderer even though we'd never display it. Treat
+    // over-size as corrupt so the user sees the warning UI.
+    if (content.length > MAX_RENDERER_STATE_BYTES) {
+      return { state: null, corrupt: true, loaded: true }
     }
     let parsed: unknown
     try {
