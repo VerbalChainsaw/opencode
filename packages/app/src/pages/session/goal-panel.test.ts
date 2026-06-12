@@ -130,6 +130,19 @@ describe("cleanText", () => {
   test("preserves Unicode letters and emoji", () => {
     expect(cleanText("café 🎯 résumé")).toBe("café 🎯 résumé")
   })
+
+  // Adversarial: cleanText is called on evaluationHistory[].reason,
+  // lastEvaluation.reason, and command — none of which are validated
+  // by isGoalStateShape. If any of these fields holds a non-string
+  // value (number, object, array), cleanText must return "" instead
+  // of throwing TypeError on .replace().
+  test("returns empty string for non-string input (null, number, object, array)", () => {
+    expect((cleanText as (s: unknown) => string)(null)).toBe("")
+    expect((cleanText as (s: unknown) => string)(42)).toBe("")
+    expect((cleanText as (s: unknown) => string)({ reason: "x" })).toBe("")
+    expect((cleanText as (s: unknown) => string)([1, 2, 3])).toBe("")
+    expect((cleanText as (s: unknown) => string)(undefined)).toBe("")
+  })
 })
 
 describe("readGoalFromSdk", () => {

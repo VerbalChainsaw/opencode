@@ -81,8 +81,13 @@ export function isGoalStateShape(v: unknown): v is GoalState {
 
 /** Strip C0/C1 control chars and Unicode bidi/format chars before
  *  rendering user-controlled text (same character classes the plugin's
- *  sanitizeForPrompt drops). Exported so tests can pin the behavior. */
-export function cleanText(s: string): string {
+ *  sanitizeForPrompt drops). Accepts unknown — returns "" for non-string
+ *  input — so a corrupted state file with a non-string in
+ *  evaluationHistory[].reason, lastEvaluation.reason, or command
+ *  cannot crash the renderer via .replace(). Exported so tests can
+ *  pin the behavior. */
+export function cleanText(s: unknown): string {
+  if (typeof s !== "string") return ""
   // eslint-disable-next-line no-control-regex
   return s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, "").slice(0, 400)
 }
