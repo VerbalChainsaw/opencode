@@ -160,20 +160,29 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
-  // Goal tab (opencode-autogoal plugin): visible during initial load
-  // (to render the spinner), then only while a goal exists
-  // (active/paused/achieved) or the state file is corrupt. Hidden when
-  // there is no goal or it was cleared. If the goal disappears during
-  // a tab session, the close-when-hidden effect fires and removes it.
+  // Goal tab (opencode-autogoal plugin): shown when loaded (to display
+  // the spinner during poll), when the state file is corrupt, when no
+  // goal is set (empty state with usage hint), or when a goal is in any
+  // non-cleared status. Hidden ONLY when the state is explicitly
+  // "cleared" — at which point the close-when-visible effect removes
+  // the tab so the panel falls back to the next available focus.
   const goal = useGoal()
   const goalVisible = createMemo(
     () =>
       !goal.store.loaded ||
       goal.store.corrupt ||
-      (goal.store.state !== null && goal.store.state.status !== "cleared"),
+      goal.store.state === null ||
+      goal.store.state.status !== "cleared",
   )
   createEffect(() => {
-    if (goal.store.loaded && !goalVisible() && tabs().all().includes("goal")) {
+    // Only auto-close when the state transitions to "cleared" (an
+    // explicit user action). Never close on "absent" — that's the
+    // empty-state display.
+    if (
+      goal.store.state !== null &&
+      goal.store.state.status === "cleared" &&
+      tabs().all().includes("goal")
+    ) {
       tabs().close("goal")
     }
   })
@@ -295,7 +304,27 @@ export function SessionSidePanel(props: {
                           </Tabs.Trigger>
                         </Show>
                         <Show when={goalVisible()}>
-                          <Tabs.Trigger value="goal">
+                          <Tabs.Trigger
+                            value="goal"
+                            closeButton={
+                              <TooltipKeybind
+                                title={language.t("common.closeTab")}
+                                keybind={command.keybind("tab.close")}
+                                placement="bottom"
+                                gutter={10}
+                              >
+                                <IconButton
+                                  icon="close-small"
+                                  variant="ghost"
+                                  class="h-5 w-5"
+                                  onClick={() => tabs().close("goal")}
+                                  aria-label={language.t("common.closeTab")}
+                                />
+                              </TooltipKeybind>
+                            }
+                            hideCloseButton
+                            onMiddleClick={() => tabs().close("goal")}
+                          >
                             <div class="flex items-center gap-1.5">
                               <div>{language.t("session.tab.goal")}</div>
                               <Show when={goal.store.state?.status === "paused"}>

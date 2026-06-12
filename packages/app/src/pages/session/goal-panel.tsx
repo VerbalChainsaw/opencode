@@ -30,6 +30,9 @@ const MAX_RENDERER_STATE_BYTES = 1 * 1024 * 1024
  *  panel renders. The plugin's own validateGoalState is not importable
  *  across repos; `isGoalStateShape` below is the structural gate. */
 export interface GoalState {
+  /** Schema version from the plugin. Optional for backward compat with
+   *  pre-v0.5.0 state files; mandatory for future migration logic. */
+  version?: number
   id: string
   condition: string
   command?: string | null
@@ -42,7 +45,7 @@ export interface GoalState {
     met: boolean
     reason: string
     timestamp: number
-    evaluatorType: string
+    evaluatorType: "deterministic" | "model" | "heuristic"
   } | null
   evaluationHistory: Array<{ met: boolean; reason: string; timestamp: number }>
   constraints: {
@@ -168,7 +171,7 @@ export function useGoal() {
   return { store, refresh }
 }
 
-function ProgressBar(props: { pct: number; paused: boolean }) {
+function ProgressBar(props: { pct: number; status: "active" | "paused" | "achieved" }) {
   const pct = () => Math.min(100, Math.max(0, props.pct))
   return (
     <div
@@ -181,8 +184,9 @@ function ProgressBar(props: { pct: number; paused: boolean }) {
       <div
         class="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
         classList={{
-          "bg-icon-success-base": !props.paused,
-          "bg-icon-warning-base": props.paused,
+          "bg-icon-success-base": props.status === "active",
+          "bg-icon-warning-base": props.status === "paused",
+          "bg-text-weak": props.status === "achieved",
         }}
         style={{ width: `${pct()}%` }}
       />
@@ -240,6 +244,14 @@ export function GoalPanel(props: { goal: { store: GoalStore } }) {
             <div class="text-12-regular text-text-weak">{language.t("session.goal.error.corrupt.hint")}</div>
           </div>
         </Match>
+        <Match when={props.goal.store.loaded && !props.goal.store.corrupt && props.goal.store.state === null}>
+          <div class="flex-1 flex flex-col items-center justify-center text-center gap-3 pb-32">
+            <div class="text-12-regular text-text-weak">{language.t("session.goal.noActive")}</div>
+            <div class="text-11-regular text-text-weaker max-w-56">
+              {language.t("session.goal.noActive.hint")}
+            </div>
+          </div>
+        </Match>
         <Match when={state()} keyed>
           {(s) => (
             <>
@@ -264,8 +276,8 @@ export function GoalPanel(props: { goal: { store: GoalStore } }) {
                 </div>
               </div>
 
-              <Show when={s.status !== "achieved"} fallback={<ProgressBar pct={100} paused={false} />}>
-                <ProgressBar pct={progressPct()} paused={s.status === "paused"} />
+              <Show when={s.status !== "achieved"} fallback={<ProgressBar pct={100} status="achieved" />}>
+                <ProgressBar pct={progressPct()} status={s.status === "paused" ? "paused" : "active"} />
               </Show>
 
               <div class="flex flex-col gap-1" aria-live="polite">

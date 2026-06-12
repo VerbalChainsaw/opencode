@@ -597,6 +597,8 @@ export const dict = {
   "session.tab.review": "Review",
   "session.tab.context": "Context",
   "session.tab.goal": "Goal",
+  "session.goal.noActive": "No active goal",
+  "session.goal.noActive.hint": "Set one with /goal set \"condition\" --command \"npm test\"",
   "session.goal.loading": "Loading goal state…",
   "session.goal.paused": "Paused",
   "session.goal.achieved": "Achieved",
