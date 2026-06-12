@@ -189,9 +189,8 @@ function ProgressBar(props: { pct: number; status: "active" | "paused" | "achiev
       <div
         class="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
         classList={{
-          "bg-icon-success-base": props.status === "active",
+          "bg-icon-success-base": props.status !== "paused",
           "bg-icon-warning-base": props.status === "paused",
-          "bg-text-weak": props.status === "achieved",
         }}
         style={{ width: `${pct()}%` }}
       />
