@@ -31,6 +31,7 @@ import {
   shouldShowFileTree,
   type Sizing,
 } from "@/pages/session/helpers"
+import { GoalPanel, useGoal } from "@/pages/session/goal-panel"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
@@ -159,6 +160,20 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
+  // Goal tab (opencode-autogoal plugin): visible while a goal exists
+  // (active/paused/achieved) or the state file is corrupt; hidden when
+  // there is no goal or it was cleared. If the goal disappears while
+  // the tab is focused, close it so the panel falls back gracefully.
+  const goal = useGoal()
+  const goalVisible = createMemo(
+    () => goal.store.loaded && (goal.store.corrupt || (goal.store.state !== null && goal.store.state.status !== "cleared")),
+  )
+  createEffect(() => {
+    if (goal.store.loaded && !goalVisible() && tabs().all().includes("goal")) {
+      tabs().close("goal")
+    }
+  })
+
   const fileTreeTab = () => layout.fileTree.tab()
 
   const setFileTreeTabValue = (value: string) => {
@@ -275,6 +290,16 @@ export function SessionSidePanel(props: {
                             </div>
                           </Tabs.Trigger>
                         </Show>
+                        <Show when={goalVisible()}>
+                          <Tabs.Trigger value="goal">
+                            <div class="flex items-center gap-1.5">
+                              <div>{language.t("session.tab.goal")}</div>
+                              <Show when={goal.store.state?.status === "paused"}>
+                                <div aria-hidden>⏸</div>
+                              </Show>
+                            </div>
+                          </Tabs.Trigger>
+                        </Show>
                         <Show when={contextOpen()}>
                           <Tabs.Trigger
                             value="context"
@@ -332,6 +357,14 @@ export function SessionSidePanel(props: {
                     <Show when={reviewTab() && props.canReview()}>
                       <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
                         <Show when={reviewOpen() && activeTab() === "review"}>{props.reviewPanel()}</Show>
+                      </Tabs.Content>
+                    </Show>
+
+                    <Show when={goalVisible()}>
+                      <Tabs.Content value="goal" class="flex flex-col h-full overflow-hidden contain-strict">
+                        <Show when={activeTab() === "goal"}>
+                          <GoalPanel goal={goal} />
+                        </Show>
                       </Tabs.Content>
                     </Show>
 
