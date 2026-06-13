@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createMemo, onCleanup, onMount } from "solid-js"
+import { Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 
 import { useLanguage } from "@/context/language"
@@ -198,9 +198,68 @@ function ProgressBar(props: { pct: number; status: "active" | "paused" | "achiev
   )
 }
 
-export function GoalPanel(props: { goal: { store: GoalStore } }) {
+/** Minimal shape of the SDK surface the action buttons need: the
+ *  session.command endpoint, which runs OpenGoal's registered `/goal`
+ *  command deterministically (the plugin's command.execute.before mutates
+ *  the state file). Same call the prompt input uses (submit.ts). */
+interface GoalActionClient {
+  directory?: string
+  client: {
+    session: {
+      command: (args: { sessionID: string; command: string; arguments: string }) => Promise<unknown>
+    }
+  }
+}
+
+type GoalAction = "pause" | "resume" | "restart" | "clear"
+
+function ActionButton(props: {
+  onClick: () => void
+  busy?: boolean
+  disabled?: boolean
+  danger?: boolean
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => props.onClick()}
+      disabled={props.disabled}
+      aria-label={props.label}
+      class="text-12-regular px-2.5 py-1 rounded-md border border-border-weaker-base bg-background-stronger text-text-base hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+      classList={{ "text-text-warning-base": props.danger }}
+    >
+      {props.busy ? "…" : props.label}
+    </button>
+  )
+}
+
+export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Promise<void> }; sessionID?: string }) {
   const language = useLanguage()
+  const sdk = useSDK() as unknown as GoalActionClient
   const state = () => props.goal.store.state
+
+  const [busy, setBusy] = createSignal<GoalAction | null>(null)
+  const [confirmingClear, setConfirmingClear] = createSignal(false)
+
+  /** Run a goal action by invoking the plugin's `/goal <action>` command in
+   *  the current session, then refresh. The plugin handles the command
+   *  deterministically (atomic state write); the 2s poll + this refresh
+   *  surface the result. No-op when there is no session id. */
+  const runAction = async (action: GoalAction) => {
+    const sessionID = props.sessionID
+    if (!sessionID || busy()) return
+    setBusy(action)
+    try {
+      await sdk.client.session.command({ sessionID, command: "goal", arguments: action })
+    } catch {
+      // Swallow — the refresh below reflects whatever actually happened on disk.
+    } finally {
+      await props.goal.refresh()
+      setBusy(null)
+      setConfirmingClear(false)
+    }
+  }
 
   const progressPct = createMemo(() => {
     const s = state()
@@ -309,8 +368,62 @@ export function GoalPanel(props: { goal: { store: GoalStore } }) {
                 </div>
               </Show>
 
-              <div class="mt-auto pt-3 border-t border-border-weaker-base text-11-regular text-text-weaker">
-                {language.t("session.goal.controlsHint")}
+              <div class="mt-auto pt-3 border-t border-border-weaker-base flex flex-col gap-2">
+                <Show
+                  when={(s.status === "active" || s.status === "paused") && props.sessionID}
+                  fallback={
+                    <div class="text-11-regular text-text-weaker">{language.t("session.goal.controlsHint")}</div>
+                  }
+                >
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <Show when={s.status === "active"}>
+                      <ActionButton
+                        label={language.t("session.goal.action.pause")}
+                        busy={busy() === "pause"}
+                        disabled={busy() !== null}
+                        onClick={() => runAction("pause")}
+                      />
+                    </Show>
+                    <Show when={s.status === "paused"}>
+                      <ActionButton
+                        label={language.t("session.goal.action.resume")}
+                        busy={busy() === "resume"}
+                        disabled={busy() !== null}
+                        onClick={() => runAction("resume")}
+                      />
+                    </Show>
+                    <ActionButton
+                      label={language.t("session.goal.action.restart")}
+                      busy={busy() === "restart"}
+                      disabled={busy() !== null}
+                      onClick={() => runAction("restart")}
+                    />
+                    <Show
+                      when={confirmingClear()}
+                      fallback={
+                        <ActionButton
+                          label={language.t("session.goal.action.clear")}
+                          danger
+                          disabled={busy() !== null}
+                          onClick={() => setConfirmingClear(true)}
+                        />
+                      }
+                    >
+                      <ActionButton
+                        label={language.t("session.goal.action.confirmClear")}
+                        danger
+                        busy={busy() === "clear"}
+                        disabled={busy() !== null}
+                        onClick={() => runAction("clear")}
+                      />
+                      <ActionButton
+                        label={language.t("session.goal.action.cancel")}
+                        disabled={busy() !== null}
+                        onClick={() => setConfirmingClear(false)}
+                      />
+                    </Show>
+                  </div>
+                </Show>
               </div>
             </>
           )}

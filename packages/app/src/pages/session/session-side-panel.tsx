@@ -396,7 +396,7 @@ export function SessionSidePanel(props: {
                     <Show when={goalVisible()}>
                       <Tabs.Content value="goal" class="flex flex-col h-full overflow-hidden contain-strict">
                         <Show when={activeTab() === "goal"}>
-                          <GoalPanel goal={goal} />
+                          <GoalPanel goal={goal} sessionID={params.id} />
                         </Show>
                       </Tabs.Content>
                     </Show>
