@@ -183,7 +183,7 @@ function ProgressBar(props: { pct: number; status: "active" | "paused" | "achiev
   const pct = () => Math.min(100, Math.max(0, props.pct))
   return (
     <div
-      class="h-1.5 w-full rounded-full bg-background-stronger overflow-hidden"
+      class="h-2.5 w-full rounded-full bg-background-stronger overflow-hidden"
       role="progressbar"
       aria-valuenow={pct()}
       aria-valuemin={0}
@@ -241,15 +241,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const sdk = useSDK() as unknown as GoalActionClient
   const state = () => props.goal.store.state
 
-  const [busy, setBusy] = createSignal<GoalAction | "set" | null>(null)
+  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | null>(null)
   const [confirmingClear, setConfirmingClear] = createSignal(false)
   const [newCondition, setNewCondition] = createSignal("")
   const [newCommand, setNewCommand] = createSignal("")
+  const [steerOpen, setSteerOpen] = createSignal(false)
+  const [steerText, setSteerText] = createSignal("")
 
   /** Send a `/goal <args>` command to the current session. The plugin handles
    *  it deterministically (atomic state write); the 2s poll + the refresh here
    *  surface the result in the panel. Returns false (no-op) without a session. */
-  const sendGoalCommand = async (label: GoalAction | "set", args: string): Promise<boolean> => {
+  const sendGoalCommand = async (label: GoalAction | "set" | "steer", args: string): Promise<boolean> => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy(label)
@@ -282,6 +284,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
   }
 
+  /** Add a steering note: `/goal steer "<note>"`. The plugin shows it to the
+   *  agent on the next nudge. */
+  const steerGoal = async () => {
+    const note = steerText().trim().replace(/"/g, "")
+    if (!note) return
+    const sent = await sendGoalCommand("steer", `steer "${note}"`)
+    if (sent) {
+      setSteerText("")
+      setSteerOpen(false)
+    }
+  }
+
   const progressPct = createMemo(() => {
     const s = state()
     if (!s || s.constraints.maxTurns <= 0) return 0
@@ -308,14 +322,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
   }
 
-  const history = createMemo(() => {
-    const s = state()
-    if (!s || !Array.isArray(s.evaluationHistory)) return []
-    return s.evaluationHistory.slice(-5).reverse()
-  })
 
   return (
-    <div class="flex flex-col gap-3 p-4 h-full overflow-y-auto" aria-label={language.t("session.tab.goal")}>
+    <div class="flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto" aria-label={language.t("session.tab.goal")}>
       <Switch>
         <Match when={!props.goal.store.loaded}>
           <div class="flex-1 flex items-center justify-center text-12-regular text-text-weak">
@@ -365,64 +374,56 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         </Match>
         <Match when={state()} keyed>
           {(s) => (
-            <>
+            <div class="flex flex-col gap-4">
+              {/* Condition */}
               <div class="flex items-start gap-2">
                 <div class="text-14-regular shrink-0" aria-hidden>
                   {statusIcon()}
                 </div>
-                <div class="min-w-0 flex-1">
-                  <div class="text-14-medium text-text-base line-clamp-2" title={cleanText(s.condition)}>
-                    {cleanText(s.condition)}
-                  </div>
-                  <div class="text-11-regular text-text-weaker mt-0.5">
-                    {s.turnsEvaluated}/{s.constraints.maxTurns} turns · {elapsedMinutes()}/
-                    {s.constraints.maxTimeMinutes}m
+                <div class="text-14-medium text-text-base line-clamp-3" title={cleanText(s.condition)}>
+                  {cleanText(s.condition)}
+                </div>
+              </div>
+
+              {/* Big completion % + colored bar + turn/time */}
+              <div class="flex flex-col gap-2">
+                <div class="flex items-baseline justify-between gap-2">
+                  <span class="text-2xl font-semibold tabular-nums text-text-base">
+                    {s.status === "achieved" ? 100 : progressPct()}%
+                  </span>
+                  <span class="text-11-regular text-text-weaker text-right">
+                    {s.turnsEvaluated}/{s.constraints.maxTurns} turns · {elapsedMinutes()}m
                     <Show when={s.status === "paused"}>
                       <span class="text-text-warning-base"> · {language.t("session.goal.paused")}</span>
                     </Show>
                     <Show when={s.status === "achieved"}>
-                      <span> · {language.t("session.goal.achieved")}</span>
+                      <span class="text-icon-success-base"> · {language.t("session.goal.achieved")}</span>
                     </Show>
-                  </div>
+                  </span>
                 </div>
+                <ProgressBar
+                  pct={s.status === "achieved" ? 100 : progressPct()}
+                  status={s.status === "paused" ? "paused" : s.status === "achieved" ? "achieved" : "active"}
+                />
               </div>
 
-              <Show when={s.status !== "achieved"} fallback={<ProgressBar pct={100} status="achieved" />}>
-                <ProgressBar pct={progressPct()} status={s.status === "paused" ? "paused" : "active"} />
-              </Show>
-
-              <div class="flex flex-col gap-1" aria-live="polite">
-                <div class="text-12-regular text-text-weak">
-                  {language.t("session.goal.lastEvaluation")}:{" "}
-                  {s.lastEvaluation ? cleanText(s.lastEvaluation.reason) : language.t("session.goal.history.empty")}
-                </div>
-                <Show when={s.command}>
-                  <div class="text-11-regular text-text-weaker truncate" title={cleanText(s.command ?? "")}>
-                    $ {cleanText(s.command ?? "")}
-                  </div>
-                </Show>
-              </div>
-
-              <Show when={history().length > 0}>
-                <div class="flex flex-col gap-1 border-t border-border-base pt-2">
-                  <div class="text-11-regular text-text-weaker">{language.t("session.goal.history")}</div>
-                  <div role="list" class="flex flex-col gap-0.5">
-                    {history().map((e) => (
-                      <div role="listitem" class="text-11-regular text-text-weaker truncate">
-                        {e.met ? "✓" : "·"} {cleanText(e.reason)}
-                      </div>
-                    ))}
-                  </div>
+              {/* Latest evaluation — one line, not a wall of stats */}
+              <Show when={s.lastEvaluation}>
+                <div class="text-12-regular text-text-weak" aria-live="polite">
+                  {cleanText(s.lastEvaluation!.reason)}
                 </div>
               </Show>
 
-              <div class="mt-auto pt-3 border-t border-border-base flex flex-col gap-2">
-                <Show
-                  when={(s.status === "active" || s.status === "paused") && props.sessionID}
-                  fallback={
+              {/* Controls: Pause/Resume · Steer · Stop */}
+              <Show
+                when={(s.status === "active" || s.status === "paused") && props.sessionID}
+                fallback={
+                  <Show when={s.status === "active" || s.status === "paused"}>
                     <div class="text-11-regular text-text-weaker">{language.t("session.goal.controlsHint")}</div>
-                  }
-                >
+                  </Show>
+                }
+              >
+                <div class="flex flex-col gap-2 pt-3 border-t border-border-base">
                   <div class="flex items-center gap-2 flex-wrap">
                     <Show when={s.status === "active"}>
                       <ActionButton
@@ -443,17 +444,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       />
                     </Show>
                     <ActionButton
-                      label={language.t("session.goal.action.restart")}
+                      label={language.t("session.goal.action.steer")}
                       variant="secondary"
-                      busy={busy() === "restart"}
                       disabled={busy() !== null}
-                      onClick={() => runAction("restart")}
+                      onClick={() => setSteerOpen((v) => !v)}
                     />
                     <Show
                       when={confirmingClear()}
                       fallback={
                         <ActionButton
-                          label={language.t("session.goal.action.clear")}
+                          label={language.t("session.goal.action.stop")}
                           variant="secondary"
                           disabled={busy() !== null}
                           onClick={() => setConfirmingClear(true)}
@@ -461,7 +461,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       }
                     >
                       <ActionButton
-                        label={language.t("session.goal.action.confirmClear")}
+                        label={language.t("session.goal.action.confirmStop")}
                         variant="primary"
                         busy={busy() === "clear"}
                         disabled={busy() !== null}
@@ -475,9 +475,42 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       />
                     </Show>
                   </div>
-                </Show>
-              </div>
-            </>
+
+                  {/* Steer input */}
+                  <Show when={steerOpen()}>
+                    <div class="flex flex-col gap-2">
+                      <TextField
+                        value={steerText()}
+                        onChange={setSteerText}
+                        label={language.t("session.goal.action.steer")}
+                        hideLabel
+                        placeholder={language.t("session.goal.steer.placeholder")}
+                        disabled={busy() !== null}
+                        class="w-full"
+                      />
+                      <div class="flex items-center gap-2">
+                        <ActionButton
+                          label={language.t("session.goal.steer.send")}
+                          variant="primary"
+                          busy={busy() === "steer"}
+                          disabled={busy() !== null || !steerText().trim()}
+                          onClick={() => void steerGoal()}
+                        />
+                        <ActionButton
+                          label={language.t("session.goal.action.cancel")}
+                          variant="ghost"
+                          disabled={busy() !== null}
+                          onClick={() => {
+                            setSteerOpen(false)
+                            setSteerText("")
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </Show>
+                </div>
+              </Show>
+            </div>
           )}
         </Match>
       </Switch>
