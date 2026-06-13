@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 
 import { Button } from "@opencode-ai/ui/button"
@@ -241,17 +241,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const sdk = useSDK() as unknown as GoalActionClient
   const state = () => props.goal.store.state
 
-  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | null>(null)
+  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | null>(null)
   const [confirmingClear, setConfirmingClear] = createSignal(false)
   const [newCondition, setNewCondition] = createSignal("")
   const [newCommand, setNewCommand] = createSignal("")
   const [steerOpen, setSteerOpen] = createSignal(false)
   const [steerText, setSteerText] = createSignal("")
+  const [editingBudget, setEditingBudget] = createSignal<"turns" | "time" | null>(null)
+  const [budgetText, setBudgetText] = createSignal("")
+  // When true, show the create form even though a goal exists (the "New goal"
+  // affordance), so the panel is never a dead end — including on achieved goals.
+  const [showCreate, setShowCreate] = createSignal(false)
 
   /** Send a `/goal <args>` command to the current session. The plugin handles
    *  it deterministically (atomic state write); the 2s poll + the refresh here
    *  surface the result in the panel. Returns false (no-op) without a session. */
-  const sendGoalCommand = async (label: GoalAction | "set" | "steer", args: string): Promise<boolean> => {
+  const sendGoalCommand = async (label: GoalAction | "set" | "steer" | "budget", args: string): Promise<boolean> => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy(label)
@@ -263,6 +268,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       await props.goal.refresh()
       setBusy(null)
       setConfirmingClear(false)
+      if (label === "set") setShowCreate(false)
     }
     return true
   }
@@ -293,6 +299,35 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (sent) {
       setSteerText("")
       setSteerOpen(false)
+    }
+  }
+
+  /** Built-in quick-start templates the plugin ships (src/templates.ts). One
+   *  click runs `/goal template <id>`, which sets the goal + verify command. */
+  const TEMPLATES: Array<{ id: string; label: string }> = [
+    { id: "pass-tests", label: "Pass tests" },
+    { id: "fix-lint", label: "Fix lint" },
+    { id: "fix-types", label: "Fix types" },
+  ]
+  const useTemplate = (id: string) => sendGoalCommand("set", `template ${id}`)
+
+  /** Raise/lower a live budget by clicking the turns/time readout. Maps to the
+   *  engine dials `/goal turns <n>` and `/goal time <n>`. */
+  const openBudget = (field: "turns" | "time", current: number) => {
+    setBudgetText(String(current))
+    setEditingBudget(field)
+  }
+  const submitBudget = async () => {
+    const field = editingBudget()
+    const n = parseInt(budgetText().trim(), 10)
+    if (!field || !Number.isFinite(n) || n <= 0) {
+      setEditingBudget(null)
+      return
+    }
+    const sent = await sendGoalCommand("budget", `${field} ${n}`)
+    if (sent) {
+      setEditingBudget(null)
+      setBudgetText("")
     }
   }
 
@@ -337,9 +372,26 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             <div class="text-12-regular text-text-weak">{language.t("session.goal.error.corrupt.hint")}</div>
           </div>
         </Match>
-        <Match when={props.goal.store.loaded && !props.goal.store.corrupt && props.goal.store.state === null}>
+        <Match
+          when={
+            props.goal.store.loaded &&
+            !props.goal.store.corrupt &&
+            (props.goal.store.state === null || showCreate())
+          }
+        >
           <div class="flex flex-col gap-3">
-            <div class="text-14-medium text-text-base">{language.t("session.goal.create.title")}</div>
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-14-medium text-text-base">{language.t("session.goal.create.title")}</div>
+              <Show when={showCreate() && props.goal.store.state !== null}>
+                <button
+                  type="button"
+                  class="text-11-regular text-text-weaker hover:text-text-base"
+                  onClick={() => setShowCreate(false)}
+                >
+                  {language.t("session.goal.action.cancel")}
+                </button>
+              </Show>
+            </div>
             <div class="text-11-regular text-text-weaker">{language.t("session.goal.create.hint")}</div>
             <TextField
               value={newCondition()}
@@ -367,6 +419,23 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             >
               {busy() === "set" ? "…" : language.t("session.goal.create.submit")}
             </Button>
+            <div class="flex flex-col gap-1.5 pt-1">
+              <div class="text-11-regular text-text-weaker">{language.t("session.goal.create.templates")}</div>
+              <div class="flex flex-wrap gap-1.5">
+                <For each={TEMPLATES}>
+                  {(t) => (
+                    <button
+                      type="button"
+                      onClick={() => void useTemplate(t.id)}
+                      disabled={busy() !== null || !props.sessionID}
+                      class="text-11-regular px-2 py-1 rounded-md border border-border-base text-text-weak hover:text-text-base disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {t.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
             <Show when={!props.sessionID}>
               <div class="text-11-regular text-text-weaker">{language.t("session.goal.controlsHint")}</div>
             </Show>
@@ -392,7 +461,32 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     {s.status === "achieved" ? 100 : progressPct()}%
                   </span>
                   <span class="text-11-regular text-text-weaker text-right">
-                    {s.turnsEvaluated}/{s.constraints.maxTurns} turns · {elapsedMinutes()}m
+                    <Show
+                      when={(s.status === "active" || s.status === "paused") && props.sessionID}
+                      fallback={
+                        <>
+                          {s.turnsEvaluated}/{s.constraints.maxTurns} turns · {elapsedMinutes()}m
+                        </>
+                      }
+                    >
+                      <button
+                        type="button"
+                        class="hover:text-text-base underline-offset-2 hover:underline"
+                        title={language.t("session.goal.budget.editTurns")}
+                        onClick={() => openBudget("turns", s.constraints.maxTurns)}
+                      >
+                        {s.turnsEvaluated}/{s.constraints.maxTurns} turns
+                      </button>
+                      {" · "}
+                      <button
+                        type="button"
+                        class="hover:text-text-base underline-offset-2 hover:underline"
+                        title={language.t("session.goal.budget.editTime")}
+                        onClick={() => openBudget("time", s.constraints.maxTimeMinutes)}
+                      >
+                        {elapsedMinutes()}/{s.constraints.maxTimeMinutes}m
+                      </button>
+                    </Show>
                     <Show when={s.status === "paused"}>
                       <span class="text-text-warning-base"> · {language.t("session.goal.paused")}</span>
                     </Show>
@@ -405,6 +499,36 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   pct={s.status === "achieved" ? 100 : progressPct()}
                   status={s.status === "paused" ? "paused" : s.status === "achieved" ? "achieved" : "active"}
                 />
+                <Show when={editingBudget() !== null}>
+                  <div class="flex items-center gap-2">
+                    <span class="text-11-regular text-text-weaker shrink-0">
+                      {editingBudget() === "turns"
+                        ? language.t("session.goal.budget.turnsLabel")
+                        : language.t("session.goal.budget.timeLabel")}
+                    </span>
+                    <TextField
+                      value={budgetText()}
+                      onChange={setBudgetText}
+                      label="budget"
+                      hideLabel
+                      disabled={busy() !== null}
+                      class="w-20"
+                    />
+                    <ActionButton
+                      label={language.t("session.goal.budget.save")}
+                      variant="primary"
+                      busy={busy() === "budget"}
+                      disabled={busy() !== null || !budgetText().trim()}
+                      onClick={() => void submitBudget()}
+                    />
+                    <ActionButton
+                      label={language.t("session.goal.action.cancel")}
+                      variant="ghost"
+                      disabled={busy() !== null}
+                      onClick={() => setEditingBudget(null)}
+                    />
+                  </div>
+                </Show>
               </div>
 
               {/* Latest evaluation — one line, not a wall of stats */}
@@ -510,6 +634,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   </Show>
                 </div>
               </Show>
+
+              {/* Always available — never a dead end, including on achieved goals */}
+              <div classList={{ "mt-auto pt-2": s.status === "achieved" || s.status === "cleared" }}>
+                <Button
+                  variant={s.status === "achieved" || s.status === "cleared" ? "primary" : "ghost"}
+                  size="small"
+                  onClick={() => setShowCreate(true)}
+                  disabled={busy() !== null}
+                >
+                  {language.t("session.goal.action.newGoal")}
+                </Button>
+              </div>
             </div>
           )}
         </Match>
