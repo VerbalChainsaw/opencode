@@ -211,10 +211,65 @@ interface GoalActionClient {
     session: {
       command: (args: { sessionID: string; command: string; arguments: string }) => Promise<unknown>
     }
+    file: {
+      read: (args: { path: string }) => Promise<{ data: unknown }>
+    }
   }
 }
 
 type GoalAction = "pause" | "resume" | "restart" | "clear"
+
+/** One line of the engine's `.opencode/.session-events.jsonl` activity log —
+ *  the live "what is the agent doing" feed (session-events.ts in the plugin). */
+interface ActivityEvent {
+  at: number
+  kind: "tool-start" | "tool-end" | "message"
+  tool?: string
+  durationMs?: number
+  ok?: boolean
+  summary?: string
+}
+
+const ACTIVITY_PATH = ".opencode/.session-events.jsonl"
+
+/** Read + parse the JSONL activity log, newest first, capped. Tolerant of
+ *  the SDK's FileContent ({type,content}) or a plain string; corrupt lines
+ *  are skipped. Returns [] on any error (missing file = no activity). */
+async function readActivity(sdk: GoalActionClient): Promise<ActivityEvent[]> {
+  try {
+    const res = await sdk.client.file.read({ path: ACTIVITY_PATH })
+    const raw: unknown = res.data
+    const content =
+      typeof raw === "string"
+        ? raw
+        : raw && typeof raw === "object" && typeof (raw as { content?: unknown }).content === "string"
+          ? (raw as { content: string }).content
+          : null
+    if (!content) return []
+    const out: ActivityEvent[] = []
+    for (const line of content.split("\n")) {
+      const t = line.trim()
+      if (!t) continue
+      try {
+        const e = JSON.parse(t)
+        if (e && typeof e === "object" && typeof e.at === "number" && typeof e.kind === "string") {
+          out.push(e as ActivityEvent)
+        }
+      } catch {
+        // skip corrupt line
+      }
+    }
+    return out.slice(-40).reverse()
+  } catch {
+    return []
+  }
+}
+
+function formatMs(ms: number): string {
+  if (!Number.isFinite(ms)) return ""
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
 
 function ActionButton(props: {
   onClick: () => void
@@ -252,6 +307,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   // When true, show the create form even though a goal exists (the "New goal"
   // affordance), so the panel is never a dead end — including on achieved goals.
   const [showCreate, setShowCreate] = createSignal(false)
+  const [activity, setActivity] = createSignal<ActivityEvent[]>([])
+  const [activityOpen, setActivityOpen] = createSignal(false)
+
+  onMount(() => {
+    const tick = () => void readActivity(sdk).then(setActivity)
+    tick()
+    const timer = setInterval(tick, 2000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   /** Send a `/goal <args>` command to the current session. The plugin handles
    *  it deterministically (atomic state write); the 2s poll + the refresh here
@@ -630,6 +694,52 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           }}
                         />
                       </div>
+                    </div>
+                  </Show>
+                </div>
+              </Show>
+
+              {/* Activity — the live agent feed (engine session-events log) */}
+              <Show when={activity().length > 0}>
+                <div class="flex flex-col gap-1 pt-3 border-t border-border-base">
+                  <button
+                    type="button"
+                    class="flex items-center justify-between text-11-regular text-text-weaker hover:text-text-base"
+                    onClick={() => setActivityOpen((v) => !v)}
+                    aria-expanded={activityOpen()}
+                  >
+                    <span>
+                      {language.t("session.goal.activity.title")} · {activity().length}
+                    </span>
+                    <i class="text-text-weaker">{activityOpen() ? "▾" : "▸"}</i>
+                  </button>
+                  <Show when={activityOpen()}>
+                    <div role="list" class="flex flex-col gap-1 mt-1 max-h-48 overflow-y-auto">
+                      <For each={activity()}>
+                        {(e) => (
+                          <div role="listitem" class="flex items-start gap-2 text-11-regular">
+                            <span
+                              class="shrink-0"
+                              classList={{
+                                "text-icon-success-base": e.kind === "tool-end" && e.ok === true,
+                                "text-text-warning-base": e.kind === "tool-end" && e.ok === false,
+                                "text-text-weaker": e.kind !== "tool-end",
+                              }}
+                            >
+                              {e.kind === "tool-end" ? (e.ok === false ? "✗" : "✓") : e.kind === "tool-start" ? "▸" : "•"}
+                            </span>
+                            <span class="min-w-0 flex-1 text-text-weak truncate" title={cleanText(e.summary ?? e.tool ?? "")}>
+                              <Show when={e.tool}>
+                                <span class="text-text-base">{e.tool}</span>{" "}
+                              </Show>
+                              {cleanText(e.summary ?? "")}
+                            </span>
+                            <Show when={e.durationMs !== undefined}>
+                              <span class="shrink-0 text-text-weaker tabular-nums">{formatMs(e.durationMs!)}</span>
+                            </Show>
+                          </div>
+                        )}
+                      </For>
                     </div>
                   </Show>
                 </div>

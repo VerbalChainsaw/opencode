@@ -629,6 +629,7 @@ export const dict = {
   "session.goal.budget.save": "Save",
   "session.goal.action.steer": "Steer",
   "session.goal.action.newGoal": "New goal",
+  "session.goal.activity.title": "Activity",
   "session.goal.action.stop": "Stop",
   "session.goal.action.confirmStop": "Confirm stop",
   "session.goal.steer.placeholder": "Add a hint for the agent's next step…",
