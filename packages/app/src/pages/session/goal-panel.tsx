@@ -7,6 +7,14 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 
+import {
+  liveGoal as liveGoalOf,
+  nodeColor as nodeColorOf,
+  outcomeLabel as outcomeLabelOf,
+  shouldShowCreateForm as shouldShowCreateFormOf,
+  statusMeta as statusMetaOf,
+} from "./goal-panel-lifecycle"
+
 /**
  * Goal tab — renders the opencode-autogoal plugin's state file
  * (`.opencode/.goal-state.json`) in the session side panel.
@@ -219,6 +227,21 @@ interface GoalActionClient {
 
 type GoalAction = "pause" | "resume" | "restart" | "clear"
 
+export async function executeGoalCommand(
+  session: GoalActionClient["client"]["session"],
+  input: {
+    sessionID: string
+    arguments: string
+  },
+) {
+  try {
+    await session.command({ sessionID: input.sessionID, command: "goal", arguments: input.arguments })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** One line of the engine's `.opencode/.session-events.jsonl` activity log —
  *  the live "what is the agent doing" feed (session-events.ts in the plugin). */
 interface ActivityEvent {
@@ -298,6 +321,30 @@ export interface ChainData {
   current: number
 }
 
+interface HistoryRun {
+  summary: {
+    goalID: string
+    title: string
+    status: "success" | "failure" | "mixed"
+    outcome: "achieved" | "cleared" | "replaced"
+    turns: number
+    elapsedMs: number
+    successCount: number
+    failureCount: number
+    archivedAt: number
+  }
+  detail: {
+    latestReason: string
+    cycles: Array<{ turn: number; met: boolean; reason: string; at: number }>
+    template: {
+      source: "template" | "manual"
+      label: string
+      reuseCommand: string
+      canGenerate: boolean
+    }
+  }
+}
+
 /** Read the engine's `.opencode/.goal-chain.json` so the panel can show
  *  sub-goal steps. Returns null when there's no chain (single goal). */
 async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
@@ -317,38 +364,23 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
   }
 }
 
-export interface ArchiveEntry {
-  outcome: string
-  condition: string
-  turns: number
-  at: number
-}
-
-/** Read the engine's `.opencode/goal-archive.jsonl` — past terminal goals,
- *  newest first — for the History view. */
-async function readArchive(sdk: GoalActionClient): Promise<ArchiveEntry[]> {
-  const content = await readWorkspaceText(sdk, ".opencode/goal-archive.jsonl")
+/** Read the engine's `.opencode/goal-history.json` — a UI-ready snapshot
+ *  derived by the plugin from archived goal runs. */
+async function readArchive(sdk: GoalActionClient): Promise<HistoryRun[]> {
+  const content = await readWorkspaceText(sdk, ".opencode/goal-history.json")
   if (!content) return []
-  const out: ArchiveEntry[] = []
-  for (const line of content.split("\n")) {
-    const t = line.trim()
-    if (!t) continue
-    try {
-      const e = JSON.parse(t)
-      const st = e?.state
-      if (e && typeof e.outcome === "string" && st && typeof st.condition === "string") {
-        out.push({
-          outcome: e.outcome,
-          condition: st.condition,
-          turns: typeof st.turnsEvaluated === "number" ? st.turnsEvaluated : 0,
-          at: typeof e.archivedAt === "number" ? e.archivedAt : 0,
-        })
-      }
-    } catch {
-      // skip corrupt line
-    }
+  try {
+    const parsed = JSON.parse(content)
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.runs)) return []
+    return parsed.runs.filter((run: unknown): run is HistoryRun => {
+      if (!run || typeof run !== "object") return false
+      const summary = (run as HistoryRun).summary
+      const detail = (run as HistoryRun).detail
+      return !!summary && !!detail && typeof summary.goalID === "string" && typeof summary.title === "string" && Array.isArray(detail.cycles)
+    })
+  } catch {
+    return []
   }
-  return out.slice(-20).reverse()
 }
 
 function ActionButton(props: {
@@ -390,16 +422,25 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [activity, setActivity] = createSignal<ActivityEvent[]>([])
   const [activityOpen, setActivityOpen] = createSignal(false)
   const [chain, setChain] = createSignal<ChainData | null>(null)
-  const [archive, setArchive] = createSignal<ArchiveEntry[]>([])
+  const [archive, setArchive] = createSignal<HistoryRun[]>([])
   const [historyOpen, setHistoryOpen] = createSignal(false)
+  const [selectedHistoryGoalID, setSelectedHistoryGoalID] = createSignal<string | null>(null)
   const [addingStep, setAddingStep] = createSignal(false)
   const [stepText, setStepText] = createSignal("")
+
+  const refreshArchive = () =>
+    void readArchive(sdk).then((runs) => {
+      setArchive(runs)
+      if (selectedHistoryGoalID() && !runs.some((run) => run.summary.goalID === selectedHistoryGoalID())) {
+        setSelectedHistoryGoalID(null)
+      }
+    })
 
   onMount(() => {
     const tick = () => {
       void readActivity(sdk).then(setActivity)
       void readChain(sdk).then(setChain)
-      void readArchive(sdk).then(setArchive)
+      refreshArchive()
     }
     tick()
     const timer = setInterval(tick, 2000)
@@ -433,17 +474,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy(label)
+    const ok = await executeGoalCommand(sdk.client.session, { sessionID, arguments: args })
     try {
-      await sdk.client.session.command({ sessionID, command: "goal", arguments: args })
-    } catch {
-      // Swallow — the refresh below reflects whatever actually happened on disk.
-    } finally {
       await props.goal.refresh()
+      refreshChain()
+      refreshArchive()
+    } finally {
       setBusy(null)
-      setConfirmingClear(false)
-      if (label === "set") setShowCreate(false)
+      if (ok) setConfirmingClear(false)
+      if (ok && label === "set") setShowCreate(false)
     }
-    return true
+    return ok
   }
 
   const runAction = (action: GoalAction) => sendGoalCommand(action, action)
@@ -517,19 +558,32 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return Math.max(0, Math.round((end - s.startedAt) / 60_000))
   })
 
-  const statusIcon = () => {
-    switch (state()?.status) {
-      case "active":
-        return "🎯"
-      case "paused":
-        return "⏸"
-      case "achieved":
-        return "✅"
-      default:
-        return "🎯"
-    }
+  const selectedHistoryRun = createMemo(() => archive().find((run) => run.summary.goalID === selectedHistoryGoalID()) ?? null)
+
+  const formatElapsed = (elapsedMs: number) => {
+    if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return "<1m"
+    const minutes = Math.round(elapsedMs / 60_000)
+    return minutes > 0 ? `${minutes}m` : "<1m"
   }
 
+  const reuseHistoryRun = (command: string) => sendGoalCommand("set", command)
+
+  // ── Lifecycle model ──────────────────────────────────────────────────────
+  // The panel renders strictly by STATUS, not by "is there a state object?".
+  // The pure accessors live in `./goal-panel-lifecycle`; the createMemo
+  // wrappers below memoize on the state signal so the render is stable
+  // when the underlying JSON hasn't changed.
+  //
+  // This model makes the two failure modes structurally impossible:
+  //   - a goal achieved in one turn never shows a hollow "active" card —
+  //     `liveGoal` returns null and the empty + history view renders.
+  //   - clearing a goal doesn't blank the panel — `liveGoal` returns
+  //     null and the run is already in the history timeline.
+  const liveGoal = createMemo(() => liveGoalOf(state()))
+  const showForm = createMemo(() => shouldShowCreateFormOf(state(), showCreate()))
+  const statusMeta = (s: GoalState["status"] | undefined) => statusMetaOf(s)
+  const nodeColor = (status: string) => nodeColorOf(status)
+  const outcomeLabel = (outcome: string) => outcomeLabelOf(outcome)
 
   return (
     <div class="flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto" aria-label={language.t("session.tab.goal")}>
@@ -545,20 +599,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             <div class="text-12-regular text-text-weak">{language.t("session.goal.error.corrupt.hint")}</div>
           </div>
         </Match>
-        <Match
-          when={
-            props.goal.store.loaded &&
-            !props.goal.store.corrupt &&
-            (props.goal.store.state === null || showCreate())
-          }
-        >
+        <Match when={props.goal.store.loaded && !props.goal.store.corrupt && showForm()}>
           <div class="flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
-              <div class="text-14-medium text-text-base">{language.t("session.goal.create.title")}</div>
-              <Show when={showCreate() && props.goal.store.state !== null}>
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="h-2 w-2 rounded-full bg-text-weaker/50 shrink-0" aria-hidden />
+                <div class="text-11-regular font-medium uppercase tracking-[0.12em] text-text-weaker truncate">
+                  {language.t("session.goal.create.title")}
+                </div>
+              </div>
+              <Show when={showCreate() && liveGoal()}>
                 <button
                   type="button"
-                  class="text-11-regular text-text-weaker hover:text-text-base"
+                  class="text-11-regular text-text-weaker hover:text-text-base shrink-0"
                   onClick={() => setShowCreate(false)}
                 >
                   {language.t("session.goal.action.cancel")}
@@ -614,15 +667,23 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             </Show>
           </div>
         </Match>
-        <Match when={state()} keyed>
+        <Match when={liveGoal()} keyed>
           {(s) => (
             <div class="flex flex-col gap-4 min-w-0">
-              {/* Condition */}
-              <div class="flex items-start gap-2 min-w-0">
-                <div class="text-14-regular shrink-0" aria-hidden>
-                  {statusIcon()}
+              {/* Mission header — status chip + objective */}
+              <div class="flex flex-col gap-2 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="relative flex h-2 w-2 shrink-0">
+                    <Show when={s.status === "active"}>
+                      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60" />
+                    </Show>
+                    <span class={`relative inline-flex h-2 w-2 rounded-full ${statusMeta(s.status).dot}`} />
+                  </span>
+                  <span class={`text-11-regular font-medium uppercase tracking-[0.12em] ${statusMeta(s.status).text}`}>
+                    {statusMeta(s.status).label}
+                  </span>
                 </div>
-                <div class="min-w-0 flex-1 text-14-medium text-text-base line-clamp-3 break-words" title={cleanText(s.condition)}>
+                <div class="min-w-0 text-14-medium text-text-base leading-snug line-clamp-3 break-words" title={cleanText(s.condition)}>
                   {cleanText(s.condition)}
                 </div>
               </div>
@@ -812,11 +873,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               <Show when={chain() || (s.status === "active" || s.status === "paused")}>
                 <div class="flex flex-col gap-2 pt-3 border-t border-border-base min-w-0">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-11-regular font-medium text-text-weak">
+                    <span class="text-12-medium text-text-base">
                       {language.t("session.goal.steps.title")}
                       <Show when={chain()}>
-                        {" · "}
-                        {chain()!.current}/{chain()!.steps.length} {language.t("session.goal.steps.done")}
+                        <span class="text-11-regular font-normal text-text-weaker">
+                          {" · "}
+                          {chain()!.current}/{chain()!.steps.length} {language.t("session.goal.steps.done")}
+                        </span>
                       </Show>
                     </span>
                     <Show when={(s.status === "active" || s.status === "paused") && props.sessionID}>
@@ -839,8 +902,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         {(step, i) => (
                           <div
                             role="listitem"
-                            class="group flex items-center gap-2 px-1.5 py-1.5 rounded-md min-w-0"
-                            classList={{ "bg-background-stronger": i() === chain()!.current }}
+                            class="group flex items-center gap-2 px-1.5 py-1.5 rounded-md min-w-0 border border-transparent"
+                            classList={{ "bg-white/[0.05] border-border-base": i() === chain()!.current }}
                           >
                             <span
                               class="shrink-0 text-12-regular"
@@ -903,12 +966,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 <div class="flex flex-col gap-1 pt-3 border-t border-border-base">
                   <button
                     type="button"
-                    class="flex items-center justify-between text-11-regular text-text-weaker hover:text-text-base"
+                    class="flex items-center justify-between text-12-medium text-text-base hover:text-text-base"
                     onClick={() => setActivityOpen((v) => !v)}
                     aria-expanded={activityOpen()}
                   >
                     <span>
-                      {language.t("session.goal.activity.title")} · {activity().length}
+                      {language.t("session.goal.activity.title")}
+                      <span class="text-11-regular font-normal text-text-weaker"> · {activity().length}</span>
                     </span>
                     <i class="text-text-weaker">{activityOpen() ? "▾" : "▸"}</i>
                   </button>
@@ -944,61 +1008,116 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 </div>
               </Show>
 
-              {/* History — past goals from the engine archive, collapsible */}
-              <Show when={archive().length > 0}>
-                <div class="flex flex-col gap-1 pt-3 border-t border-border-base min-w-0">
-                  <button
-                    type="button"
-                    class="flex items-center justify-between text-11-regular font-medium text-text-weak hover:text-text-base"
-                    onClick={() => setHistoryOpen((v) => !v)}
-                    aria-expanded={historyOpen()}
-                  >
-                    <span>
-                      {language.t("session.goal.history.title")} · {archive().length}
-                    </span>
-                    <span class="text-text-weaker">{historyOpen() ? "▾" : "▸"}</span>
-                  </button>
-                  <Show when={historyOpen()}>
-                    <div role="list" class="flex flex-col gap-1 mt-1 max-h-48 overflow-y-auto min-w-0">
-                      <For each={archive()}>
-                        {(h) => (
-                          <div role="listitem" class="flex items-center gap-2 text-11-regular min-w-0">
-                            <span
-                              class="shrink-0"
-                              classList={{
-                                "text-icon-success-base": h.outcome === "achieved",
-                                "text-text-weaker": h.outcome !== "achieved",
-                              }}
-                            >
-                              {h.outcome === "achieved" ? "✓" : "·"}
-                            </span>
-                            <span class="min-w-0 flex-1 truncate text-text-weak" title={cleanText(h.condition)}>
-                              {cleanText(h.condition)}
-                            </span>
-                            <span class="shrink-0 text-text-weaker tabular-nums">{h.turns}t</span>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-              </Show>
-
-              {/* Always available — never a dead end, including on achieved goals */}
-              <div classList={{ "mt-auto pt-2": s.status === "achieved" || s.status === "cleared" }}>
-                <Button
-                  variant={s.status === "achieved" || s.status === "cleared" ? "primary" : "ghost"}
-                  size="small"
+              {/* Replace the live objective with a new one (history stays below) */}
+              <div class="flex pt-3 mt-1 border-t border-border-base">
+                <button
+                  type="button"
+                  class="text-11-regular text-text-weaker hover:text-text-base transition-colors disabled:opacity-50"
                   onClick={() => setShowCreate(true)}
                   disabled={busy() !== null}
                 >
-                  {language.t("session.goal.action.newGoal")}
-                </Button>
+                  + {language.t("session.goal.action.newGoal")}
+                </button>
               </div>
             </div>
           )}
         </Match>
       </Switch>
+
+      {/* ── History timeline — always visible (the "history line") ──────────
+          A vertical rail of past runs. A cleared goal lands here as
+          "Cancelled"; an achieved goal as "Achieved". This is where terminal
+          goals go instead of blanking the panel. */}
+      <Show when={props.goal.store.loaded && !props.goal.store.corrupt && archive().length > 0}>
+        <div class="flex flex-col gap-2 pt-3 mt-1 border-t border-border-base min-w-0">
+          <button
+            type="button"
+            class="flex items-center justify-between text-11-regular font-medium uppercase tracking-[0.12em] text-text-weaker hover:text-text-base"
+            onClick={() => setHistoryOpen((v) => !v)}
+            aria-expanded={historyOpen()}
+          >
+            <span>
+              {language.t("session.goal.history.title")}
+              <span class="font-normal normal-case tracking-normal"> · {archive().length}</span>
+            </span>
+            <span class="text-text-weaker">{historyOpen() ? "▾" : "▸"}</span>
+          </button>
+          <Show when={historyOpen()}>
+            <div role="list" class="relative flex flex-col mt-1 max-h-72 overflow-y-auto min-w-0">
+              {/* the rail */}
+              <div class="pointer-events-none absolute left-[5px] top-2 bottom-2 w-px bg-border-base" aria-hidden />
+              <For each={archive()}>
+                {(h) => (
+                  <div role="listitem" class="relative pl-5 min-w-0">
+                    <span class="absolute left-0 top-[9px] flex h-[11px] w-[11px] items-center justify-center" aria-hidden>
+                      <span class={`h-[7px] w-[7px] rounded-full ring-2 ring-background-base ${nodeColor(h.summary.status)}`} />
+                    </span>
+                    <button
+                      type="button"
+                      class="w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.04] min-w-0"
+                      classList={{ "bg-white/[0.04] ring-1 ring-border-base": selectedHistoryGoalID() === h.summary.goalID }}
+                      onClick={() => setSelectedHistoryGoalID((c) => (c === h.summary.goalID ? null : h.summary.goalID))}
+                    >
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="min-w-0 flex-1 truncate text-12-medium text-text-base" title={cleanText(h.summary.title)}>
+                          {cleanText(h.summary.title)}
+                        </span>
+                        <span
+                          class="shrink-0 text-11-regular font-medium"
+                          classList={{
+                            "text-emerald-400": h.summary.status === "success",
+                            "text-amber-400": h.summary.status === "mixed",
+                            "text-rose-400": h.summary.status === "failure",
+                          }}
+                        >
+                          {outcomeLabel(h.summary.outcome)}
+                        </span>
+                      </div>
+                      <div class="mt-0.5 flex items-center gap-1.5 text-11-regular tabular-nums text-text-weaker">
+                        <span>{h.summary.successCount}/{h.summary.successCount + h.summary.failureCount} cycles</span>
+                        <span aria-hidden>·</span>
+                        <span>{formatElapsed(h.summary.elapsedMs)}</span>
+                        <span aria-hidden>·</span>
+                        <span>{h.summary.turns} turns</span>
+                      </div>
+                    </button>
+                    <Show when={selectedHistoryGoalID() === h.summary.goalID && selectedHistoryRun()}>
+                      {(run) => (
+                        <div class="my-1 ml-1 rounded-xl border border-border-base bg-white/[0.04] px-3 py-3 min-w-0">
+                          <Show when={run().detail.latestReason}>
+                            <div class="text-11-regular text-text-weak">{cleanText(run().detail.latestReason)}</div>
+                          </Show>
+                          <div class="mt-2 flex flex-col gap-1.5">
+                            <For each={run().detail.cycles}>
+                              {(cycle) => (
+                                <div class="flex items-start gap-2 text-11-regular">
+                                  <span class={`shrink-0 ${cycle.met ? "text-emerald-400" : "text-amber-400"}`}>
+                                    {cycle.met ? "✓" : "↺"}
+                                  </span>
+                                  <span class="shrink-0 tabular-nums text-text-weaker">#{cycle.turn}</span>
+                                  <span class="min-w-0 flex-1 text-text-weak">{cleanText(cycle.reason)}</span>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                          <div class="mt-3 flex items-center gap-2 flex-wrap">
+                            <ActionButton
+                              label={language.t("session.goal.history.reuse")}
+                              variant="secondary"
+                              disabled={busy() !== null || !props.sessionID}
+                              onClick={() => void reuseHistoryRun(run().detail.template.reuseCommand)}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </Show>
     </div>
   )
 }

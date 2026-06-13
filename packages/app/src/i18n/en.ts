@@ -631,6 +631,8 @@ export const dict = {
   "session.goal.action.newGoal": "New goal",
   "session.goal.activity.title": "Activity",
   "session.goal.history.title": "History",
+  "session.goal.history.reuse": "Reuse goal",
+  "session.goal.history.generate": "Generate template",
   "session.goal.steps.title": "Steps",
   "session.goal.steps.done": "done",
   "session.goal.steps.add": "Add",

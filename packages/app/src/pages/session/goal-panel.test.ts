@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 
 import {
+  executeGoalCommand,
   type GoalSdkClient,
   type GoalState,
   cleanText,
@@ -423,6 +424,34 @@ describe("readGoalFromSdk", () => {
     const { state, corrupt } = await readGoalFromSdk(sdk)
     expect(corrupt).toBe(false)
     expect(state?.status).toBe("cleared")
+  })
+})
+
+describe("executeGoalCommand", () => {
+  test("returns true when the session goal command resolves", async () => {
+    const calls: Array<{ sessionID: string; command: string; arguments: string }> = []
+    const ok = await executeGoalCommand(
+      {
+        command: async (args) => {
+          calls.push(args)
+        },
+      },
+      { sessionID: "session-1", arguments: 'set "pass tests"' },
+    )
+    expect(ok).toBe(true)
+    expect(calls).toEqual([{ sessionID: "session-1", command: "goal", arguments: 'set "pass tests"' }])
+  })
+
+  test("returns false when the session goal command rejects", async () => {
+    const ok = await executeGoalCommand(
+      {
+        command: async () => {
+          throw new Error("boom")
+        },
+      },
+      { sessionID: "session-1", arguments: "pause" },
+    )
+    expect(ok).toBe(false)
   })
 })
 

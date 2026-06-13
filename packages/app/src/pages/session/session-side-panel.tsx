@@ -28,6 +28,7 @@ import {
   createOpenSessionFileTab,
   createSessionTabs,
   getTabReorderIndex,
+  shouldAutoOpenGoalTab,
   shouldShowFileTree,
   type Sizing,
 } from "@/pages/session/helpers"
@@ -167,25 +168,72 @@ export function SessionSidePanel(props: {
   // "cleared" — at which point the close-when-visible effect removes
   // the tab so the panel falls back to the next available focus.
   const goal = useGoal()
-  const goalVisible = createMemo(
-    () =>
-      !goal.store.loaded ||
-      goal.store.corrupt ||
-      goal.store.state === null ||
-      goal.store.state.status !== "cleared",
-  )
+  const [goalTabState, setGoalTabState] = createStore({
+    previousID: null as string | null,
+    dismissedID: null as string | null,
+    dismissedKey: null as string | null,
+  })
+  const currentGoalID = createMemo(() => {
+    const state = goal.store.state
+    if (!state || state.status === "cleared") return null
+    return state.id
+  })
+  const goalVisibilityKey = createMemo(() => {
+    if (!goal.store.loaded) return "loading"
+    if (goal.store.corrupt) return "corrupt"
+    if (goal.store.state === null) return "empty"
+    // A cleared goal keeps the panel visible (it now shows the empty state +
+    // the run in the History timeline) — clearing must not blank the panel.
+    return `goal:${goal.store.state.id}`
+  })
+  const goalVisible = createMemo(() => {
+    // An explicit open (the header Goal toggle sets the active tab to "goal")
+    // always wins over a prior dismissal, so the button reliably reopens the
+    // panel even after the user previously closed the Goal tab.
+    if (activeTab() === "goal") return true
+    const key = goalVisibilityKey()
+    if (!key) return false
+    return key !== goalTabState.dismissedKey
+  })
+  const closeGoalTab = () => {
+    const visibilityKey = goalVisibilityKey()
+    if (visibilityKey) setGoalTabState("dismissedKey", visibilityKey)
+    const goalID = currentGoalID()
+    if (goalID) setGoalTabState("dismissedID", goalID)
+    tabs().close("goal")
+  }
   createEffect(() => {
-    // Only auto-close when the state transitions to "cleared" (an
-    // explicit user action). Never close on "absent" — that's the
-    // empty-state display.
+    const currentID = currentGoalID()
+    const previousID = goalTabState.previousID
+    const dismissedID = goalTabState.dismissedID
+
     if (
-      goal.store.state !== null &&
-      goal.store.state.status === "cleared" &&
-      tabs().all().includes("goal")
+      shouldAutoOpenGoalTab({
+        currentGoalID: currentID,
+        previousGoalID: previousID,
+        dismissedGoalID: dismissedID,
+      })
     ) {
-      tabs().close("goal")
+      void tabs().open("goal")
+      tabs().setActive("goal")
+    }
+
+    if (currentID === previousID) return
+    setGoalTabState("previousID", currentID)
+    setGoalTabState("dismissedKey", null)
+    if (currentID === null || currentID !== dismissedID) {
+      setGoalTabState("dismissedID", null)
     }
   })
+  createEffect(() => {
+    if (activeTab() !== "goal") return
+    if (view().reviewPanel.opened()) return
+    view().reviewPanel.open()
+  })
+  // NOTE: a cleared goal intentionally does NOT auto-close the panel. The run
+  // drops into the History timeline and the panel shows the empty/create
+  // state, so the user can see "what I just did" and start the next goal. The
+  // tab is only closed by an explicit user action (closeGoalTab).
 
   const fileTreeTab = () => layout.fileTree.tab()
 
@@ -317,13 +365,13 @@ export function SessionSidePanel(props: {
                                   icon="close-small"
                                   variant="ghost"
                                   class="h-5 w-5"
-                                  onClick={() => tabs().close("goal")}
+                                  onClick={closeGoalTab}
                                   aria-label={language.t("common.closeTab")}
                                 />
                               </TooltipKeybind>
                             }
                             hideCloseButton
-                            onMiddleClick={() => tabs().close("goal")}
+                            onMiddleClick={closeGoalTab}
                           >
                             <div class="flex items-center gap-1.5">
                               <div>{language.t("session.tab.goal")}</div>

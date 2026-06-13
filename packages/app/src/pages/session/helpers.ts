@@ -24,6 +24,16 @@ export function shouldShowFileTree(input: { desktopV2: boolean; showFileTree: bo
   return input.opened && (!input.desktopV2 || input.showFileTree)
 }
 
+export function shouldAutoOpenGoalTab(input: {
+  currentGoalID: string | null
+  previousGoalID: string | null
+  dismissedGoalID: string | null
+}) {
+  return !!input.currentGoalID &&
+    input.currentGoalID !== input.previousGoalID &&
+    input.currentGoalID !== input.dismissedGoalID
+}
+
 export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)
   const hasReview = input.hasReview ?? (() => false)

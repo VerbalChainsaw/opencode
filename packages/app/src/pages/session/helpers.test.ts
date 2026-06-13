@@ -7,6 +7,7 @@ import {
   createSessionTabs,
   focusTerminalById,
   getTabReorderIndex,
+  shouldAutoOpenGoalTab,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
 } from "./helpers"
@@ -16,6 +17,38 @@ describe("shouldShowFileTree", () => {
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: false, opened: true })).toBe(false)
     expect(shouldShowFileTree({ desktopV2: false, showFileTree: false, opened: true })).toBe(true)
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: true, opened: true })).toBe(true)
+  })
+})
+
+describe("shouldAutoOpenGoalTab", () => {
+  test("opens for the first visible goal", () => {
+    expect(
+      shouldAutoOpenGoalTab({
+        currentGoalID: "goal-1",
+        previousGoalID: null,
+        dismissedGoalID: null,
+      }),
+    ).toBe(true)
+  })
+
+  test("does not reopen a manually dismissed goal", () => {
+    expect(
+      shouldAutoOpenGoalTab({
+        currentGoalID: "goal-1",
+        previousGoalID: null,
+        dismissedGoalID: "goal-1",
+      }),
+    ).toBe(false)
+  })
+
+  test("opens again when a later goal has a different id", () => {
+    expect(
+      shouldAutoOpenGoalTab({
+        currentGoalID: "goal-2",
+        previousGoalID: "goal-1",
+        dismissedGoalID: "goal-1",
+      }),
+    ).toBe(true)
   })
 })
 

@@ -140,7 +140,25 @@ export function SessionHeader() {
   const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
-  const { params, view } = useSessionLayout()
+  const { params, view, tabs } = useSessionLayout()
+
+  // Goal panel toggle. The Goal tab lives inside the right (review) panel, so
+  // in a fresh session with no goal there is otherwise no way to open it — the
+  // panel only opens for Review/Files or when a goal already exists. This
+  // header button is the discoverable entry point: it opens the right panel
+  // and activates the Goal tab (showing the create-goal form when empty), and
+  // closes the panel when the Goal tab is already showing. Mirrors the
+  // Review/Terminal toggle pattern below.
+  const goalShown = createMemo(() => view().reviewPanel.opened() && tabs().active() === "goal")
+  const toggleGoal = () => {
+    if (goalShown()) {
+      view().reviewPanel.close()
+      return
+    }
+    void tabs().open("goal")
+    tabs().setActive("goal")
+    if (!view().reviewPanel.opened()) view().reviewPanel.open()
+  }
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -463,6 +481,18 @@ export function SessionHeader() {
                     </Show>
 
                     <div class="hidden md:flex items-center gap-1 shrink-0">
+                      <Tooltip value={language.t("session.tab.goal")}>
+                        <Button
+                          variant="ghost"
+                          class="group/goal-toggle titlebar-icon w-8 h-6 p-0 box-border"
+                          onClick={toggleGoal}
+                          aria-label={language.t("session.tab.goal")}
+                          aria-expanded={goalShown()}
+                          aria-controls="review-panel"
+                        >
+                          <Icon size="small" name="circle-check" />
+                        </Button>
+                      </Tooltip>
                       <TooltipKeybind
                         title={language.t("command.review.toggle")}
                         keybind={command.keybind("review.toggle")}
