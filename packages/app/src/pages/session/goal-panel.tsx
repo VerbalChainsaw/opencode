@@ -271,6 +271,86 @@ function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+/** Tolerant read of a workspace file's text via the SDK (FileContent or
+ *  string). Returns null on any error or empty content. */
+async function readWorkspaceText(sdk: GoalActionClient, path: string): Promise<string | null> {
+  try {
+    const res = await sdk.client.file.read({ path })
+    const raw: unknown = res.data
+    const content =
+      typeof raw === "string"
+        ? raw
+        : raw && typeof raw === "object" && typeof (raw as { content?: unknown }).content === "string"
+          ? (raw as { content: string }).content
+          : null
+    return content && content.trim().length > 0 ? content : null
+  } catch {
+    return null
+  }
+}
+
+export interface ChainStep {
+  condition: string
+  command?: string | null
+}
+export interface ChainData {
+  steps: ChainStep[]
+  current: number
+}
+
+/** Read the engine's `.opencode/.goal-chain.json` so the panel can show
+ *  sub-goal steps. Returns null when there's no chain (single goal). */
+async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
+  const content = await readWorkspaceText(sdk, ".opencode/.goal-chain.json")
+  if (!content) return null
+  try {
+    const c = JSON.parse(content)
+    if (!c || !Array.isArray(c.steps) || c.steps.length === 0) return null
+    const steps: ChainStep[] = c.steps
+      .filter((s: unknown) => s && typeof (s as ChainStep).condition === "string")
+      .map((s: ChainStep) => ({ condition: s.condition, command: s.command ?? null }))
+    if (steps.length === 0) return null
+    const current = typeof c.current === "number" && Number.isFinite(c.current) ? c.current : 0
+    return { steps, current }
+  } catch {
+    return null
+  }
+}
+
+export interface ArchiveEntry {
+  outcome: string
+  condition: string
+  turns: number
+  at: number
+}
+
+/** Read the engine's `.opencode/goal-archive.jsonl` — past terminal goals,
+ *  newest first — for the History view. */
+async function readArchive(sdk: GoalActionClient): Promise<ArchiveEntry[]> {
+  const content = await readWorkspaceText(sdk, ".opencode/goal-archive.jsonl")
+  if (!content) return []
+  const out: ArchiveEntry[] = []
+  for (const line of content.split("\n")) {
+    const t = line.trim()
+    if (!t) continue
+    try {
+      const e = JSON.parse(t)
+      const st = e?.state
+      if (e && typeof e.outcome === "string" && st && typeof st.condition === "string") {
+        out.push({
+          outcome: e.outcome,
+          condition: st.condition,
+          turns: typeof st.turnsEvaluated === "number" ? st.turnsEvaluated : 0,
+          at: typeof e.archivedAt === "number" ? e.archivedAt : 0,
+        })
+      }
+    } catch {
+      // skip corrupt line
+    }
+  }
+  return out.slice(-20).reverse()
+}
+
 function ActionButton(props: {
   onClick: () => void
   busy?: boolean
@@ -296,7 +376,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const sdk = useSDK() as unknown as GoalActionClient
   const state = () => props.goal.store.state
 
-  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | null>(null)
+  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | null>(null)
   const [confirmingClear, setConfirmingClear] = createSignal(false)
   const [newCondition, setNewCondition] = createSignal("")
   const [newCommand, setNewCommand] = createSignal("")
@@ -309,18 +389,47 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [showCreate, setShowCreate] = createSignal(false)
   const [activity, setActivity] = createSignal<ActivityEvent[]>([])
   const [activityOpen, setActivityOpen] = createSignal(false)
+  const [chain, setChain] = createSignal<ChainData | null>(null)
+  const [archive, setArchive] = createSignal<ArchiveEntry[]>([])
+  const [historyOpen, setHistoryOpen] = createSignal(false)
+  const [addingStep, setAddingStep] = createSignal(false)
+  const [stepText, setStepText] = createSignal("")
 
   onMount(() => {
-    const tick = () => void readActivity(sdk).then(setActivity)
+    const tick = () => {
+      void readActivity(sdk).then(setActivity)
+      void readChain(sdk).then(setChain)
+      void readArchive(sdk).then(setArchive)
+    }
     tick()
     const timer = setInterval(tick, 2000)
     onCleanup(() => clearInterval(timer))
   })
 
+  const refreshChain = () => void readChain(sdk).then(setChain)
+
+  /** Sub-goal steps map to the engine's chain. Add appends a step; the up/down
+   *  arrows reorder. Both go through `/goal chain …` commands. */
+  const addStep = async () => {
+    const cond = stepText().trim().replace(/"/g, "")
+    if (!cond) return
+    const sent = await sendGoalCommand("step", `chain add "${cond}"`)
+    if (sent) {
+      setStepText("")
+      setAddingStep(false)
+      refreshChain()
+    }
+  }
+  const moveStep = async (from: number, to: number) => {
+    if (to < 0) return
+    await sendGoalCommand("step", `chain move ${from} ${to}`)
+    refreshChain()
+  }
+
   /** Send a `/goal <args>` command to the current session. The plugin handles
    *  it deterministically (atomic state write); the 2s poll + the refresh here
    *  surface the result in the panel. Returns false (no-op) without a session. */
-  const sendGoalCommand = async (label: GoalAction | "set" | "steer" | "budget", args: string): Promise<boolean> => {
+  const sendGoalCommand = async (label: GoalAction | "set" | "steer" | "budget" | "step", args: string): Promise<boolean> => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy(label)
@@ -507,13 +616,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         </Match>
         <Match when={state()} keyed>
           {(s) => (
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-4 min-w-0">
               {/* Condition */}
-              <div class="flex items-start gap-2">
+              <div class="flex items-start gap-2 min-w-0">
                 <div class="text-14-regular shrink-0" aria-hidden>
                   {statusIcon()}
                 </div>
-                <div class="text-14-medium text-text-base line-clamp-3" title={cleanText(s.condition)}>
+                <div class="min-w-0 flex-1 text-14-medium text-text-base line-clamp-3 break-words" title={cleanText(s.condition)}>
                   {cleanText(s.condition)}
                 </div>
               </div>
@@ -699,6 +808,96 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 </div>
               </Show>
 
+              {/* Steps / sub-goals — the engine's chain, reorderable */}
+              <Show when={chain() || (s.status === "active" || s.status === "paused")}>
+                <div class="flex flex-col gap-2 pt-3 border-t border-border-base min-w-0">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-11-regular font-medium text-text-weak">
+                      {language.t("session.goal.steps.title")}
+                      <Show when={chain()}>
+                        {" · "}
+                        {chain()!.current}/{chain()!.steps.length} {language.t("session.goal.steps.done")}
+                      </Show>
+                    </span>
+                    <Show when={(s.status === "active" || s.status === "paused") && props.sessionID}>
+                      <button
+                        type="button"
+                        class="text-11-regular px-2 py-0.5 rounded-md border border-border-base text-text-weak hover:text-text-base disabled:opacity-50"
+                        disabled={busy() !== null}
+                        onClick={() => setAddingStep((v) => !v)}
+                      >
+                        + {language.t("session.goal.steps.add")}
+                      </button>
+                    </Show>
+                  </div>
+
+                  <Show when={chain()} fallback={
+                    <div class="text-11-regular text-text-weaker">{language.t("session.goal.steps.empty")}</div>
+                  }>
+                    <div role="list" class="flex flex-col gap-0.5 min-w-0">
+                      <For each={chain()!.steps}>
+                        {(step, i) => (
+                          <div
+                            role="listitem"
+                            class="group flex items-center gap-2 px-1.5 py-1.5 rounded-md min-w-0"
+                            classList={{ "bg-background-stronger": i() === chain()!.current }}
+                          >
+                            <span
+                              class="shrink-0 text-12-regular"
+                              classList={{
+                                "text-icon-success-base": i() < chain()!.current,
+                                "text-text-base": i() === chain()!.current,
+                                "text-text-weaker": i() > chain()!.current,
+                              }}
+                            >
+                              {i() < chain()!.current ? "✓" : i() === chain()!.current ? "▸" : "○"}
+                            </span>
+                            <span
+                              class="min-w-0 flex-1 truncate text-12-regular"
+                              classList={{
+                                "text-text-weaker line-through": i() < chain()!.current,
+                                "text-text-base font-medium": i() === chain()!.current,
+                                "text-text-weak": i() > chain()!.current,
+                              }}
+                              title={cleanText(step.condition)}
+                            >
+                              {cleanText(step.condition)}
+                            </span>
+                            <Show when={(s.status === "active" || s.status === "paused") && props.sessionID}>
+                              <span class="shrink-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button type="button" aria-label="Move up" class="text-11-regular px-1 text-text-weaker hover:text-text-base disabled:opacity-30" disabled={busy() !== null || i() === 0} onClick={() => void moveStep(i(), i() - 1)}>↑</button>
+                                <button type="button" aria-label="Move down" class="text-11-regular px-1 text-text-weaker hover:text-text-base disabled:opacity-30" disabled={busy() !== null || i() === chain()!.steps.length - 1} onClick={() => void moveStep(i(), i() + 1)}>↓</button>
+                              </span>
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+
+                  <Show when={addingStep()}>
+                    <div class="flex items-center gap-2">
+                      <TextField
+                        value={stepText()}
+                        onChange={setStepText}
+                        label={language.t("session.goal.steps.add")}
+                        hideLabel
+                        placeholder={language.t("session.goal.steps.placeholder")}
+                        disabled={busy() !== null}
+                        class="w-full"
+                      />
+                      <ActionButton
+                        label={language.t("session.goal.steps.addAction")}
+                        variant="primary"
+                        busy={busy() === "step"}
+                        disabled={busy() !== null || !stepText().trim()}
+                        onClick={() => void addStep()}
+                      />
+                    </div>
+                  </Show>
+                </div>
+              </Show>
+
               {/* Activity — the live agent feed (engine session-events log) */}
               <Show when={activity().length > 0}>
                 <div class="flex flex-col gap-1 pt-3 border-t border-border-base">
@@ -737,6 +936,46 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             <Show when={e.durationMs !== undefined}>
                               <span class="shrink-0 text-text-weaker tabular-nums">{formatMs(e.durationMs!)}</span>
                             </Show>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
+              </Show>
+
+              {/* History — past goals from the engine archive, collapsible */}
+              <Show when={archive().length > 0}>
+                <div class="flex flex-col gap-1 pt-3 border-t border-border-base min-w-0">
+                  <button
+                    type="button"
+                    class="flex items-center justify-between text-11-regular font-medium text-text-weak hover:text-text-base"
+                    onClick={() => setHistoryOpen((v) => !v)}
+                    aria-expanded={historyOpen()}
+                  >
+                    <span>
+                      {language.t("session.goal.history.title")} · {archive().length}
+                    </span>
+                    <span class="text-text-weaker">{historyOpen() ? "▾" : "▸"}</span>
+                  </button>
+                  <Show when={historyOpen()}>
+                    <div role="list" class="flex flex-col gap-1 mt-1 max-h-48 overflow-y-auto min-w-0">
+                      <For each={archive()}>
+                        {(h) => (
+                          <div role="listitem" class="flex items-center gap-2 text-11-regular min-w-0">
+                            <span
+                              class="shrink-0"
+                              classList={{
+                                "text-icon-success-base": h.outcome === "achieved",
+                                "text-text-weaker": h.outcome !== "achieved",
+                              }}
+                            >
+                              {h.outcome === "achieved" ? "✓" : "·"}
+                            </span>
+                            <span class="min-w-0 flex-1 truncate text-text-weak" title={cleanText(h.condition)}>
+                              {cleanText(h.condition)}
+                            </span>
+                            <span class="shrink-0 text-text-weaker tabular-nums">{h.turns}t</span>
                           </div>
                         )}
                       </For>
