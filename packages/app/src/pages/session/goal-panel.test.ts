@@ -1,14 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 
-import {
-  executeGoalCommand,
-  type GoalSdkClient,
-  type GoalState,
-  cleanText,
-  isGoalStateShape,
-  readGoalFromSdk,
-} from "./goal-panel"
+import { type GoalSdkClient, type GoalState, cleanText, isGoalStateShape, readGoalFromSdk } from "./goal-panel-pure"
+import { executeGoalCommand, startGoalRun, stopGoalRun, type GoalCommandClient } from "./goal-panel-actions"
 
 const validState: GoalState = {
   id: "test-id",
@@ -42,6 +36,250 @@ function mockSdk(overrides: Partial<GoalSdkClient["client"]["file"]> = {}): Goal
     },
   }
 }
+
+const goalPanelSource = async () => (await Bun.file(new URL("./goal-panel.tsx", import.meta.url)).text()).toString()
+
+describe("goal panel mission-control contracts", () => {
+  test("keeps a persistent history drawer state instead of rendering pills only", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const [historyOpen, setHistoryOpen] = createSignal(true)")
+    expect(src).toContain("aria-expanded={historyOpen()}")
+  })
+
+  test("keeps the last good archive when a polling read transiently comes back empty", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const previous = archive()")
+    expect(src).toContain("if (runs.length === 0 && previous.length > 0) return")
+  })
+
+  test("terminal goals remain visible when archive history is missing", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("terminalGoalOf(state())")
+    expect(src).toContain("unarchivedTerminalGoal")
+    expect(src).toContain('data-component="goal-terminal-summary"')
+    expect(src).toContain("session.goal.lastResult")
+    expect(src).toContain("archive().some((run) => run.summary.goalID === goal.id)")
+  })
+
+  test("stop confirmation renders in a separate callout instead of reordering the main action row", async () => {
+    const src = await goalPanelSource()
+    expect(src).toMatch(/label=\{language\.t\("session\.goal\.action\.stop"\)\}[\s\S]*setConfirmingClear\(true\)/)
+    expect(src).toMatch(/<Show when=\{confirmingClear\(\)\}>[\s\S]*session\.goal\.action\.confirmStop/)
+  })
+
+  test("create goal starts the agent after state is written, but shared controls stay turnless", async () => {
+    const src = await goalPanelSource()
+    const createGoal = src.match(/const createGoal = async \(\) => \{[\s\S]*?\n  \}/)
+    expect(createGoal).toBeTruthy()
+    expect(createGoal![0]).toContain('sendGoalCommand("set", args)')
+    expect(createGoal![0]).toContain("startGoalRun")
+
+    const sendGoalCommand = src.match(/const sendGoalCommand = async [\s\S]*?\n  \}/)
+    expect(sendGoalCommand).toBeTruthy()
+    expect(sendGoalCommand![0]).not.toContain("startGoalRun")
+  })
+
+  test("confirmed stop clears the goal and aborts the active session turn", async () => {
+    const src = await goalPanelSource()
+    const stopGoal = src.match(/const stopGoal = async \(\) => \{[\s\S]*?\n  \}/)
+    expect(stopGoal).toBeTruthy()
+    expect(stopGoal![0]).toContain('sendGoalCommand("clear", "clear")')
+    expect(stopGoal![0]).toContain("stopGoalRun")
+    expect(src).toMatch(/onClick=\{\(\) => void stopGoal\(\)\}/)
+    expect(src).not.toContain('onClick={() => void runAction("clear")}')
+  })
+
+  test("run controls expose restart as a first-class lifecycle action", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("session.goal.action.restart")
+    expect(src).toContain('busy={busy() === "restart"}')
+    expect(src).toContain('onClick={() => void runAction("restart")}')
+    expect(src).toContain("xl:grid-cols-5")
+  })
+
+  test("action library selects for viewing and exposes edit/duplicate/delete actions", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("applyTemplateDraft")
+    expect(src).toContain("selectActionForView")
+    expect(src).toContain("editTemplateDraft")
+    expect(src).toContain("duplicateActionTemplate")
+    expect(src).toContain("deleteActionTemplate")
+    expect(src).toContain("selectedTemplate")
+    expect(src).toContain('role="listbox"')
+    expect(src).toContain('role="option"')
+    expect(src).toContain("template delete")
+    expect(src).not.toContain("onClick={() => applyTemplateDraft(t)}")
+    expect(src).not.toMatch(/sendGoalCommand\("set",\s*`template\s+\$\{id\}`/)
+  })
+
+  test("chain builder uses a two-column plan chain and action library instead of loose buttons", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-chain-builder"')
+    expect(src).toContain('data-component="goal-plan-chain"')
+    expect(src).toContain('data-component="goal-method-library"')
+    expect(src).toContain('data-component="goal-chain-budget-readout"')
+    expect(src).toContain("templateSearch")
+    expect(src).toContain("filteredTemplates")
+    expect(src).toContain("handleTemplateListboxKeyDown")
+    expect(src).toContain('data-component="goal-action-inspector"')
+    expect(src).toContain("session.goal.template.searchPlaceholder")
+    expect(src).toContain("session.goal.template.empty")
+    expect(src).toContain("session.goal.chainBuilder.steps")
+    expect(src).toContain("session.goal.template.noCommand")
+    expect(src).toMatch(/class="[^"]*grid-cols-\[minmax\(540px,1\.5fr\)_minmax\(360px,0\.82fr\)\]/)
+    expect(src).toContain("templateCategory")
+    expect(src).toContain("inferActionCategory")
+    expect(src).not.toContain('data-component="goal-action-context-summary"')
+    expect(src).not.toContain('data-component="goal-action-context-setup"')
+    expect(src).not.toContain("Block context setup")
+    expect(src).not.toContain("compactBefore")
+    expect(src).not.toContain("compactAfter")
+  })
+
+  test("draft chain editing is local state only and start chain is the explicit run boundary", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("chainDraft")
+    expect(src).toContain("masterTurns")
+    expect(src).toContain("masterMinutes")
+    expect(src).toContain("chainBudgetSummary")
+    expect(src).toContain("readStoredChainDraft(props.sessionID)")
+    expect(src).toContain("writeStoredChainDraft(props.sessionID")
+    expect(src).toContain("window.sessionStorage")
+    expect(src).toContain("category === undefined ||")
+    expect(src).toContain("...(step.category ? { category: step.category } : {})")
+    expect(src).toContain("...(step.tone ? { tone: step.tone } : {})")
+    expect(src).toContain("...(step.elevation ? { elevation: step.elevation } : {})")
+    expect(src).toContain("addActionToChain")
+    expect(src).toContain("moveDraftStep")
+    expect(src).toContain("removeDraftStep")
+    expect(src).toContain("startGoalChain")
+    expect(src).toContain("session.goal.template.addToChain")
+    expect(src).toContain("session.goal.template.prompt")
+    expect(src).toContain("completionRuleLabel")
+    expect(src).toContain('data-component="goal-chain-step-row"')
+    expect(src).not.toContain("session.goal.template.condition")
+
+    const addAction = src.match(/const addActionToChain = [\s\S]*?\n  \}/)
+    expect(addAction).toBeTruthy()
+    expect(addAction![0]).not.toContain("sendGoalCommand")
+    expect(addAction![0]).not.toContain("startGoalRun")
+  })
+
+  test("playbook workspace matches the approved session-native layout", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-playbook-workspace"')
+    expect(src).toContain('data-component="goal-playbook-setup"')
+    expect(src).toContain('data-component="goal-playbook-budget-strip"')
+    expect(src).toContain('data-component="goal-playbook-chain-pane"')
+    expect(src).toContain('data-component="goal-action-library-rail"')
+    expect(src).toContain('data-component="goal-method-row"')
+    expect(src).toContain('data-component="goal-drop-zone"')
+    expect(src).toContain('data-component="goal-global-budget"')
+    expect(src).not.toContain("lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.72fr)_112px]")
+  })
+
+  test("playbook visual pass keeps chain rows dense and library chrome explicit", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-chain-run-rail"')
+    expect(src).toContain('data-density="compact-chain-row"')
+    expect(src).toContain('data-component="goal-method-library-header"')
+    expect(src).toContain('data-component="goal-method-rail-filters"')
+    expect(src).not.toContain(">Packs</span>")
+    expect(src).not.toContain(">Archived</span>")
+    expect(src).not.toContain("session.goal.template.source.builtin")
+    expect(src).not.toContain("session.goal.template.kind.method")
+    expect(src).not.toContain("Retry limit")
+    expect(src).not.toContain("Drop an action or pack")
+    // The Method Library detail no longer renders the taxonomy "Tags" card.
+    expect(src).not.toContain(">Tags</div>")
+    expect(src).not.toContain('label="Gates"')
+    expect(src).toContain("Actions added from the library appear here")
+  })
+
+  test("method editor exposes the core fields without the taxonomy controls", async () => {
+    const src = await goalPanelSource()
+    // The reshaped Method Library editor keeps name / label / prompt / verify / save…
+    expect(src).toContain("session.goal.template.saveName")
+    expect(src).toContain("session.goal.template.prompt")
+    expect(src).toContain("session.goal.template.command")
+    expect(src).toContain("session.goal.template.save")
+    expect(src).toContain("const label = actionDraft.label.trim() || id")
+    expect(src).toContain("label,")
+    // …but no longer renders the category / checkpoint / color / elevation taxonomy.
+    expect(src).not.toContain('data-component="goal-action-style-controls"')
+    expect(src).not.toContain("session.goal.template.tone")
+    expect(src).not.toContain("session.goal.template.elevation")
+    // The save payload still carries auto-inferred metadata (chain styling uses it).
+    expect(src).toContain("category: actionDraft.category")
+    expect(src).toContain("tone: actionDraft.tone")
+    expect(src).toContain("elevation: actionDraft.elevation")
+  })
+
+  test("action editor cancel stays local and edit reopen repopulates action fields", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const openActionEditor = (template?: GoalTemplateButton)")
+    expect(src).toContain("const editTemplateDraft = (template: GoalTemplateButton)")
+    expect(src).toContain("openActionEditor(template)")
+    expect(src).toContain('onClick={() => setActionDraft("open", false)}')
+    expect(src).toContain('category: template ? inferActionCategory(template) : "Custom"')
+    expect(src).toContain("tone: template?.tone ?? inferredActionTone(template ?? {})")
+    expect(src).toContain('elevation: template?.elevation ?? "flat"')
+    expect(src).toContain('gate: template ? inferActionGate(template) : "required"')
+
+    const cancelButton = src.match(
+      /label={language\.t\("session\.goal\.action\.cancel"\)}[\s\S]*?setActionDraft\("open", false\)/,
+    )
+    expect(cancelButton).toBeTruthy()
+    expect(cancelButton![0]).not.toContain("sendGoalCommand")
+    expect(cancelButton![0]).not.toContain("startGoalRun")
+  })
+
+  test("start chain preserves ordered steps and explicit operator metadata", async () => {
+    const src = await goalPanelSource()
+    const startChain = src.match(/const startGoalChain = async \(\) => \{[\s\S]*?sendGoalCommand\("chain"/)
+    expect(startChain).toBeTruthy()
+    expect(startChain![0]).toContain("steps: chainDraft.steps.map((step) => ({")
+    expect(startChain![0]).toContain("condition: step.condition")
+    expect(startChain![0]).toContain('verification: { type: "shell", command: step.command.trim() }')
+    expect(startChain![0]).toContain('{ verification: { type: "marker" } }')
+    expect(startChain![0]).toContain("maxTurns: step.maxTurns")
+    expect(startChain![0]).toContain("category: step.category")
+    expect(startChain![0]).toContain("tone: step.tone")
+    expect(startChain![0]).toContain("elevation: step.elevation")
+    expect(startChain![0]).not.toContain("sort(")
+    expect(startChain![0]).not.toContain("reverse(")
+  })
+
+  test("adding a method to the chain stays local and does not cross the run boundary", async () => {
+    const src = await goalPanelSource()
+    // The detail "Add to chain" action feeds the local chain draft…
+    expect(src).toContain("addActionToChain(template, varsForAction(template))")
+    // …and the handler itself never starts a run or sends a command.
+    const addAction = src.match(/const addActionToChain = [\s\S]*?\n  \}/)
+    expect(addAction).toBeTruthy()
+    expect(addAction![0]).not.toContain("sendGoalCommand")
+    expect(addAction![0]).not.toContain("startGoalRun")
+  })
+
+  test("recent runs render as a vertical listbox, not wrapping pills", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('role="listbox"')
+    expect(src).toContain('role="option"')
+    expect(src).toContain("aria-selected")
+    expect(src).toContain("handleHistoryListboxKeyDown")
+    expect(src).not.toContain('role="list" class="flex flex-wrap gap-2"')
+  })
+
+  test("recent runs auto-select a row and expose selected-run metric pillboxes", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("RunMetricPill")
+    expect(src).toContain("selectedHistoryGoalID()")
+    expect(src).toContain("setSelectedHistoryGoalID(runs[0]?.summary.goalID ?? null)")
+    expect(src).toContain("successCount")
+    expect(src).toContain("failureCount")
+    expect(src).toContain("latestReason")
+  })
+})
 
 describe("isGoalStateShape", () => {
   test("accepts a fully-shaped valid state", () => {
@@ -349,7 +587,7 @@ describe("readGoalFromSdk", () => {
     // {}.polluted check is unaffected.
     expect(isGoalStateShape(polluted)).toBe(true)
     // And the prototype itself is not modified:
-    expect(({} as any).polluted).toBeUndefined()
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
 
   // Adversarial: control-character injection in the condition field
@@ -410,7 +648,7 @@ describe("readGoalFromSdk", () => {
     const sdk = mockSdk({
       read: async () => ({ data: `${JSON.stringify(validState)} garbage` }),
     })
-    const { state, corrupt } = await readGoalFromSdk(sdk)
+    const { corrupt } = await readGoalFromSdk(sdk)
     expect(corrupt).toBe(true)
   })
 
@@ -419,7 +657,8 @@ describe("readGoalFromSdk", () => {
   // plants a file with duplicate keys, the parser picks the last and
   // isGoalStateShape validates normally.
   test("duplicate JSON keys resolve to last value and validate normally", async () => {
-    const duped = '{"status":"active","status":"cleared","id":"x","condition":"y","startedAt":0,"turnsEvaluated":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}'
+    const duped =
+      '{"status":"active","status":"cleared","id":"x","condition":"y","startedAt":0,"turnsEvaluated":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}'
     const sdk = mockSdk({ read: async () => ({ data: duped }) })
     const { state, corrupt } = await readGoalFromSdk(sdk)
     expect(corrupt).toBe(false)
@@ -428,29 +667,279 @@ describe("readGoalFromSdk", () => {
 })
 
 describe("executeGoalCommand", () => {
-  test("returns true when the session goal command resolves", async () => {
-    const calls: Array<{ sessionID: string; command: string; arguments: string }> = []
+  test("returns true when the deterministic goal control POST endpoint resolves", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const sessionCommand = mock(async () => {
+      throw new Error("session.command must not be used for GUI controls")
+    })
     const ok = await executeGoalCommand(
       {
-        command: async (args) => {
-          calls.push(args)
-        },
+        session: { command: sessionCommand },
+        tool: { client: { post } },
       },
-      { sessionID: "session-1", arguments: 'set "pass tests"' },
+      { sessionID: "session-1", arguments: 'set "pass tests"', directory: "C:\\repo\\project" },
     )
     expect(ok).toBe(true)
-    expect(calls).toEqual([{ sessionID: "session-1", command: "goal", arguments: 'set "pass tests"' }])
+    expect(sessionCommand).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledWith({
+      url: "/experimental/goal/control/{toolID}",
+      path: { toolID: "goal_control" },
+      query: { directory: "C:\\repo\\project" },
+      body: {
+        directory: "C:\\repo\\project",
+        sessionID: "session-1",
+        arguments: { command: 'set "pass tests"' },
+      },
+    })
   })
 
-  test("returns false when the session goal command rejects", async () => {
+  test("keeps the generated SDK tool method bound to its client when raw POST is unavailable", async () => {
+    const calls: Array<{ directory?: string; toolID: string; sessionID: string; arguments: { command: string } }> = []
+    const tool: NonNullable<GoalCommandClient["tool"]> = {
+      async control(args) {
+        expect(this).toBe(tool)
+        calls.push(args)
+      },
+    }
     const ok = await executeGoalCommand(
       {
-        command: async () => {
-          throw new Error("boom")
+        tool,
+      },
+      { sessionID: "session-1", arguments: "turns 25", directory: "C:\\repo\\project" },
+    )
+    expect(ok).toBe(true)
+    expect(calls).toEqual([
+      {
+        directory: "C:\\repo\\project",
+        toolID: "goal_control",
+        sessionID: "session-1",
+        arguments: { command: "turns 25" },
+      },
+    ])
+  })
+
+  test("prefers raw POST over the generated control method when both are present", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const control = mock(async () => {
+      throw new Error("generated control method should not be used when raw POST exists")
+    })
+    const ok = await executeGoalCommand(
+      {
+        tool: {
+          client: { post },
+          control,
+        },
+      },
+      { sessionID: "session-1", arguments: "template import x {}", directory: "C:\\repo\\project" },
+    )
+    expect(ok).toBe(true)
+    expect(post).toHaveBeenCalled()
+    expect(control).not.toHaveBeenCalled()
+  })
+
+  test("uses the root SDK POST transport before the generated control method", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const control = mock(async () => {
+      throw new Error("generated control method should not be used when root POST exists")
+    })
+    const ok = await executeGoalCommand(
+      {
+        client: { post },
+        tool: { control },
+      },
+      { sessionID: "session-1", arguments: "template import x {}", directory: "C:\\repo\\project" },
+    )
+    expect(ok).toBe(true)
+    expect(post).toHaveBeenCalledWith({
+      url: "/experimental/goal/control/{toolID}",
+      path: { toolID: "goal_control" },
+      query: { directory: "C:\\repo\\project" },
+      body: {
+        directory: "C:\\repo\\project",
+        sessionID: "session-1",
+        arguments: { command: "template import x {}" },
+      },
+    })
+    expect(control).not.toHaveBeenCalled()
+  })
+
+  test("returns false when the deterministic goal control endpoint rejects", async () => {
+    const ok = await executeGoalCommand(
+      {
+        tool: {
+          client: {
+            post: async () => {
+              throw new Error("boom")
+            },
+          },
+          control: async () => {
+            throw new Error("boom")
+          },
         },
       },
       { sessionID: "session-1", arguments: "pause" },
     )
+    expect(ok).toBe(false)
+  })
+
+  test("uses the raw SDK transport when the generated control method is unavailable", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const sessionCommand = mock(async () => {
+      throw new Error("session.command must not be used for GUI controls")
+    })
+    const ok = await executeGoalCommand(
+      {
+        session: { command: sessionCommand },
+        tool: { client: { post } },
+      },
+      { sessionID: "session-1", arguments: "turns 25", directory: "C:\\repo\\project" },
+    )
+    expect(ok).toBe(true)
+    expect(sessionCommand).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledWith({
+      url: "/experimental/goal/control/{toolID}",
+      path: { toolID: "goal_control" },
+      query: { directory: "C:\\repo\\project" },
+      body: { directory: "C:\\repo\\project", sessionID: "session-1", arguments: { command: "turns 25" } },
+    })
+  })
+
+  test("does not fall back to session.command when the control endpoint is missing", async () => {
+    const calls: Array<{ sessionID: string; command: string; arguments: string }> = []
+    const ok = await executeGoalCommand(
+      {
+        session: {
+          command: async (args) => {
+            calls.push(args)
+          },
+        },
+      },
+      { sessionID: "session-1", arguments: "turns 25" },
+    )
+    expect(ok).toBe(false)
+    expect(calls).toEqual([])
+  })
+})
+
+describe("startGoalRun", () => {
+  test("admits one async prompt so a newly-set goal starts working", async () => {
+    const promptAsync = mock(async () => undefined)
+    const sessionCommand = mock(async () => {
+      throw new Error("session.command must not start goals")
+    })
+
+    const ok = await startGoalRun(
+      {
+        session: {
+          promptAsync,
+          command: sessionCommand,
+        },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+        agent: "build",
+        model: { providerID: "provider", modelID: "model" },
+        variant: "high",
+      },
+    )
+
+    expect(ok).toBe(true)
+    expect(sessionCommand).not.toHaveBeenCalled()
+    expect(promptAsync).toHaveBeenCalledTimes(1)
+    expect(promptAsync).toHaveBeenCalledWith({
+      sessionID: "session-1",
+      directory: "C:\\repo\\project",
+      agent: "build",
+      model: { providerID: "provider", modelID: "model" },
+      variant: "high",
+      parts: [
+        {
+          type: "text",
+          text: expect.stringContaining("Begin working toward the current OpenGoal goal now."),
+        },
+      ],
+    })
+  })
+
+  test("lets the server choose default agent/model for goal auto-start", async () => {
+    const promptAsync = mock(async () => undefined)
+
+    const ok = await startGoalRun(
+      {
+        session: { promptAsync },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+      },
+    )
+
+    expect(ok).toBe(true)
+    expect(promptAsync).toHaveBeenCalledWith({
+      sessionID: "session-1",
+      directory: "C:\\repo\\project",
+      parts: [
+        {
+          type: "text",
+          text: expect.stringContaining("Read .opencode/.goal-state.json"),
+        },
+      ],
+    })
+  })
+
+  test("returns false when async prompt admission is unavailable", async () => {
+    const ok = await startGoalRun(
+      { session: {} },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+        agent: "build",
+        model: { providerID: "provider", modelID: "model" },
+      },
+    )
+
+    expect(ok).toBe(false)
+  })
+})
+
+describe("stopGoalRun", () => {
+  test("aborts the active OpenCode session turn without using chat commands", async () => {
+    const abort = mock(async () => undefined)
+    const sessionCommand = mock(async () => {
+      throw new Error("session.command must not stop goals")
+    })
+
+    const ok = await stopGoalRun(
+      {
+        session: {
+          abort,
+          command: sessionCommand,
+        },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+      },
+    )
+
+    expect(ok).toBe(true)
+    expect(sessionCommand).not.toHaveBeenCalled()
+    expect(abort).toHaveBeenCalledWith({
+      sessionID: "session-1",
+      directory: "C:\\repo\\project",
+    })
+  })
+
+  test("returns false when session abort is unavailable", async () => {
+    const ok = await stopGoalRun(
+      { session: {} },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+      },
+    )
+
     expect(ok).toBe(false)
   })
 })
@@ -472,6 +961,12 @@ describe("useGoal hook", () => {
   let sdkRef: GoalSdkClient
 
   beforeAll(async () => {
+    mock.module("@opencode-ai/ui/button", () => ({
+      Button: (props: any) => props.children ?? null,
+    }))
+    mock.module("@opencode-ai/ui/text-field", () => ({
+      TextField: () => null,
+    }))
     mock.module("@/context/language", () => ({
       useLanguage: () => ({ t: (k: string) => k }),
     }))
@@ -634,8 +1129,7 @@ describe("useGoal hook", () => {
     // first call waits on a gate, the second resolves immediately.
     let releaseSlow: (() => void) | null = null
     let slowResolved = false
-    const origRead = sdkRef.client.file.read
-    sdkRef.client.file.read = async (args) => {
+    sdkRef.client.file.read = async () => {
       if (!slowResolved) {
         // First call: the "slow" read. Park it until released.
         slowResolved = true

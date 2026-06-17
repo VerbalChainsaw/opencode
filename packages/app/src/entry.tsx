@@ -7,11 +7,12 @@ import { type Platform, PlatformProvider } from "@/context/platform"
 import { dict as en } from "@/i18n/en"
 import { dict as zh } from "@/i18n/zh"
 import { handleNotificationClick } from "@/utils/notification-click"
-import { authFromToken } from "@/utils/server"
+import { authFromToken, pickDefaultServerUrl, resolveCurrentServerUrl } from "@/utils/server"
 import pkg from "../package.json"
 import { ServerConnection } from "./context/server"
 
 const DEFAULT_SERVER_URL_KEY = "opencode.settings.dat:defaultServerUrl"
+const DEV_SERVER_URL_OVERRIDE_KEY = "opencode.settings.dat:devServerUrlOverride"
 
 const getLocale = () => {
   if (typeof navigator !== "object") return "en" as const
@@ -52,6 +53,7 @@ const setStorage = (key: string, value: string | null) => {
 }
 
 const readDefaultServerUrl = () => getStorage(DEFAULT_SERVER_URL_KEY)
+const readDevServerUrlOverride = () => getStorage(DEV_SERVER_URL_OVERRIDE_KEY)
 const writeDefaultServerUrl = (url: string | null) => setStorage(DEFAULT_SERVER_URL_KEY, url)
 
 const notify: Platform["notify"] = async (title, description, href) => {
@@ -100,16 +102,21 @@ if (!(root instanceof HTMLElement) && import.meta.env.DEV) {
 }
 
 const getCurrentUrl = () => {
-  if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"
-  if (import.meta.env.DEV)
-    return `http://${import.meta.env.VITE_OPENCODE_SERVER_HOST ?? "localhost"}:${import.meta.env.VITE_OPENCODE_SERVER_PORT ?? "4096"}`
-  return location.origin
+  return resolveCurrentServerUrl({
+    devOverride: readDevServerUrlOverride(),
+    isDev: import.meta.env.DEV,
+    hostname: location.hostname,
+    origin: location.origin,
+    viteHost: import.meta.env.VITE_OPENCODE_SERVER_HOST,
+    vitePort: import.meta.env.VITE_OPENCODE_SERVER_PORT,
+  })
 }
 
 const getDefaultUrl = () => {
-  const lsDefault = readDefaultServerUrl()
-  if (lsDefault) return lsDefault
-  return getCurrentUrl()
+  return pickDefaultServerUrl({
+    stored: readDefaultServerUrl(),
+    current: getCurrentUrl(),
+  })
 }
 
 const clearAuthToken = () => {

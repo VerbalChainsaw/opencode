@@ -30,7 +30,7 @@
  * the "view branches on truthiness instead of status" bug class.
  */
 
-import type { GoalState } from "./goal-panel"
+import type { GoalState } from "./goal-panel-pure"
 
 export type GoalLifecycleStatus = "active" | "paused" | "achieved" | "cleared"
 
@@ -67,6 +67,18 @@ export function statusMeta(s: GoalLifecycleStatus | undefined): StatusMeta {
 export function liveGoal(state: GoalState | null | undefined): GoalState | null {
   if (!state) return null
   if (state.status === "active" || state.status === "paused") return state
+  return null
+}
+
+/**
+ * The current terminal goal, if the state file still points at one.
+ *
+ * Terminal goals are not "live" controls, but the user still needs a visible
+ * record of what just happened when the archive snapshot is missing or slow.
+ */
+export function terminalGoal(state: GoalState | null | undefined): GoalState | null {
+  if (!state) return null
+  if (state.status === "achieved" || state.status === "cleared") return state
   return null
 }
 
@@ -109,4 +121,31 @@ export function outcomeLabel(outcome: string): string {
   if (outcome === "achieved") return "Achieved"
   if (outcome === "replaced") return "Replaced"
   return outcome
+}
+
+/**
+ * Pause/Resume is a SINGLE toggle rendered in a stable layout slot — never
+ * two conditional buttons that swap position. The control reflects an
+ * optimistic override (set the instant the user clicks) until the 2s poll
+ * confirms the real status, so the label/position never lags reality.
+ *
+ * This is the fix for the "it was already paused and said Pause again" /
+ * "buttons get out of order" class of bug: the dock used to render Pause vs
+ * Resume straight off the polled status, so after a click the button lagged
+ * by up to one poll and could send a stale command.
+ *
+ * Returns the action the toggle should send next, or null when there's no
+ * live (active/paused) goal to pause or resume.
+ *
+ *   realStatus  — the latest polled goal status (may be stale just after a click)
+ *   optimistic  — the status the user just drove the goal toward, or null
+ */
+export function pauseResumeAction(
+  realStatus: GoalState["status"] | undefined,
+  optimistic: "active" | "paused" | null,
+): "pause" | "resume" | null {
+  const effective = optimistic ?? realStatus
+  if (effective === "active") return "pause"
+  if (effective === "paused") return "resume"
+  return null
 }

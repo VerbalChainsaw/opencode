@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test"
 
-import type { GoalState } from "./goal-panel"
+import type { GoalState } from "./goal-panel-pure"
 import {
   STATUS_META,
   liveGoal,
   nodeColor,
   outcomeLabel,
+  pauseResumeAction,
   shouldShowCreateForm,
   statusMeta,
+  terminalGoal,
 } from "./goal-panel-lifecycle"
 
 const baseState: GoalState = {
@@ -66,6 +68,19 @@ describe("liveGoal", () => {
 
   test("returns null for an undefined state", () => {
     expect(liveGoal(undefined)).toBeNull()
+  })
+})
+
+describe("terminalGoal", () => {
+  test("returns achieved and cleared states for terminal summary fallback", () => {
+    expect(terminalGoal(withStatus("achieved"))?.status).toBe("achieved")
+    expect(terminalGoal(withStatus("cleared"))?.status).toBe("cleared")
+  })
+
+  test("returns null for active, paused, and missing states", () => {
+    expect(terminalGoal(withStatus("active"))).toBeNull()
+    expect(terminalGoal(withStatus("paused"))).toBeNull()
+    expect(terminalGoal(null)).toBeNull()
   })
 })
 
@@ -217,5 +232,35 @@ describe("outcomeLabel", () => {
     // Defense: an unknown outcome string should be shown as-is rather
     // than dropped. The history timeline must be lossless.
     expect(outcomeLabel("foo-bar")).toBe("foo-bar")
+  })
+})
+
+// ── pauseResumeAction ───────────────────────────────────────────────────────
+//
+// The single pause/resume toggle. It must (1) offer the correct action for the
+// real status, (2) honor an optimistic override so a click doesn't lag the 2s
+// poll, and (3) return null when there's no live goal to toggle.
+
+describe("pauseResumeAction", () => {
+  test("active goal → offers pause", () => {
+    expect(pauseResumeAction("active", null)).toBe("pause")
+  })
+
+  test("paused goal → offers resume", () => {
+    expect(pauseResumeAction("paused", null)).toBe("resume")
+  })
+
+  test("optimistic override wins over a stale polled status (the core fix)", () => {
+    // User clicked Pause; the poll still reads "active" for up to 2s. The
+    // toggle must already offer Resume so a second click can't re-send pause.
+    expect(pauseResumeAction("active", "paused")).toBe("resume")
+    // …and the mirror case after a Resume click.
+    expect(pauseResumeAction("paused", "active")).toBe("pause")
+  })
+
+  test("terminal / missing status → no toggle", () => {
+    expect(pauseResumeAction("achieved", null)).toBeNull()
+    expect(pauseResumeAction("cleared", null)).toBeNull()
+    expect(pauseResumeAction(undefined, null)).toBeNull()
   })
 })

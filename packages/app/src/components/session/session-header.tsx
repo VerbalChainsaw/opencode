@@ -152,6 +152,7 @@ export function SessionHeader() {
   const goalShown = createMemo(() => view().reviewPanel.opened() && tabs().active() === "goal")
   const toggleGoal = () => {
     if (goalShown()) {
+      tabs().setActive("empty")
       view().reviewPanel.close()
       return
     }
@@ -252,6 +253,9 @@ export function SessionHeader() {
     messageAgentColor(params.id ? sync.data.message[params.id] : undefined, sync.data.agent),
   )
   const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
+    goalLabel: language.t("session.tab.goal"),
+    goalOpened: goalShown(),
+    onGoalToggle: toggleGoal,
     statusVisible: status(),
     statusLabel: language.t("status.popover.trigger"),
     reviewLabel: language.t("command.review.toggle"),
@@ -340,7 +344,7 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <Show
-              when={isDesktopV2}
+              when={isDesktopV2()}
               fallback={
                 <div class="flex items-center gap-2">
                   <Show when={projectDirectory()}>
@@ -484,13 +488,15 @@ export function SessionHeader() {
                       <Tooltip value={language.t("session.tab.goal")}>
                         <Button
                           variant="ghost"
-                          class="group/goal-toggle titlebar-icon w-8 h-6 p-0 box-border"
+                          class="group/goal-toggle titlebar-icon h-6 w-auto gap-1.5 px-2 box-border ring-1 ring-transparent hover:ring-v2-border-border-muted"
                           onClick={toggleGoal}
                           aria-label={language.t("session.tab.goal")}
+                          aria-pressed={goalShown()}
                           aria-expanded={goalShown()}
                           aria-controls="review-panel"
                         >
                           <Icon size="small" name="circle-check" />
+                          <span class="text-11-medium">{language.t("session.tab.goal")}</span>
                         </Button>
                       </Tooltip>
                       <TooltipKeybind
@@ -550,6 +556,9 @@ export function SessionHeader() {
 }
 
 type SessionHeaderV2ActionsState = {
+  goalLabel: string
+  goalOpened: boolean
+  onGoalToggle: () => void
   statusVisible: boolean
   statusLabel: string
   reviewLabel: string
@@ -561,6 +570,23 @@ type SessionHeaderV2ActionsState = {
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
   return (
     <div class="flex items-center gap-2">
+      <Tooltip value={props.state.goalLabel}>
+        <button
+          type="button"
+          class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-v2-border-border-muted bg-v2-surface-raised px-2.5 text-[12px] font-medium text-v2-text-subtle transition-colors hover:border-v2-border-border-strong hover:text-v2-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-border-border-strong"
+          classList={{
+            "border-v2-border-border-strong bg-v2-surface-selected text-v2-text": props.state.goalOpened,
+          }}
+          onClick={props.state.onGoalToggle}
+          aria-label={props.state.goalLabel}
+          aria-pressed={props.state.goalOpened}
+          aria-expanded={props.state.goalOpened}
+          aria-controls="review-panel"
+        >
+          <IconV2 name="circle-check" />
+          <span>{props.state.goalLabel}</span>
+        </button>
+      </Tooltip>
       <Show when={props.state.statusVisible}>
         <Tooltip placement="bottom" value={props.state.statusLabel}>
           <StatusPopoverV2 />

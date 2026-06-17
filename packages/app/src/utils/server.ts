@@ -17,6 +17,42 @@ export function authFromToken(token: string | null) {
   }
 }
 
+function normalizeUrl(input: string) {
+  return input.trim().replace(/\/+$/, "")
+}
+
+export function resolveCurrentServerUrl(input: {
+  devOverride?: string | null
+  isDev: boolean
+  hostname: string
+  origin: string
+  viteHost?: string
+  vitePort?: string
+}) {
+  if (input.hostname.includes("opencode.ai")) return "http://localhost:4096"
+  if (!input.isDev) return input.origin
+  if (input.devOverride) return normalizeUrl(input.devOverride)
+  if (input.viteHost && input.vitePort) return `http://${input.viteHost}:${input.vitePort}`
+  return input.origin
+}
+
+function isLoopbackUrl(input: string) {
+  try {
+    const host = new URL(normalizeUrl(input)).hostname
+    return host === "localhost" || host === "127.0.0.1" || host === "::1"
+  } catch {
+    return false
+  }
+}
+
+export function pickDefaultServerUrl(input: { stored: string | null; current: string }) {
+  if (!input.stored) return input.current
+  const stored = normalizeUrl(input.stored)
+  const current = normalizeUrl(input.current)
+  if (stored !== current && isLoopbackUrl(stored) && isLoopbackUrl(current)) return current
+  return input.stored
+}
+
 export function createSdkForServer({
   server,
   ...config

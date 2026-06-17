@@ -1,4 +1,5 @@
 // @refresh reload
+import "@opencode-ai/app/index.css"
 
 import {
   ACCEPTED_FILE_EXTENSIONS,

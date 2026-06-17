@@ -127,12 +127,20 @@ export async function spawnLocalServer(
     child.on("message", onMessage)
     child.on("exit", onExit)
     refreshTimeout()
-    child.postMessage({
-      type: "start",
-      hostname,
-      port,
-      password,
-      userDataPath: options.userDataPath,
+    // Per audit AUDIT-DEFECTS.md MED-35: yield a microtask so the
+    // on('message') and on('exit') listeners are fully attached to
+    // the event loop before the child processes the start message. If
+    // the sidecar is in-process and the postMessage is delivered
+    // synchronously on the same tick as the listener registration, the
+    // emitted message would otherwise be missed.
+    void Promise.resolve().then(() => {
+      child.postMessage({
+        type: "start",
+        hostname,
+        port,
+        password,
+        userDataPath: options.userDataPath,
+      })
     })
   }).catch((error) => {
     if (!exited) child.kill()

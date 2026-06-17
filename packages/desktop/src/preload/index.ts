@@ -41,16 +41,27 @@ const api: ElectronAPI = {
     subscribe: async (cb) => {
       updaterCallbacks.add(cb)
       if (updaterState) cb(updaterState)
-      if (!updaterSubscription) {
+      // Per audit AUDIT-DEFECTS.md MED-34: a shared variable overwritten
+      // by concurrent callers races two subscribe() calls. Serialize
+      // the underlying IPC subscribe so only the first caller registers
+      // the listener and subsequent callers await the same in-flight
+      // promise. Use a chained promise so each completed subscribe
+      // resets the slot.
+      const start = () => {
         ipcRenderer.on("updater-state", updaterHandler)
-        updaterSubscription = ipcRenderer.invoke("updater-subscribe")
+        updaterSubscription = ipcRenderer
+          .invoke("updater-subscribe")
+          .finally(() => {
+            updaterSubscription = undefined
+          })
+        return updaterSubscription
       }
-      await updaterSubscription
+      const pending = updaterSubscription ?? start()
+      await pending
       return () => {
         updaterCallbacks.delete(cb)
         if (updaterCallbacks.size > 0) return
         ipcRenderer.removeListener("updater-state", updaterHandler)
-        updaterSubscription = undefined
         void ipcRenderer.invoke("updater-unsubscribe")
       }
     },

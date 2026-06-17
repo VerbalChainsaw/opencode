@@ -7,6 +7,7 @@ import {
   createSessionTabs,
   focusTerminalById,
   getTabReorderIndex,
+  goalTabCloseable,
   shouldAutoOpenGoalTab,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
@@ -17,6 +18,106 @@ describe("shouldShowFileTree", () => {
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: false, opened: true })).toBe(false)
     expect(shouldShowFileTree({ desktopV2: false, showFileTree: false, opened: true })).toBe(true)
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: true, opened: true })).toBe(true)
+  })
+})
+
+describe("toastOffsetRight", () => {
+  test("keeps permission and question toasts clear of the desktop right panel", async () => {
+    const helpers = (await import("./helpers")) as unknown as {
+      toastOffsetRight?: (input: {
+        desktopSidePanelOpen: boolean
+        desktopReviewOpen: boolean
+        sessionWidth: number
+        fileTreeWidth: number
+      }) => string
+    }
+
+    expect(typeof helpers.toastOffsetRight).toBe("function")
+    expect(
+      helpers.toastOffsetRight!({
+        desktopSidePanelOpen: false,
+        desktopReviewOpen: false,
+        sessionWidth: 520,
+        fileTreeWidth: 320,
+      }),
+    ).toBe("32px")
+    expect(
+      helpers.toastOffsetRight!({
+        desktopSidePanelOpen: true,
+        desktopReviewOpen: true,
+        sessionWidth: 520,
+        fileTreeWidth: 320,
+      }),
+    ).toBe("calc(32px + 520px)")
+    expect(
+      helpers.toastOffsetRight!({
+        desktopSidePanelOpen: true,
+        desktopReviewOpen: false,
+        sessionWidth: 520,
+        fileTreeWidth: 320,
+      }),
+    ).toBe("calc(32px + 320px)")
+  })
+})
+
+describe("mission-control session shell contracts", () => {
+  test("goal tab remains a first-class fixed trigger in the side panel", async () => {
+    // The <Tabs.Content value="goal"> must appear in the JSX so the
+    // standard Kobalte tab system renders the goal panel. A regression
+    // that drops it (or typos the value) would make the tab content
+    // never mount, leaving an empty dock surface.
+    const source = await Bun.file(new URL("./session-side-panel.tsx", import.meta.url)).text()
+    expect(source).toMatch(/<Tabs\.Content\s+[^>]*value="goal"/)
+  })
+
+  test("session shell still exposes a visible ResizeHandle for the right panel", async () => {
+    // The right-panel resize handle is the user's only way to recover
+    // from an over-narrow dock. If the <ResizeHandle> tag is dropped,
+    // the user loses the ability to widen the dock at all. Assert the
+    // JSX tag is present and that it's wired to onResize (not just
+    // a decorative placeholder).
+    const source = await Bun.file(new URL("../session.tsx", import.meta.url)).text()
+    expect(source).toMatch(/<ResizeHandle[\s\S]*?onResize=/)
+  })
+
+  test("session header keeps a dedicated goal toggle in the V2 action rail", async () => {
+    // The session header exposes a `goalLabel:` field on the action
+    // state and an `aria-label` bound to it. The aria-label is the
+    // screen-reader entry point for the goal toggle button — without
+    // it, the dock is invisible to assistive tech.
+    const source = await Bun.file(
+      new URL("../../components/session/session-header.tsx", import.meta.url),
+    ).text()
+    expect(source).toContain("goalLabel:")
+    expect(source).toContain("aria-label={props.state.goalLabel}")
+    expect(source).toContain("<span>{props.state.goalLabel}</span>")
+    expect(source).toContain('<span class="text-11-medium">{language.t("session.tab.goal")}</span>')
+  })
+
+  test("goal toggle closes the side panel when goal tab is already showing", async () => {
+    // Regression: clicking the goal tab while the goal dock was already
+    // open left the side panel stuck open. The fix is in `toggleGoal`:
+    // when goalShown() is true, the handler sets the active tab to
+    // "empty" AND closes the review panel. If either step is removed,
+    // the dock won't actually collapse.
+    const source = await Bun.file(
+      new URL("../../components/session/session-header.tsx", import.meta.url),
+    ).text()
+    // The `if (goalShown())` branch must (a) set the active tab to
+    // "empty" to clear the goal content and (b) call reviewPanel.close().
+    // Both must be present, in either order.
+    const branch = source.match(/if\s*\(goalShown\(\)\)\s*\{([\s\S]*?)\n\s{2}\}/)
+    expect(branch).toBeTruthy()
+    expect(branch![1]).toContain('setActive("empty")')
+    expect(branch![1]).toMatch(/reviewPanel\.close/)
+  })
+
+  test("global toast regions use the session right-panel offset variable", async () => {
+    const localLegacy = await Bun.file(new URL("../../../../ui/src/components/toast.css", import.meta.url)).text()
+    const v2 = await Bun.file(new URL("../../../../ui/src/v2/components/toast-v2.css", import.meta.url)).text()
+
+    expect(localLegacy).toContain("var(--oc-toast-region-right, 32px)")
+    expect(v2).toContain("var(--oc-toast-region-right, 32px)")
   })
 })
 
@@ -49,6 +150,19 @@ describe("shouldAutoOpenGoalTab", () => {
         dismissedGoalID: "goal-1",
       }),
     ).toBe(true)
+  })
+})
+
+describe("goalTabCloseable", () => {
+  test("a live goal (active/paused) is NOT closeable", () => {
+    expect(goalTabCloseable("active")).toBe(false)
+    expect(goalTabCloseable("paused")).toBe(false)
+  })
+
+  test("terminal / empty / unknown states stay closeable", () => {
+    expect(goalTabCloseable("achieved")).toBe(true)
+    expect(goalTabCloseable("cleared")).toBe(true)
+    expect(goalTabCloseable(undefined)).toBe(true)
   })
 })
 
@@ -258,6 +372,24 @@ describe("createSessionTabs", () => {
           normalizeTab: (tab) => tab,
         })
         expect(result.activeTab()).toBe("goal")
+        dispose()
+      })
+    })
+
+    test('closableTab does not expose "goal" to the generic close command', () => {
+      createRoot((dispose) => {
+        const [state] = createStore({
+          active: "goal" as string | undefined,
+          all: ["goal", "context"],
+        })
+        const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+        const result = createSessionTabs({
+          tabs,
+          pathFromTab: () => undefined,
+          normalizeTab: (tab) => tab,
+        })
+        expect(result.activeTab()).toBe("goal")
+        expect(result.closableTab()).toBeUndefined()
         dispose()
       })
     })

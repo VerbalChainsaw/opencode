@@ -24,6 +24,17 @@ export function shouldShowFileTree(input: { desktopV2: boolean; showFileTree: bo
   return input.opened && (!input.desktopV2 || input.showFileTree)
 }
 
+export function toastOffsetRight(input: {
+  desktopSidePanelOpen: boolean
+  desktopReviewOpen: boolean
+  sessionWidth: number
+  fileTreeWidth: number
+}) {
+  if (!input.desktopSidePanelOpen) return "32px"
+  const panelWidth = input.desktopReviewOpen ? input.sessionWidth : input.fileTreeWidth
+  return `calc(32px + ${Math.max(0, panelWidth)}px)`
+}
+
 export function shouldAutoOpenGoalTab(input: {
   currentGoalID: string | null
   previousGoalID: string | null
@@ -32,6 +43,18 @@ export function shouldAutoOpenGoalTab(input: {
   return !!input.currentGoalID &&
     input.currentGoalID !== input.previousGoalID &&
     input.currentGoalID !== input.dismissedGoalID
+}
+
+/**
+ * Whether the Goal tab's close affordance should be offered. A *live* goal
+ * (active or paused) is NOT closeable — hiding the tab would strip away the
+ * run controls and leave the only reopen path a non-obvious header icon, which
+ * confused users. Terminal/empty/loading/corrupt states stay closeable (their
+ * run already lives in the History timeline). `status` is the polled goal
+ * status, or undefined when there's no goal state.
+ */
+export function goalTabCloseable(status: string | undefined): boolean {
+  return status !== "active" && status !== "paused"
 }
 
 export const createSessionTabs = (input: TabsInput) => {

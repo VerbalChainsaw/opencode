@@ -85,6 +85,14 @@ function getRandomBytes(length: number): Uint8Array {
     return bytes
   }
 
+  // Per audit AUDIT-DEFECTS.md MED-25: warn so the production telemetry
+  // surfaces the degraded state instead of silently accepting
+  // low-entropy IDs.
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[id] crypto.getRandomValues unavailable — falling back to Math.random(). " +
+      "Generated IDs will be low-entropy.",
+  )
   for (let i = 0; i < length; i += 1) {
     bytes[i] = Math.floor(Math.random() * 256)
   }

@@ -219,10 +219,8 @@ function DraftProviders(props: ParentProps) {
 function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
   return (
     <AppShellProviders>
-      {/*<Suspense fallback={<Loading />}>*/}
       {props.appChildren}
       {props.children}
-      {/*</Suspense>*/}
     </AppShellProviders>
   )
 }
@@ -232,6 +230,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
     <MetaProvider>
       <Font />
       <ThemeProvider
+        defaultColorScheme="dark"
         onThemeApplied={(_, mode) => {
           void window.api?.setTitlebar?.({ mode })
         }}

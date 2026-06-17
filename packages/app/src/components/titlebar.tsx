@@ -29,12 +29,12 @@ import { useSettings } from "@/context/settings"
 import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
 import { useServerSync } from "@/context/server-sync"
-import { base64Encode } from "@opencode-ai/core/util/encode"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { displayName, getProjectAvatarSource, projectForSession } from "@/pages/layout/helpers"
 import { useSessionTabAvatarState } from "@/pages/layout/project-avatar-state"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/components/titlebar-session-events"
+import { useDirectoryPicker } from "@/components/directory-picker"
 import { useGlobal } from "@/context/global"
 import { decode64 } from "@/utils/base64"
 import { ServerConnection, useServer } from "@/context/server"
@@ -80,6 +80,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const settings = useSettings()
   const theme = useTheme()
   const server = useServer()
+  const tabs = useTabs()
+  const pickDirectory = useDirectoryPicker()
   const navigate = useNavigate()
   const location = useLocation()
   const params = useParams()
@@ -100,6 +102,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     return undefined
   }
   const windowsControlsWidth = () => `${windowsControlsBaseWidth / Math.max(titlebarZoom(), 1)}px`
+  const electronTitlebarWidth = () =>
+    `min(env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()})), calc(100vw - ${windowsControlsWidth()}))`
 
   const [history, setHistory] = createStore({
     stack: [] as string[],
@@ -114,6 +118,35 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     const parts = location.pathname.replace(/\/+$/, "").split("/")
     return parts.at(-1) === "session"
   })
+  const newSessionDirectory = () => {
+    const current = decode64(params.dir)
+    if (current) return current
+    return layout.projects.list()[0]?.worktree
+  }
+  const pickProjectForNewTab = () => {
+    const connection = server.current
+    if (!connection) return
+    pickDirectory({
+      server: connection,
+      title: language.t("command.project.open"),
+      multiple: false,
+      onSelect: (result) => {
+        const directory = typeof result === "string" ? result : Array.isArray(result) ? result[0] : null
+        if (!directory) return
+        layout.projects.open(directory)
+        server.projects.touch(directory)
+        tabs.newDraft({ server: server.key, directory })
+      },
+    })
+  }
+  const openNewTab = () => {
+    const directory = newSessionDirectory()
+    if (!directory) {
+      pickProjectForNewTab()
+      return
+    }
+    tabs.newDraft({ server: server.key, directory })
+  }
 
   createEffect(() => {
     const current = path()
@@ -236,10 +269,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       style={{
         "min-height": minHeight(),
         "padding-left": mac() ? `${84 / zoom()}px` : 0,
-        width: electronWindows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
-        "max-width": electronWindows()
-          ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))`
-          : undefined,
+        width: electronWindows() ? electronTitlebarWidth() : undefined,
+        "max-width": electronWindows() ? electronTitlebarWidth() : undefined,
         "align-self": electronWindows() ? "flex-start" : undefined,
       }}
       data-tauri-drag-region
@@ -254,16 +285,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             const homeMatch = useMatch(() => "/")
             const layout = useLayout()
 
-            const newSessionHref = () => {
-              if (params.dir) return `/${params.dir}/session`
-
-              const project = layout.projects.list()[0]
-              if (!project) return "/"
-
-              return `/${base64Encode(project.worktree)}/session`
-            }
-
-            const tabs = useTabs()
             const tabsStore = tabs.store
             const tabsStoreActions = tabs
             const navigateTab = (tab: Tab) => {
@@ -328,8 +349,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               if (!detail) return
               tabsStoreActions.removeSessions(detail)
             })
-
-            const openNewTab = () => navigate(newSessionHref())
 
             command.register("tabs", () => {
               const current = currentTab()
@@ -436,7 +455,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 />
 
                 <div
-                  class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"
+                  data-component="titlebar-v2-tabs-scroll"
+                  class="flex min-w-0 flex-1 basis-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"
                   ref={tabScrollRef}
                 >
                   <div class="flex min-w-0 flex-row items-center gap-1.5">
@@ -495,46 +515,17 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                         )
                       }}
                     </For>
-                    <Show when={creating() && params.dir}>
-                      {(_) => {
-                        let ref!: HTMLDivElement
-
-                        onMount(() => {
-                          ref.scrollIntoView({ behavior: "instant" })
-                        })
-
-                        return (
-                          <>
-                            <div class="w-[1.5px] h-3 shrink-0 rounded-full bg-[var(--v2-background-bg-layer-02)]" />
-                            <NewSessionTabItem
-                              ref={ref}
-                              href={`/${params.dir}/session`}
-                              title={language.t("command.session.new")}
-                              onClose={() => {
-                                const tab = tabsStore.at(-1)
-                                if (tab) navigateTab(tab)
-                                else navigate("/")
-                              }}
-                            />
-                          </>
-                        )
-                      }}
-                    </Show>
                   </div>
                 </div>
-                <Show when={!(creating() && params.dir)}>
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="shrink-0"
-                    icon={<IconV2 name="plus" />}
-                    as="a"
-                    href={newSessionHref()}
-                    aria-label={language.t("command.session.new")}
-                  />
-                </Show>
-                <div class="flex-1" />
+                <IconButtonV2
+                  type="button"
+                  variant="ghost-muted"
+                  size="large"
+                  class="shrink-0"
+                  icon={<IconV2 name="plus" />}
+                  onClick={openNewTab}
+                  aria-label={language.t("command.session.new")}
+                />
                 <TitlebarV2Right state={v2RightState()} />
                 <Show when={windows() && !electronWindows()}>
                   <div data-tauri-decorum-tb class="flex flex-row" />
@@ -624,10 +615,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                             class="titlebar-icon w-8 h-6 p-0 box-border"
                             disabled={layout.sidebar.opened()}
                             tabIndex={layout.sidebar.opened() ? -1 : undefined}
-                            onClick={() => {
-                              if (!params.dir) return
-                              navigate(`/${params.dir}/session`)
-                            }}
+                            onClick={openNewTab}
                             aria-label={language.t("command.session.new")}
                             aria-current={creating() ? "page" : undefined}
                           />
@@ -903,48 +891,6 @@ function DraftTabItem(props: {
           props.onNavigate()
         }}
         class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-[13px] font-medium leading-5 text-v2-text-text-faint group-data-[active='true']:text-[var(--v2-text-text-base)]"
-      >
-        <span class="flex size-4 shrink-0 rotate-90 items-center justify-center">
-          <IconV2 name="edit" />
-        </span>
-        <span class="truncate leading-5">{props.title}</span>
-      </a>
-      <div class="absolute right-0 inset-y-0 flex w-7 items-center justify-center">
-        <IconButtonV2
-          size="small"
-          variant="ghost-muted"
-          onMouseDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          onClick={closeTab}
-          icon={<IconV2 name="xmark-small" />}
-          aria-label="Close tab"
-        />
-      </div>
-    </div>
-  )
-}
-
-function NewSessionTabItem(props: { ref?: HTMLDivElement; href: string; title: string; onClose: () => void }) {
-  const closeTab = (event: MouseEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
-    props.onClose()
-  }
-  return (
-    <div
-      ref={props.ref}
-      class="group relative shrink-0 flex h-7 max-w-60 flex-row items-center gap-1.5 overflow-hidden rounded-[6px] bg-[var(--v2-overlay-simple-overlay-pressed)] pl-1.5 pr-8 whitespace-nowrap focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--v2-border-border-focus)]"
-      onMouseDown={(event) => {
-        if (event.button !== 1) return
-        closeTab(event)
-      }}
-    >
-      <a
-        href={props.href}
-        aria-current="page"
-        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-[13px] font-medium leading-5 text-[var(--v2-text-text-base)]"
       >
         <span class="flex size-4 shrink-0 rotate-90 items-center justify-center">
           <IconV2 name="edit" />

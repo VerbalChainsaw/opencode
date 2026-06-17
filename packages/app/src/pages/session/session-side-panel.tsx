@@ -28,6 +28,7 @@ import {
   createOpenSessionFileTab,
   createSessionTabs,
   getTabReorderIndex,
+  goalTabCloseable,
   shouldAutoOpenGoalTab,
   shouldShowFileTree,
   type Sizing,
@@ -195,7 +196,11 @@ export function SessionSidePanel(props: {
     if (!key) return false
     return key !== goalTabState.dismissedKey
   })
+  // A live goal (active/paused) can't be closed — the run controls must stay
+  // reachable rather than hiding behind the header's reopen icon.
+  const goalCloseable = createMemo(() => goalTabCloseable(goal.store.state?.status))
   const closeGoalTab = () => {
+    if (!goalCloseable()) return
     const visibilityKey = goalVisibilityKey()
     if (visibilityKey) setGoalTabState("dismissedKey", visibilityKey)
     const goalID = currentGoalID()
@@ -304,7 +309,8 @@ export function SessionSidePanel(props: {
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !props.size.active() && !props.reviewSnap,
-          "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": settings.general.newLayoutDesigns(),
+          "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden border border-v2-border-border-muted bg-v2-background-bg-layer-00":
+            settings.general.newLayoutDesigns(),
           "flex-1": reviewOpen(),
         }}
         style={{ width: panelWidth() }}
@@ -355,23 +361,25 @@ export function SessionSidePanel(props: {
                           <Tabs.Trigger
                             value="goal"
                             closeButton={
-                              <TooltipKeybind
-                                title={language.t("common.closeTab")}
-                                keybind={command.keybind("tab.close")}
-                                placement="bottom"
-                                gutter={10}
-                              >
-                                <IconButton
-                                  icon="close-small"
-                                  variant="ghost"
-                                  class="h-5 w-5"
-                                  onClick={closeGoalTab}
-                                  aria-label={language.t("common.closeTab")}
-                                />
-                              </TooltipKeybind>
+                              goalCloseable() ? (
+                                <TooltipKeybind
+                                  title={language.t("common.closeTab")}
+                                  keybind={command.keybind("tab.close")}
+                                  placement="bottom"
+                                  gutter={10}
+                                >
+                                  <IconButton
+                                    icon="close-small"
+                                    variant="ghost"
+                                    class="h-5 w-5"
+                                    onClick={closeGoalTab}
+                                    aria-label={language.t("common.closeTab")}
+                                  />
+                                </TooltipKeybind>
+                              ) : undefined
                             }
                             hideCloseButton
-                            onMiddleClick={closeGoalTab}
+                            onMiddleClick={goalCloseable() ? closeGoalTab : undefined}
                           >
                             <div class="flex items-center gap-1.5">
                               <div>{language.t("session.tab.goal")}</div>
@@ -443,9 +451,7 @@ export function SessionSidePanel(props: {
 
                     <Show when={goalVisible()}>
                       <Tabs.Content value="goal" class="flex flex-col h-full overflow-hidden contain-strict">
-                        <Show when={activeTab() === "goal"}>
-                          <GoalPanel goal={goal} sessionID={params.id} />
-                        </Show>
+                        <GoalPanel goal={goal} sessionID={params.id} />
                       </Tabs.Content>
                     </Show>
 

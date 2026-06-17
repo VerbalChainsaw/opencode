@@ -88,6 +88,31 @@ export function homeProjectDirectories(result: string | string[] | null) {
   return Array.isArray(result) ? result : [result]
 }
 
+type HomeProjectListEntry = { id?: string; worktree: string; expanded?: boolean }
+
+export function mergeHomeProjectLists<TOpened extends HomeProjectListEntry, TKnown extends HomeProjectListEntry>(
+  opened: TOpened[],
+  known: TKnown[],
+): Array<(TOpened | TKnown) & { expanded: boolean }> {
+  const knownByWorktree = new Map(
+    known
+      .filter((project) => project.id !== "global")
+      .map((project) => [pathKey(project.worktree), project] as const),
+  )
+  const seen = new Set<string>()
+
+  return [...opened, ...known].flatMap((project) => {
+    if (project.id === "global") return []
+    const key = pathKey(project.worktree)
+    if (seen.has(key)) return []
+    seen.add(key)
+
+    const knownProject = knownByWorktree.get(key)
+    const merged = knownProject ? { ...knownProject, ...project } : project
+    return [{ ...merged, expanded: typeof project.expanded === "boolean" ? project.expanded : true }]
+  })
+}
+
 export function homeSessionServerStatus(active: boolean, status: () => { working: boolean; tint?: string }) {
   if (!active) return { working: false, tint: undefined }
   return status()

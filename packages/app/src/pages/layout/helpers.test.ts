@@ -18,6 +18,7 @@ import {
   homeProjectDirectories,
   homeSessionServerStatus,
   latestRootSession,
+  mergeHomeProjectLists,
   toggleHomeProjectSelection,
 } from "./helpers"
 import { pathKey } from "@/utils/path-key"
@@ -293,6 +294,22 @@ describe("layout workspace helpers", () => {
     expect(homeProjectDirectories(["/first", "/second"])).toEqual(["/first", "/second"])
     expect(homeProjectDirectories("/only")).toEqual(["/only"])
     expect(homeProjectDirectories(null)).toEqual([])
+  })
+
+  test("merges backend-known projects into the home project list", () => {
+    const result = mergeHomeProjectLists(
+      [{ worktree: "C:\\repo\\pinned", expanded: false }],
+      [
+        { id: "global", worktree: "/" },
+        { id: "known-a", worktree: "C:\\repo\\pinned", name: "Pinned repo" },
+        { id: "known-b", worktree: "C:\\repo\\opengoal", name: "OpenGoal" },
+      ],
+    )
+
+    expect(result).toEqual([
+      { worktree: "C:\\repo\\pinned", expanded: false, id: "known-a", name: "Pinned repo" },
+      { id: "known-b", worktree: "C:\\repo\\opengoal", name: "OpenGoal", expanded: true },
+    ])
   })
 
   test("hides status derived from an inactive server", () => {

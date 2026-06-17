@@ -53,6 +53,7 @@ import {
   focusTerminalById,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
+  toastOffsetRight,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -287,6 +288,22 @@ export default function Page() {
     return `calc(100% - ${layout.fileTree.width()}px)`
   })
   const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
+
+  createEffect(() => {
+    document.documentElement.style.setProperty(
+      "--oc-toast-region-right",
+      toastOffsetRight({
+        desktopSidePanelOpen: desktopSidePanelOpen(),
+        desktopReviewOpen: desktopReviewOpen(),
+        sessionWidth: layout.session.width(),
+        fileTreeWidth: layout.fileTree.width(),
+      }),
+    )
+  })
+
+  onCleanup(() => {
+    document.documentElement.style.removeProperty("--oc-toast-region-right")
+  })
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -1828,11 +1845,20 @@ export default function Page() {
           </div>
 
           <Show when={desktopReviewOpen()}>
-            <div onPointerDown={() => size.start()}>
+            <div
+              class="absolute inset-y-0 right-0 z-30 w-0 overflow-visible"
+              onPointerDown={() => size.start()}
+            >
+              {/* resize-handle.css absolutely positions the handle to straddle
+                  THIS wrapper's right edge. The wrapper itself must be pinned to
+                  the conversation panel's right edge and span full height —
+                  the panel is `flex flex-col`, so a `relative` wrapper collapsed
+                  into a zero-height strip at the BOTTOM and the handle had no
+                  grabbable area (the real "can't resize" cause). This mirrors the
+                  working sidebar handle in layout.tsx: absolute, inset-y-0,
+                  right-0, w-0 + overflow-visible so the 8px handle overhangs the
+                  boundary and stays hittable above the dock. */}
               <ResizeHandle
-                classList={{
-                  "-right-1": settings.general.newLayoutDesigns(),
-                }}
                 direction="horizontal"
                 size={layout.session.width()}
                 min={450}

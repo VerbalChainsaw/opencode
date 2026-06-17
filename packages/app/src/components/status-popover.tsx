@@ -8,6 +8,7 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { useGlobal } from "@/context/global"
+import { statusDotTone } from "./status-popover-tone"
 
 const Body = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverBody })))
 const ServerBody = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverServerBody })))
@@ -26,8 +27,15 @@ export function StatusPopover() {
     if (failed) return "critical" as const
     if (warn) return "warning" as const
   })
-  const serverHealthy = () => global.servers.health[server.key]?.healthy === true
   const healthy = createMemo(() => global.servers.health[server.key]?.healthy === true && !mcpIssue())
+  const tone = createMemo(() =>
+    statusDotTone({
+      ready: ready(),
+      healthy: healthy(),
+      serverHealth: global.servers.health[server.key]?.healthy,
+      issue: mcpIssue(),
+    }),
+  )
 
   return (
     <Popover
@@ -48,10 +56,10 @@ export function StatusPopover() {
           <div
             classList={{
               "absolute -top-px -right-px size-1.5 rounded-full": true,
-              "bg-icon-success-base": ready() && healthy(),
-              "bg-icon-warning-base": ready() && serverHealthy() && mcpIssue() === "warning",
-              "bg-icon-critical-base": serverHealthy() || (ready() && serverHealthy() && mcpIssue() === "critical"),
-              "bg-border-weak-base": serverHealthy() || !ready(),
+              "bg-icon-success-base": tone() === "success",
+              "bg-icon-warning-base": tone() === "warning",
+              "bg-icon-critical-base": tone() === "critical",
+              "bg-border-weak-base": tone() === "weak",
             }}
           />
         </div>
@@ -160,14 +168,19 @@ function StatusPopoverBody(props: { shown: boolean; children: JSX.Element }) {
 }
 
 function StatusPopoverView(props: { state: StatusPopoverState }) {
+  const tone = () =>
+    statusDotTone({
+      ready: props.state.ready,
+      healthy: props.state.healthy,
+      serverHealth: props.state.serverHealth,
+      issue: props.state.issue,
+    })
   const statusDotClass = () => ({
     "absolute rounded-full": true,
-    "bg-icon-success-base": props.state.ready && props.state.healthy,
-    "bg-icon-warning-base": props.state.ready && props.state.serverHealth === true && props.state.issue === "warning",
-    "bg-icon-critical-base":
-      props.state.serverHealth === false ||
-      (props.state.ready && props.state.serverHealth === true && props.state.issue === "critical"),
-    "bg-border-weak-base": props.state.serverHealth === undefined || !props.state.ready,
+    "bg-icon-success-base": tone() === "success",
+    "bg-icon-warning-base": tone() === "warning",
+    "bg-icon-critical-base": tone() === "critical",
+    "bg-border-weak-base": tone() === "weak",
   })
 
   const popoverProps = {

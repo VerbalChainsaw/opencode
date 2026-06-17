@@ -1,12 +1,14 @@
-import { createEffect, createMemo, onMount, untrack } from "solid-js"
+import { createEffect, createMemo, on, onMount, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useSearchParams } from "@solidjs/router"
-import { NewSessionDesignView } from "@/components/session"
+import { NewSessionDesignView } from "@/components/session/session-new-design-view"
 import { useComments } from "@/context/comments"
+import { useLocal } from "@/context/local"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
+import { resetSessionModel } from "@/pages/session/session-model-helpers"
 
 /**
  * The `/new-session` draft page. Unlike `session.tsx`, this only renders the prompt
@@ -15,10 +17,11 @@ import { createSessionComposerState, SessionComposerRegion } from "@/pages/sessi
  */
 export default function NewSessionPage() {
   const prompt = usePrompt()
+  const local = useLocal()
   const sdk = useSDK()
   const sync = useSync()
   const comments = useComments()
-  const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
+  const [searchParams, setSearchParams] = useSearchParams<{ draftId?: string; prompt?: string }>()
 
   let inputRef: HTMLDivElement | undefined
 
@@ -44,6 +47,13 @@ export default function NewSessionPage() {
       setSearchParams({ ...searchParams, prompt: undefined })
     })
   })
+
+  createEffect(
+    on(
+      () => searchParams.draftId ?? "new-session",
+      () => resetSessionModel(local),
+    ),
+  )
 
   onMount(() => {
     requestAnimationFrame(() => inputRef?.focus())

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync, rmSync } from "node:fs"
-import * as http from "node:http"
+import Http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
@@ -49,6 +49,10 @@ const APP_IDS: Record<string, string> = {
   beta: "ai.opencode.desktop.beta",
   prod: "ai.opencode.desktop",
 }
+type NodeHttpWithEnvProxy = typeof Http & {
+  setGlobalProxyFromEnv: () => void
+}
+
 const TEST_ONBOARDING = process.env.OPENCODE_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
@@ -61,7 +65,7 @@ const pendingDeepLinks: string[] = []
 function useEnvProxy() {
   try {
     // Electron 41.2 runs Node 24.14.1; latest @types/node@24 is 24.12.2.
-    ;(http as any).setGlobalProxyFromEnv()
+    ;(Http as NodeHttpWithEnvProxy).setGlobalProxyFromEnv()
   } catch (error) {
     logger.warn("failed to load proxy environment", error)
   }
