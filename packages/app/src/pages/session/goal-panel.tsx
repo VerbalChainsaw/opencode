@@ -930,9 +930,32 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     setNewCommand(draft.command)
     setShowCreate(true)
   }
+  // Seed the save-as / edit draft from a template (or blank for a new method).
+  // `open` controls whether the deep-edit fields are revealed; the
+  // "Template name + Save template" row is always visible and reads this draft.
+  const seedActionDraft = (template: GoalTemplateButton | undefined, open: boolean) => {
+    const c = template?.constraints
+    setActionDraft({
+      open,
+      sourceID: template?.id ?? "",
+      id: template ? (template.builtin ? `${template.id}-custom` : template.id) : uniqueTemplateID("custom-action"),
+      label: template?.label ?? "",
+      prompt: template?.condition ?? "",
+      command: template?.command ?? "",
+      turns: typeof c?.maxTurns === "number" ? c.maxTurns : 5,
+      minutes: typeof c?.maxTimeMinutes === "number" ? c.maxTimeMinutes : 20,
+      category: template ? inferActionCategory(template) : "Custom",
+      gate: template ? inferActionGate(template) : "required",
+      tone: template?.tone ?? inferredActionTone(template ?? {}),
+      elevation: template?.elevation ?? "flat",
+    })
+  }
   const selectActionForView = (template: GoalTemplateButton) => {
     setSelectedTemplateID(template.id)
     setTemplateVars(templateVariableDefaults(template))
+    // Seed the save-as draft (collapsed) so the always-visible
+    // "Template name + Save template" row works without opening the editor.
+    seedActionDraft(template, false)
   }
   createEffect(() => {
     const list = filteredTemplates()
@@ -981,23 +1004,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (!Number.isFinite(value)) return
     setChainDraft("master", field, Math.max(1, value))
   }
-  const openActionEditor = (template?: GoalTemplateButton) => {
-    const c = template?.constraints
-    setActionDraft({
-      open: true,
-      sourceID: template?.id ?? "",
-      id: template ? (template.builtin ? `${template.id}-custom` : template.id) : uniqueTemplateID("custom-action"),
-      label: template?.label ?? "",
-      prompt: template?.condition ?? "",
-      command: template?.command ?? "",
-      turns: typeof c?.maxTurns === "number" ? c.maxTurns : 5,
-      minutes: typeof c?.maxTimeMinutes === "number" ? c.maxTimeMinutes : 20,
-      category: template ? inferActionCategory(template) : "Custom",
-      gate: template ? inferActionGate(template) : "required",
-      tone: template?.tone ?? inferredActionTone(template ?? {}),
-      elevation: template?.elevation ?? "flat",
-    })
-  }
+  const openActionEditor = (template?: GoalTemplateButton) => seedActionDraft(template, true)
   const editTemplateDraft = (template: GoalTemplateButton) => {
     openActionEditor(template)
   }
@@ -1793,16 +1800,34 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               </Show>
                             </div>
 
+                            {/* Always-visible save-as: name the current method and save it as
+                                a user method. "Edit draft" reveals the deeper editor below. */}
+                            <div class="flex flex-wrap items-end gap-2 border-t border-border-base pt-3">
+                              <TextField
+                                value={actionDraft.id}
+                                onChange={(value) => setActionDraft("id", value)}
+                                label={language.t("session.goal.template.saveName")}
+                                placeholder={language.t("session.goal.template.savePlaceholder")}
+                                disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
+                                class="min-w-[12rem] flex-1"
+                              />
+                              <ActionButton
+                                label={language.t("session.goal.template.save")}
+                                variant="secondary"
+                                busy={busy() === "template"}
+                                disabled={
+                                  busy() !== null ||
+                                  !props.sessionID ||
+                                  goalCommandUnavailable() ||
+                                  !actionDraft.prompt.trim() ||
+                                  !TEMPLATE_SAVE_ID_RE.test(actionDraft.id.trim())
+                                }
+                                onClick={() => void saveTemplateDraft()}
+                              />
+                            </div>
+
                             <Show when={actionDraft.open}>
-                              <div class="grid grid-cols-1 gap-2 border-t border-border-base pt-3">
-                                <TextField
-                                  value={actionDraft.id}
-                                  onChange={(value) => setActionDraft("id", value)}
-                                  label={language.t("session.goal.template.saveName")}
-                                  placeholder={language.t("session.goal.template.savePlaceholder")}
-                                  disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
-                                  class="w-full"
-                                />
+                              <div class="grid grid-cols-1 gap-2 rounded-lg border border-border-base bg-background-panel/50 p-3">
                                 <TextField
                                   value={actionDraft.label}
                                   onChange={(value) => setActionDraft("label", value)}
@@ -1866,19 +1891,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   </label>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2">
-                                  <ActionButton
-                                    label={language.t("session.goal.template.save")}
-                                    variant="secondary"
-                                    busy={busy() === "template"}
-                                    disabled={
-                                      busy() !== null ||
-                                      !props.sessionID ||
-                                      goalCommandUnavailable() ||
-                                      !actionDraft.prompt.trim() ||
-                                      !TEMPLATE_SAVE_ID_RE.test(actionDraft.id.trim())
-                                    }
-                                    onClick={() => void saveTemplateDraft()}
-                                  />
                                   <ActionButton
                                     label={language.t("session.goal.action.cancel")}
                                     variant="ghost"
