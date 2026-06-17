@@ -460,20 +460,6 @@ const ACTION_CATEGORIES = ["All", ...GOAL_TEMPLATE_CATEGORIES] as const
 
 type ActionCategory = (typeof ACTION_CATEGORIES)[number]
 
-const ACTION_TONE_LABELS: Record<GoalTemplateTone, string> = {
-  violet: "Violet",
-  blue: "Blue",
-  orange: "Orange",
-  emerald: "Emerald",
-  fuchsia: "Fuchsia",
-  sky: "Sky",
-}
-
-const ACTION_ELEVATION_LABELS: Record<GoalTemplateElevation, string> = {
-  flat: "Flat",
-  raised: "Raised",
-}
-
 interface ActionDescriptor {
   label?: string
   id?: string
@@ -486,10 +472,6 @@ interface ActionDescriptor {
   category?: GoalTemplateCategory
   gate?: GoalTemplateGate
   builtin?: boolean
-}
-
-function isActionCategory(value: string): value is ActionCategory {
-  return (ACTION_CATEGORIES as readonly string[]).includes(value)
 }
 
 function actionLabelText(input: ActionDescriptor) {
@@ -545,15 +527,6 @@ function actionToneClass(input: ActionDescriptor) {
   return "border-violet-400/40 bg-violet-500/15 text-violet-200"
 }
 
-function actionToneSwatchClass(tone: GoalTemplateTone) {
-  if (tone === "orange") return "border-orange-400/70 bg-orange-400"
-  if (tone === "emerald") return "border-emerald-400/70 bg-emerald-400"
-  if (tone === "fuchsia") return "border-fuchsia-400/70 bg-fuchsia-400"
-  if (tone === "sky") return "border-sky-400/70 bg-sky-400"
-  if (tone === "blue") return "border-blue-400/70 bg-blue-400"
-  return "border-violet-400/70 bg-violet-400"
-}
-
 function actionSurfaceClass(input: ActionDescriptor) {
   return input.elevation === "raised"
     ? "shadow-[0_10px_24px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.04]"
@@ -605,16 +578,8 @@ function stepGateLabel(input: ActionDescriptor): string {
   return ACTION_GATE_LABELS[inferActionGate(input)]
 }
 
-function runtimeCheckLabel(input: ActionDescriptor) {
-  return hasVerificationCommand(input) ? "Shell command" : "GOAL_COMPLETE marker"
-}
-
 function completionRuleLabel(input: ActionDescriptor) {
   return hasVerificationCommand(input) ? "Done when command exits 0" : "Done when GOAL_COMPLETE is written"
-}
-
-function completionRuleShortLabel(input: ActionDescriptor) {
-  return hasVerificationCommand(input) ? "command" : "marker"
 }
 
 function completionRuleClass(input: ActionDescriptor) {
@@ -932,20 +897,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         completionRuleLabel(template),
       ].some((value) => cleanText(value).toLowerCase().includes(query))
     })
-  })
-  const categoryCounts = createMemo(() => {
-    const counts: Record<ActionCategory, number> = {
-      All: templates().length,
-      Planning: 0,
-      Building: 0,
-      Debugging: 0,
-      Testing: 0,
-      Review: 0,
-      Documentation: 0,
-      Custom: 0,
-    }
-    for (const template of templates()) counts[inferActionCategory(template)] += 1
-    return counts
   })
   const selectedTemplate = createMemo(() => templates().find((t) => t.id === selectedTemplateID()) ?? null)
   const selectedTemplateVariables = createMemo(() => Object.entries(selectedTemplate()?.variables ?? {}))
