@@ -314,6 +314,21 @@ export interface ChainData {
   current: number
 }
 
+type ActionDraftState = {
+  sourceID: string
+  id: string
+  label: string
+  prompt: string
+  command: string
+  turns: number
+  minutes: number
+  category: GoalTemplateCategory
+  tone: GoalTemplateTone
+  elevation: GoalTemplateElevation
+  skills: string[]
+  model: string
+}
+
 interface HistoryRun {
   summary: {
     goalID: string
@@ -1106,15 +1121,6 @@ function chainStepRunBadgeStyle(runState: ChainStepRunState, input: ActionDescri
   return chainStepBadgeStyle(input)
 }
 
-function chainStepRunLabel(runState: ChainStepRunState, input: ActionDescriptor) {
-  if (runState === "running") return "Running"
-  if (runState === "paused") return "Paused"
-  if (runState === "stalled") return "Waiting"
-  if (runState === "done") return "Done"
-  if (runState === "queued") return "Pending"
-  return hasVerificationCommand(input) ? "Cmd" : "Agent"
-}
-
 function runningStatusPanelStyle(status: GoalState["status"] | "stalled"): JSX.CSSProperties {
   if (status === "stalled") {
     return {
@@ -1360,20 +1366,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [templateCategory, setTemplateCategory] = createSignal<ActionCategory>("All")
   const [chainErrors, setChainErrors] = createSignal<ChainValidationError[]>([])
   const [chainDraft, setChainDraft] = createStore<ChainDraftState>(readStoredChainDraft(props.sessionID))
-  const [actionDraft, setActionDraft] = createStore<{
-    sourceID: string
-    id: string
-    label: string
-    prompt: string
-    command: string
-    turns: number
-    minutes: number
-    category: GoalTemplateCategory
-    tone: GoalTemplateTone
-    elevation: GoalTemplateElevation
-    skills: string[]
-    model: string
-  }>({
+  const [editingChainStepID, setEditingChainStepID] = createSignal<string | null>(null)
+  const [actionDraft, setActionDraft] = createStore<ActionDraftState>({
     sourceID: "",
     id: "",
     label: "",
@@ -1638,6 +1632,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     })
   }
   const selectActionForView = (template: GoalTemplateButton) => {
+    setEditingChainStepID(null)
     setSelectedTemplateID(template.id)
     setTemplateVars(templateVariableDefaults(template))
     seedActionDraft(template)
@@ -1722,6 +1717,27 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (!key) return ""
     return modelLabelByKey().get(key) ?? (isGoalPinnedModel(model) ? `${model.providerID} / ${model.modelID}` : key)
   }
+  const sessionModelLabel = () => {
+    const configured = cleanText(sync.data.config.model).trim()
+    const parts = configured.includes("/") ? configured.split("/") : []
+    const providerID = cleanText(parts[0]).trim()
+    const modelID = cleanText(parts.slice(1).join("/")).trim()
+    if (providerID && modelID) {
+      return modelLabel({ providerID, modelID }) || `${providerID} / ${modelID}`
+    }
+    return "Session default model"
+  }
+  const stepRuntimeModelLabel = (step: GoalChainDraftStep) => modelLabel(step.model) || sessionModelLabel()
+  const stepRuntimeSkillLabel = (step: GoalChainDraftStep) => {
+    const count = step.skills?.length ?? 0
+    if (count <= 0) return "No pinned skills"
+    if (count === 1) return step.skills?.[0] ?? "1 skill"
+    return `${count} skills`
+  }
+  const stepRuntimeTitle = (step: GoalChainDraftStep) => {
+    const skills = step.skills?.length ? step.skills.join(", ") : "no pinned skills"
+    return `${stepRuntimeModelLabel(step)}; ${skills}; ${completionRuleLabel(step)}`
+  }
   const skillOptionsForDraft = createMemo(() => {
     const seen = new Set<string>()
     const out: SkillOption[] = []
@@ -1747,6 +1763,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     })
   }
   const openActionEditor = (template?: GoalTemplateButton) => {
+    setEditingChainStepID(null)
     if (!template) {
       setSelectedTemplateID(null)
       setTemplateVars({})
@@ -1755,6 +1772,27 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   }
   const editTemplateDraft = (template: GoalTemplateButton) => {
     openActionEditor(template)
+  }
+  const draftFromChainStep = (step: GoalChainDraftStep): ActionDraftState => ({
+    sourceID: step.actionID || step.id,
+    id: step.actionID || step.id,
+    label: step.label,
+    prompt: step.condition,
+    command: step.command,
+    turns: step.maxTurns,
+    minutes: step.maxTimeMinutes,
+    category: step.category ?? inferActionCategory(step),
+    tone: step.tone ?? inferredActionTone(step),
+    elevation: step.elevation ?? "flat",
+    skills: step.skills ? [...step.skills] : [],
+    model: modelKey(step.model),
+  })
+  const editChainStepDraft = (step: GoalChainDraftStep) => {
+    if (liveGoal()) return
+    setSelectedTemplateID(null)
+    setTemplateVars({})
+    setEditingChainStepID(step.id)
+    setActionDraft(draftFromChainStep(step))
   }
   const actionDraftTemplate = (): ActionDraftTemplate => {
     const id = actionDraft.id.trim() || actionIDFromLabel(actionDraft.label)
@@ -1817,6 +1855,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const step = chainStepFromTemplate(template, templateVars(), `${template.id}-${Date.now()}-${chainDraft.steps.length}`)
     if (!step.condition.trim()) return
     setChainDraft("steps", chainDraft.steps.length, step)
+  }
+  const updateEditingChainStep = () => {
+    const editingID = editingChainStepID()
+    if (!editingID || liveGoal()) return
+    const index = chainDraft.steps.findIndex((step) => step.id === editingID)
+    if (index === -1) {
+      setEditingChainStepID(null)
+      return
+    }
+    const template = actionDraftTemplate()
+    if (!template.condition.trim()) return
+    const step = chainStepFromTemplate(template, templateVars(), editingID)
+    setChainDraft("steps", index, step)
   }
   const actionDraftPayload = () => {
     const template = actionDraftTemplate()
@@ -2272,10 +2323,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                 <div
                   data-component="goal-playbook-budget-strip"
-                  class="mt-3 flex items-center gap-4 overflow-hidden rounded-lg border border-border-base bg-background-base/70 px-3 py-2 text-11-regular text-text-weaker shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                  class="mt-2 flex items-center gap-3 px-1 text-11-regular text-text-weaker"
                 >
-                  <span>Turns: <strong class="tabular-nums text-text-base">{currentGoalTurns()}/{maxGoalTurns()}</strong></span>
-                  <span>Time: <strong class="tabular-nums text-text-base">{currentGoalMinutes()}m/{maxGoalMinutes()}m</strong></span>
+                  <span>Turns <span class="tabular-nums text-text-base">{currentGoalTurns()}/{maxGoalTurns()}</span></span>
+                  <span>Time <span class="tabular-nums text-text-base">{currentGoalMinutes()}m/{maxGoalMinutes()}m</span></span>
                   <span class="ml-auto">{budgetSummary().stepCount} step{budgetSummary().stepCount !== 1 ? "s" : ""}</span>
                 </div>
               </div>
@@ -2416,17 +2467,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterTurns())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTurns", event.currentTarget.value)}
-                        class="h-6 w-10 rounded border px-1 text-center text-12-medium tabular-nums outline-none"
-                        style={numericHighlightStyle("violet")}
+                        class="h-5 w-10 rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
                       />
                     </label>
                     <label
                       data-component="goal-chain-compact-stat"
-                      class="flex h-9 min-w-0 items-center gap-1.5 rounded-md border border-violet-400/24 bg-violet-500/[0.08] px-2"
+                      class="flex min-w-0 items-center gap-1"
                       title={chainLimitSummary()}
                     >
-                      <span class="text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-100/72">
-                        {language.t("session.goal.chainBuilder.stat.time")}
+                      <span class="text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-200/72">
+                        {language.t("session.goal.chainBuilder.stat.turns")}
                       </span>
                       <input
                         aria-label="Chain time limit"
@@ -2435,8 +2485,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterMinutes())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTimeMinutes", event.currentTarget.value)}
-                        class="h-6 w-10 rounded border px-1 text-center text-12-medium tabular-nums outline-none"
-                        style={numericHighlightStyle("violet")}
+                        class="h-5 w-10 rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
                       />
                       <span class="text-[10px] font-semibold text-violet-100/62">m</span>
                     </label>
@@ -2738,7 +2787,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-component="goal-chain-step-row"
                                 data-density="compact-chain-row"
                                 data-run-state={stepRunState(i())}
-                                class={`group grid min-w-[790px] grid-cols-[30px_42px_minmax(220px,1fr)_98px_172px_150px] items-center gap-2 rounded-lg border px-2.5 py-2.5 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
+                                class={`group grid min-w-[790px] grid-cols-[30px_40px_minmax(220px,1fr)_96px_154px_194px] items-center gap-2 rounded-lg border px-2.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
                                 classList={{
                                   "ring-2 ring-emerald-300/45 shadow-[0_0_22px_rgba(16,185,129,0.18)]":
                                     stepRunState(i()) === "running",
@@ -2756,10 +2805,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   class="relative flex h-10 items-center justify-center"
                                   aria-hidden
                                 >
-                                  <span class="absolute inset-y-[-10px] left-1/2 border-l border-violet-400/18" />
                                   <span
                                     data-component="goal-chain-step-number"
-                                    class="relative flex h-7 w-7 items-center justify-center rounded-md border text-11-medium font-semibold tabular-nums shadow-[0_0_10px_rgba(0,0,0,0.16)]"
+                                    class="relative z-10 flex h-7 w-7 items-center justify-center rounded-md border text-11-medium font-semibold tabular-nums shadow-[0_0_10px_rgba(0,0,0,0.16)]"
                                     style={chainStepRunBadgeStyle(stepRunState(i()), step)}
                                   >
                                     {i() + 1}
@@ -2810,12 +2858,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 >
                                   {inferActionCategory(step)}
                                 </span>
-                                <span data-component="goal-chain-step-budget" class="grid grid-cols-2 gap-1.5">
+                                <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-2 gap-1">
                                   <label
-                                    class="grid h-10 grid-cols-[minmax(0,1fr)_44px] items-center gap-1 rounded-md border px-2"
-                                    style={chainStepSoftStyle(step)}
+                                    class="grid h-6 grid-cols-[42px_32px] items-center gap-1"
                                   >
-                                    <span class="truncate text-[9px] font-semibold uppercase tracking-[0.08em] opacity-75">Turns</span>
+                                    <span class="text-[9px] font-semibold uppercase opacity-75">Turns</span>
                                     <input
                                       aria-label={`Turns for ${step.label}`}
                                       type="number"
@@ -2825,14 +2872,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
                                       }
-                                      class="h-7 w-full rounded-md border border-border-base bg-background-base/65 px-1 text-center text-12-medium font-semibold tabular-nums text-text-base outline-none"
+                                      class="h-5 w-full rounded px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base bg-transparent outline-none"
                                     />
                                   </label>
                                   <label
-                                    class="grid h-10 grid-cols-[minmax(0,1fr)_44px] items-center gap-1 rounded-md border px-2"
-                                    style={chainStepSoftStyle(step)}
+                                    class="grid h-6 grid-cols-[30px_40px] items-center gap-1"
                                   >
-                                    <span class="truncate text-[9px] font-semibold uppercase tracking-[0.08em] opacity-75">Time</span>
+                                    <span class="text-[9px] font-semibold uppercase opacity-75">Min</span>
                                     <input
                                       aria-label={`Minutes for ${step.label}`}
                                       type="number"
@@ -2842,18 +2888,35 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
                                       }
-                                      class="h-7 w-full rounded-md border border-border-base bg-background-base/65 px-1 text-center text-12-medium font-semibold tabular-nums text-text-base outline-none"
+                                      class="h-6 w-full rounded border border-border-base bg-background-base/65 px-0.5 text-center text-12-medium font-semibold tabular-nums text-text-base outline-none"
                                     />
                                   </label>
                                 </span>
-                                <span data-component="goal-chain-step-actions" class="flex shrink-0 items-center justify-end gap-0.5 opacity-100">
+                                <span data-component="goal-chain-step-actions" class="flex min-w-0 shrink-0 items-center justify-end gap-1 opacity-100">
                                   <span
-                                    class="mr-1 flex h-7 min-w-14 items-center justify-center rounded-md border px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em]"
-                                    style={chainStepRunBadgeStyle(stepRunState(i()), step)}
-                                    title={completionRuleLabel(step)}
+                                    data-component="goal-chain-step-runtime"
+                                    class="mr-0.5 grid h-9 min-w-0 flex-1 grid-rows-2 justify-items-start rounded-md border px-1.5 py-0.5 text-left"
+                                    style={chainStepSoftStyle(step)}
+                                    title={stepRuntimeTitle(step)}
                                   >
-                                    {chainStepRunLabel(stepRunState(i()), step)}
+                                    <span class="max-w-full truncate text-[10px] font-semibold leading-4 text-text-base">
+                                      {stepRuntimeModelLabel(step)}
+                                    </span>
+                                    <span class="max-w-full truncate text-[9px] font-semibold uppercase leading-3 text-text-weaker">
+                                      {stepRuntimeSkillLabel(step)}
+                                    </span>
                                   </span>
+                                  <button
+                                    type="button"
+                                    aria-label={`Edit ${step.label}`}
+                                    title={language.t("session.goal.template.editRunStep")}
+                                    class={inlineCommandButtonClass("move")}
+                                    style={inlineCommandButtonStyle("edit")}
+                                    disabled={busy() !== null || !!liveGoal()}
+                                    onClick={() => editChainStepDraft(step)}
+                                  >
+                                    <IconV2 name="edit" size="small" />
+                                  </button>
                                   <button
                                     type="button"
                                     aria-label="Move up"
@@ -3159,11 +3222,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               onClick={() => void saveTemplateDraft()}
                             />
                             <ActionButton
-                              label={language.t("session.goal.template.addToChain")}
+                              label={
+                                editingChainStepID()
+                                  ? language.t("session.goal.template.updateRunStep")
+                                  : language.t("session.goal.template.addToChain")
+                              }
                               variant="primary"
                               class="col-span-2"
-                              disabled={busy() !== null || !actionDraft.prompt.trim()}
-                              onClick={addActionDraftToChain}
+                              disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
+                              onClick={() => (editingChainStepID() ? updateEditingChainStep() : addActionDraftToChain())}
                             />
                             <ActionButton
                               label={language.t("session.goal.template.duplicate")}
@@ -3226,14 +3293,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                         <div
                           data-component="goal-action-editor-limits"
-                          class="grid grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5 rounded-lg border px-2.5 py-2"
+                          class="grid grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-2"
                           style={actionLibraryRowStyle(actionDraft)}
                         >
                           <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
                             Limits
                           </div>
-                            <label class="grid h-8 grid-cols-[minmax(0,1fr)_42px] items-center gap-1.5 rounded-md border border-blue-300/45 bg-blue-500/14 px-2">
-                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-100/80">
+                            <label class="grid h-6 grid-cols-[minmax(0,1fr)_42px] items-center gap-1 px-2">
+                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-text-weaker">
                                 Turns
                               </span>
                               <input
@@ -3247,11 +3314,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
                                   )
                                 }
-                                class="h-5 w-full rounded border border-blue-200/25 bg-blue-950/20 text-center text-12-medium tabular-nums text-blue-50 outline-none"
+                                class="h-5 w-full rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
                               />
                             </label>
-                            <label class="grid h-8 grid-cols-[minmax(0,1fr)_42px] items-center gap-1.5 rounded-md border border-violet-300/45 bg-violet-500/14 px-2">
-                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-100/80">
+                            <label class="grid h-6 grid-cols-[minmax(0,1fr)_42px] items-center gap-1 px-2">
+                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-text-weaker">
                                 Minutes
                               </span>
                               <input
@@ -3265,7 +3332,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
                                   )
                                 }
-                                class="h-5 w-full rounded border border-violet-200/25 bg-violet-950/20 text-center text-12-medium tabular-nums text-violet-50 outline-none"
+                                class="h-5 w-full rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
                               />
                             </label>
                         </div>
