@@ -140,68 +140,7 @@ export interface GoalTemplateVariable {
 
 /** Built-in method prompts for the dock. These are deliberately general
  *  coding-method recipes, not project-specific commands like "npm test". */
-export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
-  {
-    id: "plan",
-    label: "Plan",
-    description: "Map the work before editing",
-    condition:
-      "Create a concise implementation plan for {scope}. Identify the files, sequence, risks, and verification needed before changing code.",
-    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current coding request" } },
-    builtin: true,
-  },
-  {
-    id: "build",
-    label: "Build",
-    description: "Implement the planned change",
-    condition:
-      "Implement {scope} using the repository's existing patterns. Keep edits scoped, update nearby tests, and preserve unrelated work.",
-    constraints: { maxTurns: 8, maxTimeMinutes: 30 },
-    variables: { scope: { description: "Scope", default: "the planned coding change" } },
-    builtin: true,
-  },
-  {
-    id: "debug",
-    label: "Debug",
-    description: "Reproduce and isolate a failure",
-    condition:
-      "Debug {scope}. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
-    constraints: { maxTurns: 8, maxTimeMinutes: 30 },
-    variables: { scope: { description: "Scope", default: "the reported failure" } },
-    builtin: true,
-  },
-  {
-    id: "validate",
-    label: "Validate",
-    description: "Prove the change works",
-    condition:
-      "Validate {scope}. Run the relevant tests, typechecks, builds, or UI checks; inspect failures; and fix regressions until the verification set is clean.",
-    constraints: { maxTurns: 4, maxTimeMinutes: 15 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
-    builtin: true,
-  },
-  {
-    id: "typecheck",
-    label: "Typecheck",
-    description: "Run and fix type-level verification",
-    condition:
-      "Typecheck {scope}. Find the repository's relevant typecheck command, run it, fix type errors without broad refactors, and re-run until clean.",
-    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
-    builtin: true,
-  },
-  {
-    id: "commit",
-    label: "Commit",
-    description: "Package verified work cleanly",
-    condition:
-      "Prepare a commit for {scope}. Review the diff, ensure verification has passed, stage only relevant files, and write a concise conventional commit message.",
-    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
-    builtin: true,
-  },
-]
+export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = []
 
 const DEFAULT_TEMPLATE_BY_ID = new Map(DEFAULT_TEMPLATE_BUTTONS.map((template) => [template.id, template]))
 const TEMPLATE_ID_RE = /^[A-Za-z0-9_-]+$/

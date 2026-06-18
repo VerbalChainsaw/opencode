@@ -216,35 +216,12 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     expect(templateButtonsFromSnapshot({ version: 1, templates: [] })).toEqual(DEFAULT_TEMPLATE_BUTTONS)
   })
 
-  test("default built-ins are reusable coding-method prompt templates, not project-specific shortcuts", async () => {
+  test("default built-ins are empty — only user-created actions appear in the library", async () => {
     const { DEFAULT_TEMPLATE_BUTTONS } = await load()
-    expect(DEFAULT_TEMPLATE_BUTTONS.map((template) => template.id)).toEqual([
-      "plan",
-      "build",
-      "debug",
-      "validate",
-      "typecheck",
-      "commit",
-    ])
-    expect(DEFAULT_TEMPLATE_BUTTONS.map((template) => template.label)).toEqual([
-      "Plan",
-      "Build",
-      "Debug",
-      "Validate",
-      "Typecheck",
-      "Commit",
-    ])
-    expect(DEFAULT_TEMPLATE_BUTTONS.some((template) => template.command)).toBe(false)
-    expect(DEFAULT_TEMPLATE_BUTTONS.every((template) => template.condition?.includes("{scope}"))).toBe(true)
-    expect(DEFAULT_TEMPLATE_BUTTONS.every((template) => typeof template.constraints?.maxTurns === "number")).toBe(true)
-    expect(DEFAULT_TEMPLATE_BUTTONS.every((template) => typeof template.constraints?.maxTimeMinutes === "number")).toBe(
-      true,
-    )
-    expect(DEFAULT_TEMPLATE_BUTTONS.map((template) => template.id).join("\n")).not.toContain("pass-tests")
-    expect(DEFAULT_TEMPLATE_BUTTONS.map((template) => template.id).join("\n")).not.toContain("fix-lint")
+    expect(DEFAULT_TEMPLATE_BUTTONS).toEqual([])
   })
 
-  test("returns canonical method templates first and then project templates from the snapshot", async () => {
+  test("returns project templates from the snapshot (no built-in defaults)", async () => {
     const { templateButtonsFromSnapshot } = await load()
     const out = templateButtonsFromSnapshot({
       version: 1,
@@ -253,7 +230,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
         { id: "ship-it", label: "Ship it", description: "deploy", builtin: false },
       ],
     })
-    expect(out.map((t) => t.id)).toEqual(["plan", "build", "debug", "validate", "typecheck", "commit", "ship-it"])
+    expect(out.map((t) => t.id)).toEqual(["ship-it"])
     expect(out.at(-1)).toMatchObject({ id: "ship-it", label: "Ship it", builtin: false })
   })
 
@@ -263,7 +240,10 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       version: 1,
       templates: [{ id: "pass-tests", label: "Pass tests", description: "run tests", builtin: true }],
     })
-    expect(out).toEqual(DEFAULT_TEMPLATE_BUTTONS)
+    // old project-specific "built-in" snapshots are filtered — only
+    // user templates with `builtin: false` survive
+    expect(out.filter((t) => !t.builtin)).toEqual([])
+    expect(DEFAULT_TEMPLATE_BUTTONS).toEqual([])
   })
 
   test("drops entries with a malformed id and de-duplicates", async () => {
@@ -277,7 +257,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
         { id: "ok-one", builtin: false }, // duplicate → dropped
       ],
     })
-    expect(out.map((t) => t.id)).toEqual(["plan", "build", "debug", "validate", "typecheck", "commit", "ok-one"])
+    expect(out.map((t) => t.id)).toEqual(["ok-one"])
     // A missing label defaults to the id.
     expect(out.at(-1)?.label).toBe("ok-one")
   })
@@ -376,9 +356,18 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
   })
 
   test("copies an action template into an independently editable chain step with budgets", async () => {
-    const { chainStepFromTemplate, DEFAULT_TEMPLATE_BUTTONS } = await load()
-    const build = DEFAULT_TEMPLATE_BUTTONS.find((template) => template.id === "build")!
-    const step = chainStepFromTemplate(build, { scope: "the renderer chain builder" }, "step-1")
+    const { chainStepFromTemplate } = await load()
+    const step = chainStepFromTemplate(
+      {
+        id: "build",
+        label: "Build",
+        condition: "Implement {scope} using the repository's existing patterns.",
+        constraints: { maxTurns: 8, maxTimeMinutes: 30 },
+        builtin: true,
+      },
+      { scope: "the renderer chain builder" },
+      "step-1",
+    )
 
     expect(step).toEqual({
       id: "step-1",
