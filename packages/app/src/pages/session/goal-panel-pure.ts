@@ -109,6 +109,13 @@ export type GoalTemplateCategory = (typeof GOAL_TEMPLATE_CATEGORIES)[number]
 export const GOAL_TEMPLATE_GATES = ["required", "pass", "verify", "review"] as const
 export type GoalTemplateGate = (typeof GOAL_TEMPLATE_GATES)[number]
 
+export interface GoalPinnedModel {
+  providerID: string
+  modelID: string
+}
+
+export type GoalTemplateModel = string | GoalPinnedModel
+
 export interface GoalTemplateButton {
   id: string
   label: string
@@ -117,6 +124,8 @@ export interface GoalTemplateButton {
   command?: string
   constraints?: Partial<GoalState["constraints"]>
   variables?: Record<string, GoalTemplateVariable>
+  skills?: string[]
+  model?: GoalTemplateModel
   category?: GoalTemplateCategory
   gate?: GoalTemplateGate
   tone?: GoalTemplateTone
@@ -198,6 +207,7 @@ const DEFAULT_TEMPLATE_BY_ID = new Map(DEFAULT_TEMPLATE_BUTTONS.map((template) =
 const TEMPLATE_ID_RE = /^[A-Za-z0-9_-]+$/
 const TEMPLATE_VAR_RE = /^\w+$/
 const MAX_TEMPLATE_BUTTONS = 24
+const MAX_TEMPLATE_SKILLS = 8
 
 function templateConstraintsFromSnapshot(value: unknown): Partial<GoalState["constraints"]> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
@@ -221,6 +231,43 @@ function templateVariablesFromSnapshot(value: unknown): Record<string, GoalTempl
     }
   }
   return Object.keys(out).length > 0 ? out : undefined
+}
+
+function templateSkillsFromSnapshot(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of value) {
+    if (typeof item !== "string") continue
+    const skill = cleanText(item).trim().slice(0, 80)
+    if (!skill || seen.has(skill)) continue
+    seen.add(skill)
+    out.push(skill)
+    if (out.length >= MAX_TEMPLATE_SKILLS) break
+  }
+  return out.length > 0 ? out : undefined
+}
+
+export function isGoalPinnedModel(value: unknown): value is GoalPinnedModel {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const model = value as { providerID?: unknown; modelID?: unknown }
+  return (
+    typeof model.providerID === "string" &&
+    model.providerID.trim().length > 0 &&
+    typeof model.modelID === "string" &&
+    model.modelID.trim().length > 0
+  )
+}
+
+export function templateModelFromSnapshot(value: unknown): GoalTemplateModel | undefined {
+  if (typeof value === "string") {
+    const model = cleanText(value).trim().slice(0, 160)
+    return model ? model : undefined
+  }
+  if (!isGoalPinnedModel(value)) return undefined
+  const providerID = cleanText(value.providerID).trim().slice(0, 160)
+  const modelID = cleanText(value.modelID).trim().slice(0, 160)
+  return providerID && modelID ? { providerID, modelID } : undefined
 }
 
 function templateToneFromSnapshot(value: unknown): GoalTemplateTone | undefined {
@@ -271,6 +318,8 @@ export function templateButtonsFromSnapshot(parsed: unknown): GoalTemplateButton
     const command = typeof r.command === "string" ? cleanText(r.command) : fallback?.command
     const constraints = templateConstraintsFromSnapshot(r.constraints) ?? fallback?.constraints
     const variables = templateVariablesFromSnapshot(r.variables) ?? fallback?.variables
+    const skills = templateSkillsFromSnapshot(r.skills) ?? fallback?.skills
+    const model = templateModelFromSnapshot(r.model) ?? fallback?.model
     const category = templateCategoryFromSnapshot(r.category) ?? fallback?.category
     const gate = templateGateFromSnapshot(r.gate) ?? fallback?.gate
     const tone = templateToneFromSnapshot(r.tone) ?? fallback?.tone
@@ -283,6 +332,8 @@ export function templateButtonsFromSnapshot(parsed: unknown): GoalTemplateButton
       command,
       constraints,
       variables,
+      ...(skills ? { skills } : {}),
+      ...(model ? { model } : {}),
       ...(category ? { category } : {}),
       ...(gate ? { gate } : {}),
       ...(tone ? { tone } : {}),
@@ -331,12 +382,18 @@ export interface GoalChainDraftStep {
   gate?: GoalTemplateGate
   tone?: GoalTemplateTone
   elevation?: GoalTemplateElevation
+  skills?: string[]
+  model?: GoalTemplateModel
   builtin: boolean
 }
 
 export interface GoalChainMasterBudget {
   maxTurns: number
   maxTimeMinutes: number
+}
+
+export function selectRunnableChainSteps<T>(draftSteps: T[], visibleSteps: T[]): T[] {
+  return draftSteps.length > 0 ? draftSteps : visibleSteps
 }
 
 export function chainStepFromTemplate(
@@ -357,6 +414,8 @@ export function chainStepFromTemplate(
     ...(template.gate ? { gate: template.gate } : {}),
     ...(template.tone ? { tone: template.tone } : {}),
     ...(template.elevation ? { elevation: template.elevation } : {}),
+    ...(template.skills && template.skills.length > 0 ? { skills: [...template.skills] } : {}),
+    ...(template.model ? { model: template.model } : {}),
     builtin: template.builtin,
   }
 }
@@ -377,6 +436,104 @@ export function chainBudgetSummary(steps: GoalChainDraftStep[], master: GoalChai
     masterTurnsIsCap: steps.length > 0 && masterTurns < ultimateTurns,
     masterTimeIsCap: steps.length > 0 && masterTimeMinutes < ultimateTimeMinutes,
   }
+}
+
+export interface ChainValidationError {
+  /** -1 for chain-level errors, 0-based step index for step errors */
+  stepIndex: number
+  message: string
+}
+
+const MAX_CONDITION_LEN = 4000
+const MAX_STEP_MODEL_FIELD_LEN = 160
+const MAX_STEP_SKILLS = 8
+const MAX_STEP_SKILL_LEN = 80
+const MAX_STEPS = 24
+
+export function validateChainDraft(
+  steps: GoalChainDraftStep[],
+  master: GoalChainMasterBudget,
+): ChainValidationError[] {
+  const errors: ChainValidationError[] = []
+
+  // Chain-level checks
+  if (steps.length === 0) {
+    errors.push({ stepIndex: -1, message: "Add at least one action to the chain." })
+  }
+  if (steps.length > MAX_STEPS) {
+    errors.push({ stepIndex: -1, message: `Chain cannot have more than ${MAX_STEPS} steps.` })
+  }
+
+  // Master budget checks
+  const budget = chainBudgetSummary(steps, master)
+  if (budget.masterTimeIsCap) {
+    errors.push({
+      stepIndex: -1,
+      message: `Total step time (${budget.ultimateTimeMinutes}m) exceeds master time limit (${budget.masterTimeMinutes}m).`,
+    })
+  }
+
+  // Per-step checks
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!
+    const label = step.label || step.actionID || `Step ${i + 1}`
+
+    if (!step.condition.trim()) {
+      errors.push({ stepIndex: i, message: `${label}: condition cannot be empty.` })
+    }
+    if (step.condition.length > MAX_CONDITION_LEN) {
+      errors.push({
+        stepIndex: i,
+        message: `${label}: condition is ${step.condition.length} chars (max ${MAX_CONDITION_LEN}).`,
+      })
+    }
+    if (step.maxTurns < 1) {
+      errors.push({ stepIndex: i, message: `${label}: turns must be at least 1.` })
+    }
+    if (step.maxTimeMinutes < 1) {
+      errors.push({ stepIndex: i, message: `${label}: time must be at least 1 minute.` })
+    }
+
+    // Model validation
+    if (step.model) {
+      if (isGoalPinnedModel(step.model)) {
+        if (!step.model.providerID.trim() || !step.model.modelID.trim()) {
+          errors.push({ stepIndex: i, message: `${label}: model providerID and modelID are required.` })
+        }
+        if (step.model.providerID.length > MAX_STEP_MODEL_FIELD_LEN || step.model.modelID.length > MAX_STEP_MODEL_FIELD_LEN) {
+          errors.push({ stepIndex: i, message: `${label}: model providerID and modelID must be ${MAX_STEP_MODEL_FIELD_LEN} chars or fewer.` })
+        }
+      } else if (typeof step.model === "string") {
+        const trimmed = step.model.trim()
+        if (!trimmed) {
+          errors.push({ stepIndex: i, message: `${label}: model cannot be empty.` })
+        } else if (trimmed.length > MAX_STEP_MODEL_FIELD_LEN) {
+          errors.push({ stepIndex: i, message: `${label}: model must be ${MAX_STEP_MODEL_FIELD_LEN} chars or fewer.` })
+        }
+      }
+    }
+
+    // Skills validation
+    if (step.skills && step.skills.length > 0) {
+      if (step.skills.length > MAX_STEP_SKILLS) {
+        errors.push({ stepIndex: i, message: `${label}: at most ${MAX_STEP_SKILLS} skills.` })
+      }
+      const seen = new Set<string>()
+      for (const skill of step.skills) {
+        const name = cleanText(skill).trim()
+        if (!name) {
+          errors.push({ stepIndex: i, message: `${label}: skill names cannot be empty.` })
+        } else if (name.length > MAX_STEP_SKILL_LEN) {
+          errors.push({ stepIndex: i, message: `${label}: skill "${name.slice(0, 40)}..." exceeds ${MAX_STEP_SKILL_LEN} chars.` })
+        } else if (seen.has(name)) {
+          errors.push({ stepIndex: i, message: `${label}: duplicate skill "${name}".` })
+        }
+        seen.add(name)
+      }
+    }
+  }
+
+  return errors
 }
 
 function clampPositiveInteger(value: unknown, fallback: number): number {

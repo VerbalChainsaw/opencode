@@ -8,20 +8,15 @@ type GoalControlArguments = {
   arguments: { command: string }
 }
 
-type GoalControlTransport = {
+type GoalTransport = {
   post?: (args: {
     url: string
-    path?: { toolID: "goal_control" }
+    path?: Record<string, string>
     query?: {
       directory?: string
       workspace?: string
     }
-    body: {
-      directory?: string
-      workspace?: string
-      arguments: { command: string }
-      sessionID: string
-    }
+    body?: unknown
   }) => Promise<unknown>
 }
 
@@ -31,30 +26,108 @@ type GoalPromptAsyncInput = {
   workspace?: string
   agent?: string
   model?: { providerID: string; modelID: string }
+  skills?: string[]
   variant?: string
 }
 
-type GoalAbortInput = {
-  sessionID: string
-  directory?: string
-  workspace?: string
-}
-
 export interface GoalCommandClient {
-  client?: GoalControlTransport
+  client?: GoalTransport
   tool?: {
-    client?: GoalControlTransport
-    control?: (this: { client?: GoalControlTransport }, args: GoalControlArguments) => Promise<unknown>
+    client?: GoalTransport
+    control?: (this: { client?: GoalTransport }, args: GoalControlArguments) => Promise<unknown>
   }
   session?: {
-    abort?: (args: GoalAbortInput) => Promise<unknown>
     command?: (args: { sessionID: string; command: string; arguments: string }) => Promise<unknown>
     promptAsync?: (args: GoalPromptAsyncInput & { parts: Array<{ type: "text"; text: string }> }) => Promise<unknown>
+    prompt?: (args: GoalPromptAsyncInput & { parts: Array<{ type: "text"; text: string }>; noReply?: boolean }) => Promise<unknown>
   }
 }
 
 const START_GOAL_PROMPT =
   "Begin working toward the current OpenGoal goal now. Read .opencode/.goal-state.json for the condition, constraints, steering, and verification command. Continue until the goal is achieved, blocked, or the constraints require stopping."
+
+function cleanPinnedSkills(skills: string[] | undefined) {
+  if (!skills) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of skills) {
+    if (typeof item !== "string") continue
+    const skill = item
+      .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, "")
+      .trim()
+      .slice(0, 80)
+    if (!skill || seen.has(skill)) continue
+    seen.add(skill)
+    out.push(skill)
+    if (out.length >= 8) break
+  }
+  return out
+}
+
+function withPinnedSkills(text: string, skills: string[] | undefined) {
+  const clean = cleanPinnedSkills(skills)
+  if (clean.length === 0) return text
+  return [
+    text,
+    "",
+    `Pinned skills for this OpenGoal action: ${clean.join(", ")}.`,
+    "If these skills are available, load and use them before working this action.",
+  ].join("\n")
+}
+
+export function goalSteerPrompt(note: string) {
+  return `Steering update for the current OpenGoal run. Apply this direction to the active or next continuation without restarting the goal:\n\n${note}`
+}
+
+async function sendGoalPrompt(client: GoalCommandClient, input: GoalPromptAsyncInput, text: string) {
+  const { skills, ...promptInput } = input
+  const payload = {
+    ...promptInput,
+    parts: [
+      {
+        type: "text" as const,
+        text: withPinnedSkills(text, skills),
+      },
+    ],
+  }
+  try {
+    // Prefer session.prompt (host composer path) over promptAsync.
+    // promptAsync bypasses the host's message lifecycle, which can race
+    // with the auto-loop's session.prompt nudge and produce
+    // MessageAbortedError. The host composer path uses the same channel
+    // as the auto-loop, eliminating the abort conflict.
+    if (client.session?.prompt) {
+      await client.session.prompt({ ...payload, noReply: true })
+      return true
+    }
+    if (client.session?.promptAsync) {
+      await client.session.promptAsync(payload)
+      return true
+    }
+  } catch {
+    // Fall back to the raw transport below. The desktop SDK surface can change
+    // shape faster than this local helper, but the HTTP endpoint is stable.
+  }
+
+  const transport = client.client
+  if (!transport?.post) return false
+  const { sessionID, directory, workspace, ...body } = payload
+  const query = {
+    ...(directory ? { directory } : {}),
+    ...(workspace ? { workspace } : {}),
+  }
+  try {
+    await transport.post({
+      url: "/session/{sessionID}/message",
+      path: { sessionID },
+      query,
+      body,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
 
 export async function executeGoalCommand(
   client: GoalCommandClient,
@@ -104,29 +177,11 @@ export async function executeGoalCommand(
 }
 
 export async function startGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput) {
-  try {
-    if (!client.session?.promptAsync) return false
-    await client.session.promptAsync({
-      ...input,
-      parts: [
-        {
-          type: "text",
-          text: START_GOAL_PROMPT,
-        },
-      ],
-    })
-    return true
-  } catch {
-    return false
-  }
+  return sendGoalPrompt(client, input, START_GOAL_PROMPT)
 }
 
-export async function stopGoalRun(client: GoalCommandClient, input: GoalAbortInput) {
-  try {
-    if (!client.session?.abort) return false
-    await client.session.abort(input)
-    return true
-  } catch {
-    return false
-  }
+export async function steerGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput, note: string) {
+  const clean = note.trim()
+  if (!clean) return false
+  return sendGoalPrompt(client, input, goalSteerPrompt(clean))
 }

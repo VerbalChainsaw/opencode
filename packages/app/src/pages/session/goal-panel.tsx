@@ -6,10 +6,15 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 
 import { useLanguage } from "@/context/language"
+import { useModels } from "@/context/models"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 
+import type { JSX } from "solid-js"
+
 import {
+  goalIdleMinutes,
+  isGoalStalled,
   liveGoal as liveGoalOf,
   nodeColor as nodeColorOf,
   outcomeLabel as outcomeLabelOf,
@@ -41,23 +46,27 @@ import {
   chainStepFromTemplate,
   cleanText,
   readGoalFromSdk,
+  selectRunnableChainSteps,
   templateButtonsFromSnapshot,
-  templateDraftFromButton,
   templateVariableDefaults,
+  validateChainDraft,
   DEFAULT_TEMPLATE_BUTTONS,
   GOAL_TEMPLATE_CATEGORIES,
   GOAL_TEMPLATE_ELEVATIONS,
-  GOAL_TEMPLATE_GATES,
   GOAL_TEMPLATE_TONES,
+  isGoalPinnedModel,
+  templateModelFromSnapshot,
+  type ChainValidationError,
   type GoalSdkClient,
   type GoalChainDraftStep,
+  type GoalPinnedModel,
   type GoalTemplateButton,
   type GoalTemplateCategory,
   type GoalTemplateElevation,
-  type GoalTemplateGate,
+  type GoalTemplateModel,
   type GoalTemplateTone,
 } from "./goal-panel-pure"
-import { executeGoalCommand, startGoalRun, stopGoalRun } from "./goal-panel-actions"
+import { executeGoalCommand, startGoalRun, steerGoalRun } from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
 // them as locals is unnecessary because we only need them as type
 // annotations, which the imported type re-exports satisfy directly.
@@ -156,6 +165,9 @@ function ProgressBar(props: { pct: number; status: "active" | "paused" | "achiev
 interface GoalActionClient {
   directory?: string
   client: {
+    app?: {
+      skills?: (args?: { directory?: string; workspace?: string }) => Promise<{ data?: unknown }>
+    }
     tool: {
       control?: (args: {
         toolID: "goal_control"
@@ -186,6 +198,47 @@ interface ActivityEvent {
 }
 
 const ACTIVITY_PATH = ".opencode/.session-events.jsonl"
+
+interface SkillOption {
+  name: string
+  description?: string
+}
+
+function isSkillOption(value: unknown): value is SkillOption {
+  if (!value || typeof value !== "object") return false
+  const item = value as { name?: unknown; description?: unknown }
+  return (
+    typeof item.name === "string" &&
+    item.name.trim().length > 0 &&
+    (item.description === undefined || typeof item.description === "string")
+  )
+}
+
+async function readAvailableSkills(sdk: GoalActionClient): Promise<SkillOption[]> {
+  try {
+    const res = await sdk.client.app?.skills?.({
+      ...(sdk.directory ? { directory: sdk.directory } : {}),
+    })
+    const raw = res?.data
+    if (!Array.isArray(raw)) return []
+    const seen = new Set<string>()
+    const out: SkillOption[] = []
+    for (const item of raw) {
+      if (!isSkillOption(item)) continue
+      const name = cleanText(item.name).trim().slice(0, 80)
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      const description = cleanText(item.description).trim().slice(0, 140)
+      out.push({
+        name,
+        ...(description ? { description } : {}),
+      })
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    return []
+  }
+}
 
 /** Read + parse the JSONL activity log, newest first, capped. Tolerant of
  *  the SDK's FileContent ({type,content}) or a plain string; corrupt lines
@@ -247,10 +300,14 @@ async function readWorkspaceText(sdk: GoalActionClient, path: string): Promise<s
 export interface ChainStep {
   condition: string
   command?: string | null
+  maxTurns?: number
+  maxMinutes?: number
+  maxTimeMinutes?: number
   category?: GoalTemplateCategory
-  gate?: GoalTemplateGate
   tone?: GoalTemplateTone
   elevation?: GoalTemplateElevation
+  skills?: string[]
+  model?: GoalTemplateModel
 }
 export interface ChainData {
   steps: ChainStep[]
@@ -294,12 +351,27 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
       .map((s: ChainStep) => ({
         condition: s.condition,
         command: s.command ?? null,
+        ...(typeof (s as { maxTurns?: unknown }).maxTurns === "number"
+          ? { maxTurns: (s as { maxTurns: number }).maxTurns }
+          : {}),
+        ...(typeof s.maxMinutes === "number"
+          ? { maxTimeMinutes: s.maxMinutes }
+          : typeof (s as { maxTimeMinutes?: unknown }).maxTimeMinutes === "number"
+            ? { maxTimeMinutes: (s as { maxTimeMinutes: number }).maxTimeMinutes }
+            : {}),
         ...((GOAL_TEMPLATE_CATEGORIES as readonly string[]).includes(s.category ?? "") ? { category: s.category } : {}),
-        ...((GOAL_TEMPLATE_GATES as readonly string[]).includes(s.gate ?? "") ? { gate: s.gate } : {}),
         ...((GOAL_TEMPLATE_TONES as readonly string[]).includes(s.tone ?? "") ? { tone: s.tone } : {}),
         ...((GOAL_TEMPLATE_ELEVATIONS as readonly string[]).includes(s.elevation ?? "")
           ? { elevation: s.elevation }
           : {}),
+        ...(Array.isArray(s.skills)
+          ? {
+              skills: [
+                ...new Set(s.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean)),
+              ].slice(0, 8),
+            }
+          : {}),
+        ...(templateModelFromSnapshot(s.model) ? { model: templateModelFromSnapshot(s.model) } : {}),
       }))
     if (steps.length === 0) return null
     const current = typeof c.current === "number" && Number.isFinite(c.current) ? c.current : 0
@@ -311,6 +383,15 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
 
 const TEMPLATES_PATH = ".opencode/goal-templates.json"
 const TEMPLATE_SAVE_ID_RE = /^[A-Za-z0-9_-]+$/
+
+function actionIDFromLabel(label: string, fallback = "custom-action") {
+  const id = cleanText(label)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return TEMPLATE_SAVE_ID_RE.test(id) && id.length > 0 ? id : fallback
+}
 
 /** Read the plugin's `.opencode/goal-templates.json` snapshot (builtins +
  *  user `.opencode/goals/*.json`) so the dock's quick-start buttons reflect
@@ -356,21 +437,154 @@ function ActionButton(props: {
   busy?: boolean
   disabled?: boolean
   variant?: "primary" | "secondary" | "ghost"
+  tone?: "default" | "success" | "danger"
   label: string
   class?: string
+  title?: string
 }) {
   return (
     <Button
       variant={props.variant ?? "secondary"}
       size="small"
-      class={`${props.class ?? ""} ring-1 ring-transparent transition-shadow hover:ring-border-strong focus-visible:ring-border-strong`}
+      class={`${goalCommandButtonClass(props.variant ?? "secondary", props.tone ?? "default")} ${props.class ?? ""}`}
+      style={goalCommandButtonStyle(props.variant ?? "secondary", props.tone ?? "default")}
       onClick={() => props.onClick()}
       disabled={props.disabled}
       aria-label={props.label}
+      title={props.title}
     >
       {props.busy ? "…" : props.label}
     </Button>
   )
+}
+
+function goalCommandButtonClass(variant: "primary" | "secondary" | "ghost", tone: "default" | "success" | "danger") {
+  const base =
+    "goal-command-button inline-flex min-h-8 items-center justify-center rounded-md border px-3 text-center font-semibold shadow-sm transition-all ring-1 ring-transparent focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-45"
+  if (tone === "danger") {
+    return `${base} goal-command-button-danger !border-orange-300/80 !bg-orange-500/85 !text-white shadow-[0_8px_18px_rgba(249,115,22,0.24)] hover:!bg-orange-400 hover:ring-orange-200/55 focus-visible:ring-orange-200/70`
+  }
+  if (tone === "success") {
+    return `${base} goal-command-button-success !border-emerald-300/70 !bg-emerald-500/85 !text-white shadow-[0_8px_18px_rgba(16,185,129,0.20)] hover:!bg-emerald-400 hover:ring-emerald-200/45 focus-visible:ring-emerald-200/65`
+  }
+  if (variant === "primary") {
+    return `${base} goal-command-button-primary !border-blue-300/75 !bg-blue-500/90 !text-white shadow-[0_8px_18px_rgba(37,99,235,0.24)] hover:!bg-blue-400 hover:ring-blue-200/50 focus-visible:ring-blue-200/70`
+  }
+  if (variant === "ghost") {
+    return `${base} goal-command-button-ghost !border-border-base !bg-background-base/65 !text-text-weak hover:!bg-white/[0.06] hover:!text-text-base hover:ring-border-strong focus-visible:ring-border-strong`
+  }
+  return `${base} goal-command-button-secondary !border-sky-300/45 !bg-sky-500/14 !text-sky-100 hover:!border-sky-200/70 hover:!bg-sky-500/22 hover:ring-sky-300/35 focus-visible:ring-sky-300/55`
+}
+
+function goalCommandButtonStyle(variant: "primary" | "secondary" | "ghost", tone: "default" | "success" | "danger") {
+  if (tone === "danger") {
+    return {
+      "background-color": "rgba(249, 115, 22, 0.88)",
+      "border-color": "rgba(253, 186, 116, 0.86)",
+      color: "rgb(255, 255, 255)",
+      "box-shadow": "0 8px 18px rgba(249, 115, 22, 0.24)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "success") {
+    return {
+      "background-color": "rgba(16, 185, 129, 0.84)",
+      "border-color": "rgba(110, 231, 183, 0.82)",
+      color: "rgb(255, 255, 255)",
+      "box-shadow": "0 8px 18px rgba(16, 185, 129, 0.2)",
+    } satisfies JSX.CSSProperties
+  }
+  if (variant === "primary") {
+    return {
+      "background-color": "rgba(59, 130, 246, 0.9)",
+      "border-color": "rgba(147, 197, 253, 0.82)",
+      color: "rgb(255, 255, 255)",
+      "box-shadow": "0 8px 18px rgba(37, 99, 235, 0.24)",
+    } satisfies JSX.CSSProperties
+  }
+  if (variant === "ghost") {
+    return {
+      "background-color": "rgba(18, 18, 18, 0.66)",
+      "border-color": "rgba(82, 82, 82, 0.8)",
+      color: "rgb(214, 214, 214)",
+    } satisfies JSX.CSSProperties
+  }
+  return {
+    "background-color": "rgba(14, 165, 233, 0.18)",
+    "border-color": "rgba(125, 211, 252, 0.56)",
+    color: "rgb(224, 242, 254)",
+  } satisfies JSX.CSSProperties
+}
+
+function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
+  const base =
+    "goal-inline-command-button flex h-[22px] items-center justify-center rounded-md border px-1 text-center text-11-medium font-semibold leading-none transition-all focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
+  if (tone === "add") {
+    return `${base} goal-inline-command-add w-full border-emerald-300/70 bg-emerald-500/75 text-white shadow-[0_6px_14px_rgba(16,185,129,0.18)] hover:bg-emerald-400 hover:ring-emerald-200/45 focus-visible:ring-emerald-200/70`
+  }
+  if (tone === "remove") {
+    return `${base} goal-inline-command-remove border-orange-300/75 bg-orange-500/55 text-white shadow-[0_6px_14px_rgba(249,115,22,0.18)] hover:bg-orange-400 hover:ring-orange-300/45 focus-visible:ring-orange-300/65`
+  }
+  if (tone === "move") {
+    return `${base} goal-inline-command-move w-[22px] border-border-base bg-background-panel text-text-weak hover:border-border-strong hover:bg-white/[0.06] hover:text-text-base focus-visible:ring-border-strong`
+  }
+  return `${base} goal-inline-command-edit w-full border-sky-300/45 bg-sky-500/14 text-sky-100 hover:border-sky-200/65 hover:bg-sky-500/22 focus-visible:ring-sky-300/55`
+}
+
+function inlineCommandButtonStyle(tone: "add" | "edit" | "move" | "remove") {
+  if (tone === "add") {
+    return {
+      "background-color": "rgba(16, 185, 129, 0.78)",
+      "border-color": "rgba(110, 231, 183, 0.78)",
+      color: "rgb(255, 255, 255)",
+      "box-shadow": "0 6px 14px rgba(16, 185, 129, 0.18)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "remove") {
+    return {
+      "background-color": "rgba(249, 115, 22, 0.58)",
+      "border-color": "rgba(253, 186, 116, 0.84)",
+      color: "rgb(255, 255, 255)",
+      "box-shadow": "0 6px 14px rgba(249, 115, 22, 0.18)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "edit") {
+    return {
+      "background-color": "rgba(14, 165, 233, 0.18)",
+      "border-color": "rgba(125, 211, 252, 0.56)",
+      color: "rgb(224, 242, 254)",
+    } satisfies JSX.CSSProperties
+  }
+  return {
+    "background-color": "rgba(24, 24, 24, 0.82)",
+    "border-color": "rgba(82, 82, 82, 0.86)",
+    color: "rgb(214, 214, 214)",
+  } satisfies JSX.CSSProperties
+}
+
+function numericHighlightStyle(tone: "blue" | "violet" | "emerald" = "blue") {
+  if (tone === "violet") {
+    return {
+      "background-color": "rgba(139, 92, 246, 0.18)",
+      "border-color": "rgba(196, 181, 253, 0.48)",
+      color: "rgb(237, 233, 254)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "emerald") {
+    return {
+      "background-color": "rgba(16, 185, 129, 0.16)",
+      "border-color": "rgba(110, 231, 183, 0.46)",
+      color: "rgb(209, 250, 229)",
+    } satisfies JSX.CSSProperties
+  }
+  return {
+    "background-color": "rgba(59, 130, 246, 0.16)",
+    "border-color": "rgba(147, 197, 253, 0.46)",
+    color: "rgb(219, 234, 254)",
+  } satisfies JSX.CSSProperties
+}
+
+function numericHighlightClass(extra = "") {
+  return `goal-number-highlight inline-flex min-h-5 items-center rounded-md border px-1.5 text-12-medium tabular-nums ${extra}`
 }
 
 function RunMetricPill(props: {
@@ -381,7 +595,7 @@ function RunMetricPill(props: {
 }) {
   return (
     <div
-      class="grid min-w-0 grid-cols-[3px_minmax(0,1fr)] overflow-hidden rounded-lg border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      class="grid min-w-0 grid-cols-[3px_minmax(0,1fr)] overflow-hidden rounded-md border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
       classList={{
         "border-border-base bg-background-panel/70": !props.tone || props.tone === "default",
         "border-emerald-400/35 bg-emerald-400/10": props.tone === "success",
@@ -398,67 +612,207 @@ function RunMetricPill(props: {
         }}
         aria-hidden
       />
-      <div class="min-w-0 px-2.5 py-1.5">
-        <div class="break-words text-[10px] font-medium uppercase leading-3 tracking-[0.08em] text-text-weaker">
+      <div class="min-w-0 px-2 py-1">
+        <div class="truncate text-[9px] font-medium uppercase leading-3 tracking-[0.08em] text-text-weaker">
           {props.label}
         </div>
-        <div class="mt-0.5 break-words text-12-medium tabular-nums leading-4 text-text-base" title={props.value}>
+        <div class="mt-0.5 truncate text-12-medium tabular-nums leading-4 text-text-base" title={props.value}>
           {props.value}
         </div>
         <Show when={props.detail}>
-          <div class="mt-0.5 break-words text-[11px] leading-4 text-text-weaker">{props.detail}</div>
+          <div class="truncate text-[10px] leading-4 text-text-weaker">{props.detail}</div>
         </Show>
       </div>
     </div>
   )
 }
 
-function BudgetDial(props: {
-  label: string
-  value: string
-  detail: string
-  disabled?: boolean
-  decreaseLabel: string
-  increaseLabel: string
-  onDecrease: () => void
-  onIncrease: () => void
+function GoalConsoleSection(props: {
+  zone:
+    | "last-result"
+    | "set-goal"
+    | "running-status"
+    | "run-controls"
+    | "chain-builder"
+    | "action-library"
+    | "action-editor"
+    | "activity"
+  title: string
+  subtitle?: string
+  class?: string
+  children: JSX.Element
 }) {
+  const accent = {
+    "last-result": {
+      class: "border-rose-400/70",
+      style: {
+        "border-color": "rgba(251, 113, 133, 0.58)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(127, 29, 29, 0.88), rgba(30, 30, 30, 0.92))",
+        "border-color": "rgba(251, 113, 133, 0.72)",
+      },
+      marker: "bg-rose-200",
+    },
+    "set-goal": {
+      class: "border-blue-400/70",
+      style: {
+        "border-color": "rgba(96, 165, 250, 0.58)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(30, 64, 175, 0.9), rgba(30, 30, 30, 0.92))",
+        "border-color": "rgba(96, 165, 250, 0.72)",
+      },
+      marker: "bg-blue-200",
+    },
+    "running-status": {
+      class: "border-sky-400/60",
+      style: {
+        "border-color": "rgba(56, 189, 248, 0.54)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(56, 189, 248, 0.07)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(12, 74, 110, 0.9), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(125, 211, 252, 0.58)",
+      },
+      marker: "bg-sky-200",
+    },
+    "run-controls": {
+      class: "border-indigo-400/55",
+      style: {
+        "border-color": "rgba(129, 140, 248, 0.5)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(129, 140, 248, 0.07)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(49, 46, 129, 0.86), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(165, 180, 252, 0.46)",
+      },
+      marker: "bg-indigo-200",
+    },
+    "chain-builder": {
+      class: "border-violet-500/45",
+      style: {
+        "border-color": "rgba(139, 92, 246, 0.48)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(139, 92, 246, 0.08)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.72), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(167, 139, 250, 0.44)",
+      },
+      marker: "bg-violet-300/80",
+    },
+    "action-library": {
+      class: "border-emerald-400/70",
+      style: {
+        "border-color": "rgba(52, 211, 153, 0.58)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(6, 95, 70, 0.9), rgba(30, 30, 30, 0.92))",
+        "border-color": "rgba(52, 211, 153, 0.72)",
+      },
+      marker: "bg-emerald-200",
+    },
+    "action-editor": {
+      class: "border-emerald-400/70",
+      style: {
+        "border-color": "rgba(52, 211, 153, 0.58)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(5, 150, 105, 0.82), rgba(30, 30, 30, 0.92))",
+        "border-color": "rgba(52, 211, 153, 0.72)",
+      },
+      marker: "bg-emerald-200",
+    },
+    activity: {
+      class: "border-cyan-400/55",
+      style: {
+        "border-color": "rgba(34, 211, 238, 0.5)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(34, 211, 238, 0.07)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(21, 94, 117, 0.86), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(103, 232, 249, 0.46)",
+      },
+      marker: "bg-cyan-200",
+    },
+  }[props.zone]
+
   return (
-    <div class="rounded-xl border border-border-base bg-background-panel/70 px-3 py-2.5">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">{props.label}</div>
-          <div class="mt-1 text-base font-semibold tabular-nums text-text-base">{props.value}</div>
-          <div class="mt-1 text-[11px] text-text-weaker">{props.detail}</div>
+    <section
+      data-component="goal-console-section"
+      data-zone={props.zone}
+      class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-panel/80 ${accent.class} ${props.class ?? ""}`}
+      style={accent.style}
+    >
+      <div class="shrink-0 border-b border-border-base/80 px-3 py-2.5" style={accent.headerStyle}>
+        <div
+          data-component="goal-console-section-title"
+          class="flex min-w-0 items-center gap-2 text-13-medium font-bold uppercase tracking-[0.12em] text-white"
+        >
+          <span class={`h-5 w-1.5 shrink-0 rounded-full ${accent.marker}`} aria-hidden />
+          <span class="truncate">{props.title}</span>
         </div>
-        <div class="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            class="flex h-7 w-7 items-center justify-center rounded-md border border-border-base bg-background-base text-sm text-text-base transition-all hover:border-border-strong hover:bg-white/[0.06] hover:ring-1 hover:ring-border-strong focus-visible:ring-1 focus-visible:ring-border-strong disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={props.decreaseLabel}
-            disabled={props.disabled}
-            onClick={props.onDecrease}
+        <Show when={props.subtitle}>
+          <div
+            data-component="goal-console-section-subtitle"
+            class="mt-1 truncate text-12-regular leading-4 text-white/70"
+            title={props.subtitle}
           >
-            -
-          </button>
-          <button
-            type="button"
-            class="flex h-7 w-7 items-center justify-center rounded-md border border-border-base bg-background-base text-sm text-text-base transition-all hover:border-border-strong hover:bg-white/[0.06] hover:ring-1 hover:ring-border-strong focus-visible:ring-1 focus-visible:ring-border-strong disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={props.increaseLabel}
-            disabled={props.disabled}
-            onClick={props.onIncrease}
-          >
-            +
-          </button>
-        </div>
+            {props.subtitle}
+          </div>
+        </Show>
       </div>
-    </div>
+      <div data-component="goal-console-section-body" class="min-h-0 flex-1 overflow-hidden">
+        {props.children}
+      </div>
+    </section>
   )
 }
 
 const ACTION_CATEGORIES = ["All", ...GOAL_TEMPLATE_CATEGORIES] as const
 
 type ActionCategory = (typeof ACTION_CATEGORIES)[number]
+
+function actionCategoryShortLabel(category: ActionCategory) {
+  if (category === "Planning") return "Plan"
+  if (category === "Building") return "Build"
+  if (category === "Debugging") return "Debug"
+  if (category === "Testing") return "Verify"
+  if (category === "Review") return "Review"
+  if (category === "Documentation") return "Docs"
+  return category
+}
+
+function concreteActionCategory(category: ActionCategory): GoalTemplateCategory {
+  return category === "All" ? "Custom" : category
+}
+
+function actionCategoryPillStyle(category: ActionCategory, active: boolean): JSX.CSSProperties {
+  const palettes: Record<ActionCategory, [string, string, string, string]> = {
+    All: ["rgba(67, 56, 202, 0.72)", "rgba(14, 165, 233, 0.34)", "rgba(147, 197, 253, 0.58)", "rgb(219, 234, 254)"],
+    Planning: ["rgba(37, 99, 235, 0.72)", "rgba(99, 102, 241, 0.30)", "rgba(147, 197, 253, 0.56)", "rgb(219, 234, 254)"],
+    Building: ["rgba(5, 150, 105, 0.72)", "rgba(13, 148, 136, 0.30)", "rgba(94, 234, 212, 0.54)", "rgb(204, 251, 241)"],
+    Debugging: ["rgba(194, 65, 12, 0.72)", "rgba(217, 119, 6, 0.30)", "rgba(251, 191, 36, 0.56)", "rgb(254, 243, 199)"],
+    Testing: ["rgba(22, 101, 52, 0.72)", "rgba(16, 185, 129, 0.30)", "rgba(134, 239, 172, 0.54)", "rgb(220, 252, 231)"],
+    Review: ["rgba(126, 34, 206, 0.70)", "rgba(217, 70, 239, 0.28)", "rgba(216, 180, 254, 0.54)", "rgb(243, 232, 255)"],
+    Documentation: ["rgba(30, 64, 175, 0.70)", "rgba(59, 130, 246, 0.28)", "rgba(125, 211, 252, 0.54)", "rgb(224, 242, 254)"],
+    Custom: ["rgba(55, 65, 81, 0.72)", "rgba(100, 116, 139, 0.28)", "rgba(203, 213, 225, 0.48)", "rgb(226, 232, 240)"],
+  }
+  const [from, to, border, text] = palettes[category]
+  return {
+    "background": active
+      ? `linear-gradient(135deg, ${from}, ${to})`
+      : "linear-gradient(180deg, rgba(24, 24, 27, 0.84), rgba(12, 12, 14, 0.78))",
+    "border-color": border,
+    color: active ? text : "rgba(214, 214, 214, 0.76)",
+    "box-shadow": active ? `inset 0 1px 0 rgba(255,255,255,0.06), 0 6px 14px rgba(0, 0, 0, 0.18)` : "inset 0 1px 0 rgba(255,255,255,0.025)",
+    opacity: "1",
+  }
+}
 
 interface ActionDescriptor {
   label?: string
@@ -470,9 +824,14 @@ interface ActionDescriptor {
   tone?: GoalTemplateTone
   elevation?: GoalTemplateElevation
   category?: GoalTemplateCategory
-  gate?: GoalTemplateGate
+  skills?: string[]
+  model?: GoalTemplateModel
   builtin?: boolean
 }
+
+type ChainStepRunState = "draft" | "done" | "running" | "paused" | "stalled" | "queued"
+
+type ActionDraftTemplate = GoalTemplateButton & { condition: string; builtin: false }
 
 function actionLabelText(input: ActionDescriptor) {
   return `${input.label ?? ""} ${input.id ?? ""} ${input.actionID ?? ""}`.toLowerCase()
@@ -480,6 +839,41 @@ function actionLabelText(input: ActionDescriptor) {
 
 function actionSearchText(input: ActionDescriptor) {
   return `${actionLabelText(input)} ${input.description ?? ""} ${input.condition ?? ""} ${input.command ?? ""}`.toLowerCase()
+}
+
+function modelKey(model?: GoalTemplateModel): string {
+  if (!model) return ""
+  if (typeof model === "string") return cleanText(model).trim().slice(0, 200)
+  return `${cleanText(model.providerID).trim()}:${cleanText(model.modelID).trim()}`
+}
+
+function pinnedModelFromKey(key: string): GoalPinnedModel | undefined {
+  const clean = cleanText(key).trim()
+  const sep = clean.indexOf(":")
+  if (sep <= 0 || sep === clean.length - 1) return undefined
+  const providerID = clean.slice(0, sep).trim().slice(0, 160)
+  const modelID = clean.slice(sep + 1).trim().slice(0, 160)
+  return providerID && modelID ? { providerID, modelID } : undefined
+}
+
+function referencedTemplateVariables(condition: string, command: string) {
+  const out = new Set<string>()
+  for (const text of [condition, command]) {
+    for (const match of text.matchAll(/\{(\w+)\}/g)) {
+      if (match[1]) out.add(match[1])
+    }
+  }
+  return out
+}
+
+function pinnedModelForRuntime(model?: GoalTemplateModel): GoalPinnedModel | undefined {
+  if (!model) return undefined
+  if (isGoalPinnedModel(model)) {
+    const providerID = cleanText(model.providerID).trim().slice(0, 160)
+    const modelID = cleanText(model.modelID).trim().slice(0, 160)
+    return providerID && modelID ? { providerID, modelID } : undefined
+  }
+  return pinnedModelFromKey(model)
 }
 
 function inferActionCategory(template: ActionDescriptor): GoalTemplateCategory {
@@ -527,9 +921,234 @@ function actionToneClass(input: ActionDescriptor) {
   return "border-violet-400/40 bg-violet-500/15 text-violet-200"
 }
 
+function actionCategoryPalette(input: ActionDescriptor) {
+  const category = inferActionCategory(input)
+  const styles: Record<
+    GoalTemplateCategory,
+    { from: string; to: string; border: string; solid: string; soft: string; text: string }
+  > = {
+    Planning: {
+      from: "rgba(30, 64, 175, 0.34)",
+      to: "rgba(37, 99, 235, 0.1)",
+      border: "rgba(96, 165, 250, 0.5)",
+      solid: "rgba(59, 130, 246, 0.84)",
+      soft: "rgba(59, 130, 246, 0.16)",
+      text: "rgb(219, 234, 254)",
+    },
+    Building: {
+      from: "rgba(15, 118, 110, 0.34)",
+      to: "rgba(20, 184, 166, 0.1)",
+      border: "rgba(45, 212, 191, 0.48)",
+      solid: "rgba(20, 184, 166, 0.82)",
+      soft: "rgba(20, 184, 166, 0.16)",
+      text: "rgb(204, 251, 241)",
+    },
+    Debugging: {
+      from: "rgba(146, 64, 14, 0.36)",
+      to: "rgba(245, 158, 11, 0.1)",
+      border: "rgba(251, 191, 36, 0.5)",
+      solid: "rgba(245, 158, 11, 0.84)",
+      soft: "rgba(245, 158, 11, 0.18)",
+      text: "rgb(254, 243, 199)",
+    },
+    Testing: {
+      from: "rgba(22, 101, 52, 0.34)",
+      to: "rgba(34, 197, 94, 0.1)",
+      border: "rgba(74, 222, 128, 0.48)",
+      solid: "rgba(34, 197, 94, 0.82)",
+      soft: "rgba(34, 197, 94, 0.16)",
+      text: "rgb(220, 252, 231)",
+    },
+    Review: {
+      from: "rgba(88, 28, 135, 0.34)",
+      to: "rgba(168, 85, 247, 0.1)",
+      border: "rgba(192, 132, 252, 0.48)",
+      solid: "rgba(168, 85, 247, 0.82)",
+      soft: "rgba(168, 85, 247, 0.16)",
+      text: "rgb(243, 232, 255)",
+    },
+    Documentation: {
+      from: "rgba(12, 74, 110, 0.34)",
+      to: "rgba(14, 165, 233, 0.1)",
+      border: "rgba(56, 189, 248, 0.48)",
+      solid: "rgba(14, 165, 233, 0.82)",
+      soft: "rgba(14, 165, 233, 0.16)",
+      text: "rgb(224, 242, 254)",
+    },
+    Custom: {
+      from: "rgba(51, 65, 85, 0.34)",
+      to: "rgba(100, 116, 139, 0.1)",
+      border: "rgba(148, 163, 184, 0.44)",
+      solid: "rgba(100, 116, 139, 0.82)",
+      soft: "rgba(100, 116, 139, 0.16)",
+      text: "rgb(226, 232, 240)",
+    },
+  }
+  return styles[category]
+}
+
+function actionLibraryRowStyle(input: ActionDescriptor): JSX.CSSProperties {
+  const { from, to, border } = actionCategoryPalette(input)
+  return {
+    "background": `linear-gradient(90deg, ${from}, rgba(24, 24, 27, 0.72) 54%, ${to})`,
+    "border-color": border,
+    "box-shadow": `inset 3px 0 0 ${border}, inset 0 1px 0 rgba(255, 255, 255, 0.035)`,
+  }
+}
+
+function actionLibraryPanelStyle(input: ActionDescriptor = { category: "Custom" }): JSX.CSSProperties {
+  const { from, to, border } = actionCategoryPalette(input)
+  return {
+    "background": `linear-gradient(135deg, ${from}, rgba(18, 18, 18, 0.82) 48%, ${to})`,
+    "border-color": border,
+    "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.035)",
+  }
+}
+
+function chainStepRowStyle(input: ActionDescriptor, runState: ChainStepRunState = "draft"): JSX.CSSProperties {
+  const { from, to, border } = actionCategoryPalette(input)
+  if (runState === "done") {
+    return {
+      "background": "linear-gradient(90deg, rgba(6, 78, 59, 0.28), rgba(18, 18, 18, 0.74) 48%, rgba(16, 185, 129, 0.10))",
+      "border-color": "rgba(52, 211, 153, 0.58)",
+      "box-shadow": "inset 4px 0 0 rgba(52, 211, 153, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 6px 14px rgba(0, 0, 0, 0.12)",
+    }
+  }
+  if (runState === "running") {
+    return {
+      "background": `linear-gradient(90deg, rgba(16, 185, 129, 0.24), rgba(18, 18, 18, 0.78) 48%, ${to})`,
+      "border-color": "rgba(110, 231, 183, 0.82)",
+      "box-shadow": `inset 4px 0 0 rgba(110, 231, 183, 0.92), inset 0 1px 0 rgba(255, 255, 255, 0.048), 0 0 0 1px rgba(110, 231, 183, 0.34), 0 0 24px rgba(16, 185, 129, 0.22), 0 8px 16px rgba(0, 0, 0, 0.18)`,
+    }
+  }
+  if (runState === "stalled") {
+    return {
+      "background": `linear-gradient(90deg, rgba(194, 65, 12, 0.34), rgba(18, 18, 18, 0.78) 48%, ${to})`,
+      "border-color": "rgba(251, 146, 60, 0.82)",
+      "box-shadow": "inset 4px 0 0 rgba(251, 146, 60, 0.90), inset 0 1px 0 rgba(255, 255, 255, 0.048), 0 0 0 1px rgba(251, 146, 60, 0.28), 0 0 22px rgba(249, 115, 22, 0.16), 0 8px 16px rgba(0, 0, 0, 0.18)",
+    }
+  }
+  if (runState === "paused") {
+    return {
+      "background": `linear-gradient(90deg, rgba(146, 64, 14, 0.30), rgba(18, 18, 18, 0.78) 48%, ${to})`,
+      "border-color": "rgba(251, 191, 36, 0.78)",
+      "box-shadow": "inset 4px 0 0 rgba(251, 191, 36, 0.86), inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 0 0 1px rgba(251, 191, 36, 0.22), 0 0 20px rgba(245, 158, 11, 0.14), 0 8px 16px rgba(0, 0, 0, 0.18)",
+    }
+  }
+  if (runState === "queued") {
+    return {
+      "background": "linear-gradient(90deg, rgba(51, 65, 85, 0.22), rgba(18, 18, 18, 0.70) 48%, rgba(148, 163, 184, 0.08))",
+      "border-color": "rgba(148, 163, 184, 0.34)",
+      "box-shadow": "inset 3px 0 0 rgba(148, 163, 184, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.026), 0 6px 14px rgba(0, 0, 0, 0.10)",
+    }
+  }
+  return {
+    "background": `linear-gradient(90deg, ${from}, rgba(18, 18, 18, 0.76) 48%, ${to})`,
+    "border-color": border,
+    "box-shadow": `inset 3px 0 0 ${border}, inset 0 1px 0 rgba(255, 255, 255, 0.028), 0 6px 14px rgba(0, 0, 0, 0.12)`,
+  }
+}
+
+function chainStepBadgeStyle(input: ActionDescriptor): JSX.CSSProperties {
+  const { border, soft, text } = actionCategoryPalette(input)
+  return {
+    "background-color": soft,
+    "border-color": border,
+    color: text,
+  }
+}
+
+function chainStepSoftStyle(input: ActionDescriptor): JSX.CSSProperties {
+  const { border, soft, text } = actionCategoryPalette(input)
+  return {
+    "background-color": soft,
+    "border-color": border,
+    color: text,
+  }
+}
+
+function chainStepRunBadgeStyle(runState: ChainStepRunState, input: ActionDescriptor): JSX.CSSProperties {
+  if (runState === "running") {
+    return {
+      "background-color": "rgba(16, 185, 129, 0.34)",
+      "border-color": "rgba(110, 231, 183, 0.82)",
+      color: "rgb(209, 250, 229)",
+    } satisfies JSX.CSSProperties
+  }
+  if (runState === "paused") {
+    return {
+      "background-color": "rgba(245, 158, 11, 0.30)",
+      "border-color": "rgba(251, 191, 36, 0.82)",
+      color: "rgb(254, 243, 199)",
+    } satisfies JSX.CSSProperties
+  }
+  if (runState === "stalled") {
+    return {
+      "background-color": "rgba(249, 115, 22, 0.30)",
+      "border-color": "rgba(251, 146, 60, 0.82)",
+      color: "rgb(255, 237, 213)",
+    } satisfies JSX.CSSProperties
+  }
+  if (runState === "done") {
+    return {
+      "background-color": "rgba(16, 185, 129, 0.20)",
+      "border-color": "rgba(52, 211, 153, 0.64)",
+      color: "rgb(209, 250, 229)",
+    } satisfies JSX.CSSProperties
+  }
+  if (runState === "queued") {
+    return {
+      "background-color": "rgba(51, 65, 85, 0.45)",
+      "border-color": "rgba(148, 163, 184, 0.42)",
+      color: "rgb(203, 213, 225)",
+    } satisfies JSX.CSSProperties
+  }
+  return chainStepBadgeStyle(input)
+}
+
+function chainStepRunLabel(runState: ChainStepRunState, input: ActionDescriptor) {
+  if (runState === "running") return "Running"
+  if (runState === "paused") return "Paused"
+  if (runState === "stalled") return "Waiting"
+  if (runState === "done") return "Done"
+  if (runState === "queued") return "Pending"
+  return hasVerificationCommand(input) ? "Cmd" : "Agent"
+}
+
+function runningStatusPanelStyle(status: GoalState["status"] | "stalled"): JSX.CSSProperties {
+  if (status === "stalled") {
+    return {
+      "background": "linear-gradient(90deg, rgba(154, 52, 18, 0.30), rgba(15, 23, 42, 0.46))",
+      "border-color": "rgba(251, 146, 60, 0.38)",
+    } satisfies JSX.CSSProperties
+  }
+  if (status === "active") {
+    return {
+      "background": "linear-gradient(90deg, rgba(6, 78, 59, 0.28), rgba(15, 23, 42, 0.46))",
+      "border-color": "rgba(52, 211, 153, 0.34)",
+    } satisfies JSX.CSSProperties
+  }
+  if (status === "paused") {
+    return {
+      "background": "linear-gradient(90deg, rgba(146, 64, 14, 0.28), rgba(15, 23, 42, 0.46))",
+      "border-color": "rgba(251, 191, 36, 0.34)",
+    } satisfies JSX.CSSProperties
+  }
+  if (status === "achieved") {
+    return {
+      "background": "linear-gradient(90deg, rgba(6, 95, 70, 0.34), rgba(15, 23, 42, 0.48))",
+      "border-color": "rgba(110, 231, 183, 0.42)",
+    } satisfies JSX.CSSProperties
+  }
+  return {
+    "background": "linear-gradient(90deg, rgba(124, 45, 18, 0.30), rgba(15, 23, 42, 0.48))",
+    "border-color": "rgba(251, 146, 60, 0.36)",
+  } satisfies JSX.CSSProperties
+}
+
 function actionSurfaceClass(input: ActionDescriptor) {
   return input.elevation === "raised"
-    ? "shadow-[0_10px_24px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.04]"
+    ? "shadow-[0_10px_24px_rgba(0,0,0,0.24)]"
     : "shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
 }
 
@@ -549,43 +1168,55 @@ function hasVerificationCommand(input: ActionDescriptor) {
   return typeof input.command === "string" && input.command.trim().length > 0
 }
 
-/** Method Library tags shown on each card and in the detail header: a
- *  BUILT-IN badge for shipped methods, plus PROMPT (no verify command) or
- *  VERIFY (has one) so the method's kind is legible at a glance. */
-function methodTags(input: { builtin?: boolean; command?: string | null }): string[] {
-  const tags: string[] = []
-  if (input.builtin) tags.push("BUILT-IN")
-  tags.push(hasVerificationCommand(input) ? "VERIFY" : "PROMPT")
-  return tags
-}
-
-const ACTION_GATE_LABELS: Record<GoalTemplateGate, string> = {
-  required: "Run",
-  pass: "Pass gate",
-  verify: "Verify",
-  review: "Review",
-}
-
-/** Resolve a chain step / method's checkpoint gate: an explicit gate wins,
- *  otherwise a method with a verify command is a "verify" checkpoint and a
- *  plain prompt step is a "required" run step. */
-function inferActionGate(input: ActionDescriptor): GoalTemplateGate {
-  if (input.gate && (GOAL_TEMPLATE_GATES as readonly string[]).includes(input.gate)) return input.gate
-  return hasVerificationCommand(input) ? "verify" : "required"
-}
-
-function stepGateLabel(input: ActionDescriptor): string {
-  return ACTION_GATE_LABELS[inferActionGate(input)]
-}
-
 function completionRuleLabel(input: ActionDescriptor) {
-  return hasVerificationCommand(input) ? "Done when command exits 0" : "Done when GOAL_COMPLETE is written"
+  return hasVerificationCommand(input) ? "Completes after the verify command succeeds" : "Completes after the agent reports completion"
 }
 
 function completionRuleClass(input: ActionDescriptor) {
   return hasVerificationCommand(input)
     ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
     : "border-border-base bg-background-panel/70 text-text-weaker"
+}
+
+function terminalOutcomeTone(status: GoalState["status"]): { class: string; style: JSX.CSSProperties } {
+  if (status === "achieved") {
+    return {
+      class: "border-emerald-400/70 bg-emerald-500/20 text-emerald-100",
+      style: {
+        "border-color": "rgba(52, 211, 153, 0.78)",
+        "background-color": "rgba(16, 185, 129, 0.28)",
+        color: "rgb(209, 250, 229)",
+      },
+    }
+  }
+  if (status === "cleared") {
+    return {
+      class: "border-orange-400/70 bg-orange-500/25 text-orange-100",
+      style: {
+        "border-color": "rgba(251, 146, 60, 0.86)",
+        "background-color": "rgba(249, 115, 22, 0.34)",
+        color: "rgb(255, 237, 213)",
+      },
+    }
+  }
+  if (status === "paused") {
+    return {
+      class: "border-amber-400/70 bg-amber-500/20 text-amber-100",
+      style: {
+        "border-color": "rgba(251, 191, 36, 0.78)",
+        "background-color": "rgba(245, 158, 11, 0.26)",
+        color: "rgb(254, 243, 199)",
+      },
+    }
+  }
+  return {
+    class: "border-sky-400/70 bg-sky-500/20 text-sky-100",
+    style: {
+      "border-color": "rgba(56, 189, 248, 0.78)",
+      "background-color": "rgba(14, 165, 233, 0.24)",
+      color: "rgb(224, 242, 254)",
+    },
+  }
 }
 
 interface ChainDraftState {
@@ -619,9 +1250,10 @@ function isStoredChainDraft(value: unknown): value is ChainDraftState {
     const maxTurns: unknown = Reflect.get(step, "maxTurns")
     const maxTimeMinutes: unknown = Reflect.get(step, "maxTimeMinutes")
     const category: unknown = Reflect.get(step, "category")
-    const gate: unknown = Reflect.get(step, "gate")
     const tone: unknown = Reflect.get(step, "tone")
     const elevation: unknown = Reflect.get(step, "elevation")
+    const skills: unknown = Reflect.get(step, "skills")
+    const model: unknown = Reflect.get(step, "model")
     const builtin: unknown = Reflect.get(step, "builtin")
     return (
       typeof id === "string" &&
@@ -635,10 +1267,12 @@ function isStoredChainDraft(value: unknown): value is ChainDraftState {
       Number.isFinite(maxTimeMinutes) &&
       (category === undefined ||
         (typeof category === "string" && (GOAL_TEMPLATE_CATEGORIES as readonly string[]).includes(category))) &&
-      (gate === undefined || (typeof gate === "string" && (GOAL_TEMPLATE_GATES as readonly string[]).includes(gate))) &&
       (tone === undefined || (typeof tone === "string" && (GOAL_TEMPLATE_TONES as readonly string[]).includes(tone))) &&
       (elevation === undefined ||
         (typeof elevation === "string" && (GOAL_TEMPLATE_ELEVATIONS as readonly string[]).includes(elevation))) &&
+      (skills === undefined ||
+        (Array.isArray(skills) && skills.every((skill) => typeof skill === "string" && skill.trim().length > 0))) &&
+      (model === undefined || typeof model === "string" || isGoalPinnedModel(model)) &&
       typeof builtin === "boolean"
     )
   })
@@ -661,9 +1295,16 @@ function readStoredChainDraft(sessionID?: string): ChainDraftState {
         maxTurns: Math.max(1, Math.round(step.maxTurns)),
         maxTimeMinutes: Math.max(1, Math.round(step.maxTimeMinutes)),
         ...(step.category ? { category: step.category } : {}),
-        ...(step.gate ? { gate: step.gate } : {}),
         ...(step.tone ? { tone: step.tone } : {}),
         ...(step.elevation ? { elevation: step.elevation } : {}),
+        ...(step.skills && step.skills.length > 0
+          ? {
+              skills: [
+                ...new Set(step.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean)),
+              ].slice(0, 8),
+            }
+          : {}),
+        ...(step.model ? { model: templateModelFromSnapshot(step.model) ?? modelKey(step.model) } : {}),
         builtin: step.builtin,
       })),
       master: {
@@ -687,6 +1328,7 @@ function writeStoredChainDraft(sessionID: string | undefined, draft: ChainDraftS
 
 export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Promise<void> }; sessionID?: string }) {
   const language = useLanguage()
+  const models = useModels()
   const sdk = useSDK() as unknown as GoalActionClient
   const sync = useSync()
   const state = () => props.goal.store.state
@@ -710,13 +1352,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [activity, setActivity] = createSignal<ActivityEvent[]>([])
   const [chain, setChain] = createSignal<ChainData | null>(null)
   const [templates, setTemplates] = createSignal(DEFAULT_TEMPLATE_BUTTONS)
+  const [localTemplateOverrides, setLocalTemplateOverrides] = createSignal<Record<string, GoalTemplateButton>>({})
+  const [deletedTemplateIDs, setDeletedTemplateIDs] = createSignal<Record<string, true>>({})
   const [selectedTemplateID, setSelectedTemplateID] = createSignal<string | null>(null)
   const [templateVars, setTemplateVars] = createSignal<Record<string, string>>({})
   const [templateSearch, setTemplateSearch] = createSignal("")
   const [templateCategory, setTemplateCategory] = createSignal<ActionCategory>("All")
+  const [chainErrors, setChainErrors] = createSignal<ChainValidationError[]>([])
   const [chainDraft, setChainDraft] = createStore<ChainDraftState>(readStoredChainDraft(props.sessionID))
   const [actionDraft, setActionDraft] = createStore<{
-    open: boolean
     sourceID: string
     id: string
     label: string
@@ -725,11 +1369,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     turns: number
     minutes: number
     category: GoalTemplateCategory
-    gate: GoalTemplateGate
     tone: GoalTemplateTone
     elevation: GoalTemplateElevation
+    skills: string[]
+    model: string
   }>({
-    open: false,
     sourceID: "",
     id: "",
     label: "",
@@ -738,15 +1382,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     turns: 5,
     minutes: 20,
     category: "Custom",
-    gate: "required",
     tone: "violet",
     elevation: "flat",
+    skills: [],
+    model: "",
   })
   const [archive, setArchive] = createSignal<HistoryRun[]>([])
-  const [historyOpen, setHistoryOpen] = createSignal(true)
+  const [availableSkills, setAvailableSkills] = createSignal<SkillOption[]>([])
+  const [historyOpen, setHistoryOpen] = createSignal(false)
   const [selectedHistoryGoalID, setSelectedHistoryGoalID] = createSignal<string | null>(null)
-  const [addingStep, setAddingStep] = createSignal(false)
-  const [stepText, setStepText] = createSignal("")
 
   createEffect(() => {
     writeStoredChainDraft(props.sessionID, {
@@ -758,31 +1402,66 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     })
   })
 
+  const ignoreRefreshError = (_error?: unknown) => undefined
+
   const refreshArchive = () =>
-    void readArchive(sdk).then((runs) => {
-      const previous = archive()
-      // goal-history.json is append-only in normal operation. If a poll lands
-      // while the file is being rewritten and momentarily reads back empty,
-      // keep the last good archive so the drawer doesn't disappear or collapse.
-      if (runs.length === 0 && previous.length > 0) return
-      setArchive(runs)
-      if (!selectedHistoryGoalID() || !runs.some((run) => run.summary.goalID === selectedHistoryGoalID())) {
-        setSelectedHistoryGoalID(runs[0]?.summary.goalID ?? null)
-      }
-    })
+    void readArchive(sdk)
+      .then((runs) => {
+        const previous = archive()
+        // goal-history.json is append-only in normal operation. If a poll lands
+        // while the file is being rewritten and momentarily reads back empty,
+        // keep the last good archive so the drawer doesn't disappear or collapse.
+        if (runs.length === 0 && previous.length > 0) return
+        setArchive(runs)
+        if (!selectedHistoryGoalID() || !runs.some((run) => run.summary.goalID === selectedHistoryGoalID())) {
+          setSelectedHistoryGoalID(runs[0]?.summary.goalID ?? null)
+        }
+      })
+      .catch(ignoreRefreshError)
+  const mergeTemplates = (
+    base: GoalTemplateButton[],
+    overrides = localTemplateOverrides(),
+    deleted = deletedTemplateIDs(),
+  ) => {
+    const seen = new Set<string>()
+    const merged: GoalTemplateButton[] = []
+    for (const template of base) {
+      if (deleted[template.id]) continue
+      const next = overrides[template.id] ?? template
+      seen.add(next.id)
+      merged.push(next)
+    }
+    for (const template of Object.values(overrides)) {
+      if (deleted[template.id] || seen.has(template.id)) continue
+      seen.add(template.id)
+      merged.push(template)
+    }
+    return merged
+  }
+
   const refreshTemplates = () =>
-    void readTemplates(sdk).then((next) => {
-      setTemplates(next)
-      if (!selectedTemplateID() || !next.some((template) => template.id === selectedTemplateID())) {
-        setSelectedTemplateID(next[0]?.id ?? null)
-      }
-    })
+    readTemplates(sdk)
+      .then((next) => {
+        const merged = mergeTemplates(next)
+        setTemplates(merged)
+        if (!selectedTemplateID() || !merged.some((template) => template.id === selectedTemplateID())) {
+          setSelectedTemplateID(merged[0]?.id ?? null)
+        }
+      })
+      .catch(ignoreRefreshError)
+  const refreshSkills = () =>
+    void readAvailableSkills(sdk)
+      .then((next) => {
+        setAvailableSkills(next)
+      })
+      .catch(ignoreRefreshError)
 
   onMount(() => {
+    refreshSkills()
     const tick = () => {
-      void readActivity(sdk).then(setActivity)
-      void readChain(sdk).then(setChain)
-      refreshTemplates()
+      void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)
+      void readChain(sdk).then(setChain).catch(ignoreRefreshError)
+      void refreshTemplates()
       refreshArchive()
     }
     tick()
@@ -790,24 +1469,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     onCleanup(() => clearInterval(timer))
   })
 
-  const refreshChain = () => void readChain(sdk).then(setChain)
+  const refreshChain = () => void readChain(sdk).then(setChain).catch(ignoreRefreshError)
 
-  /** Sub-goal steps map to the engine's chain. Add appends a step; the up/down
-   *  arrows reorder. Both go through `/goal chain …` commands. */
-  const addStep = async () => {
-    const cond = stepText().trim().replace(/"/g, "")
-    if (!cond) return
-    const sent = await sendGoalCommand("step", `chain add "${cond}"`)
-    if (sent) {
-      setStepText("")
-      setAddingStep(false)
-      refreshChain()
-    }
-  }
-  const moveStep = async (from: number, to: number) => {
-    if (to < 0) return
-    await sendGoalCommand("step", `chain move ${from} ${to}`)
+  const refreshGoalSurfaces = async (options: { templates?: boolean } = {}) => {
+    await props.goal.refresh().catch(ignoreRefreshError)
     refreshChain()
+    refreshArchive()
+    if (options.templates) await refreshTemplates()
   }
 
   /** Send a deterministic `/goal <args>` control call. This intentionally does
@@ -821,26 +1489,46 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     setBusy(label)
     const ok = await executeGoalCommand(sdk.client, { sessionID, arguments: args, directory: sdk.directory })
     try {
-      await props.goal.refresh()
-      refreshChain()
-      refreshArchive()
+      await refreshGoalSurfaces({ templates: ok && label === "template" })
     } finally {
       setBusy(null)
       if (ok) setConfirmingClear(false)
       if (ok && label === "set") setShowCreate(false)
-      if (ok && label === "template") refreshTemplates()
     }
     return ok
   }
 
-  const runAction = (action: GoalAction) => sendGoalCommand(action, action)
+  const runAction = async (action: GoalAction) => {
+    const sent = await sendGoalCommand(action, action)
+    if (!sent) return false
+    if (props.sessionID && (action === "restart" || action === "resume")) {
+      const prompted = await startGoalRun(sdk.client, {
+        sessionID: props.sessionID,
+        directory: sdk.directory,
+      })
+      if (!prompted) {
+        setOptimisticStatus("paused")
+        await sendGoalCommand("pause", "pause")
+        return false
+      }
+    }
+    return true
+  }
 
   const stopGoal = async () => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
-    const aborting = stopGoalRun(sdk.client, { sessionID, directory: sdk.directory })
-    const clearing = sendGoalCommand("clear", "clear")
-    const [cleared] = await Promise.all([clearing, aborting])
+    setBusy("clear")
+    const cleared = await executeGoalCommand(sdk.client, { sessionID, arguments: "clear", directory: sdk.directory })
+    try {
+      await refreshGoalSurfaces()
+    } finally {
+      setBusy(null)
+      if (cleared) {
+        setConfirmingClear(false)
+        setOptimisticStatus(null)
+      }
+    }
     return cleared
   }
 
@@ -855,10 +1543,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sent = await sendGoalCommand("set", args)
     if (sent) {
       if (props.sessionID) {
-        await startGoalRun(sdk.client, {
+        const prompted = await startGoalRun(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
         })
+        if (!prompted) await sendGoalCommand("pause", "pause")
       }
       setNewCondition("")
       setNewCommand("")
@@ -872,6 +1561,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (!note) return
     const sent = await sendGoalCommand("steer", `steer "${note}"`)
     if (sent) {
+      const shouldWakeRun = liveRunStatus() !== "active" || liveRunStalled()
+      if (shouldWakeRun && props.sessionID) {
+        await steerGoalRun(sdk.client, {
+          sessionID: props.sessionID,
+          directory: sdk.directory,
+        }, note)
+      }
       setSteerText("")
       setSteerOpen(false)
     }
@@ -894,12 +1590,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         template.condition ?? "",
         template.command ?? "",
         inferActionCategory(template),
-        completionRuleLabel(template),
       ].some((value) => cleanText(value).toLowerCase().includes(query))
     })
   })
   const selectedTemplate = createMemo(() => templates().find((t) => t.id === selectedTemplateID()) ?? null)
-  const selectedTemplateVariables = createMemo(() => Object.entries(selectedTemplate()?.variables ?? {}))
   const masterTurns = () => chainDraft.master.maxTurns
   const masterMinutes = () => chainDraft.master.maxTimeMinutes
   const budgetSummary = createMemo(() =>
@@ -908,9 +1602,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       maxTimeMinutes: chainDraft.master.maxTimeMinutes,
     }),
   )
-  const chainCommandCheckCount = createMemo(() => chainDraft.steps.filter((step) => hasVerificationCommand(step)).length)
-  const chainMarkerCheckCount = createMemo(() => Math.max(0, chainDraft.steps.length - chainCommandCheckCount()))
-  const chainGateCount = createMemo(() => chainDraft.steps.filter((step) => inferActionGate(step) !== "required").length)
+  const chainVerifyCommandCount = createMemo(() => chainDraft.steps.filter((step) => hasVerificationCommand(step)).length)
+  const chainAgentCompletionCount = createMemo(() => Math.max(0, chainDraft.steps.length - chainVerifyCommandCount()))
+  const chainLimitSummary = createMemo(() => `${masterTurns()} turns / ${masterMinutes()}m`)
+  const chainVerifySummary = createMemo(
+    () =>
+      `${chainDraft.steps.length} actions / ${chainVerifyCommandCount()} command-backed / ${chainAgentCompletionCount()} agent-completed`,
+  )
   const templateConstraintsLabel = (template: GoalTemplateButton) => {
     const c = template.constraints
     if (!c) return ""
@@ -922,21 +1620,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       .filter(Boolean)
       .join(" / ")
   }
-  const applyTemplateDraft = (template: GoalTemplateButton, vars = templateVariableDefaults(template)) => {
-    setSelectedTemplateID(template.id)
-    setTemplateVars(vars)
-    const draft = templateDraftFromButton(template, vars)
-    setNewCondition(draft.condition)
-    setNewCommand(draft.command)
-    setShowCreate(true)
-  }
-  // Seed the save-as / edit draft from a template (or blank for a new method).
-  // `open` controls whether the deep-edit fields are revealed; the
-  // "Template name + Save template" row is always visible and reads this draft.
-  const seedActionDraft = (template: GoalTemplateButton | undefined, open: boolean) => {
+  const seedActionDraft = (template: GoalTemplateButton | undefined) => {
     const c = template?.constraints
     setActionDraft({
-      open,
       sourceID: template?.id ?? "",
       id: template ? (template.builtin ? `${template.id}-custom` : template.id) : uniqueTemplateID("custom-action"),
       label: template?.label ?? "",
@@ -945,17 +1631,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       turns: typeof c?.maxTurns === "number" ? c.maxTurns : 5,
       minutes: typeof c?.maxTimeMinutes === "number" ? c.maxTimeMinutes : 20,
       category: template ? inferActionCategory(template) : "Custom",
-      gate: template ? inferActionGate(template) : "required",
       tone: template?.tone ?? inferredActionTone(template ?? {}),
       elevation: template?.elevation ?? "flat",
+      skills: template?.skills ? [...template.skills] : [],
+      model: modelKey(template?.model),
     })
   }
   const selectActionForView = (template: GoalTemplateButton) => {
     setSelectedTemplateID(template.id)
     setTemplateVars(templateVariableDefaults(template))
-    // Seed the save-as draft (collapsed) so the always-visible
-    // "Template name + Save template" row works without opening the editor.
-    seedActionDraft(template, false)
+    seedActionDraft(template)
   }
   createEffect(() => {
     const list = filteredTemplates()
@@ -1004,43 +1689,179 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (!Number.isFinite(value)) return
     setChainDraft("master", field, Math.max(1, value))
   }
-  const openActionEditor = (template?: GoalTemplateButton) => seedActionDraft(template, true)
+  const modelOptions = createMemo(() =>
+    models
+      .list()
+      .map((model) => {
+        const key = `${model.provider.id}:${model.id}`
+        return {
+          key,
+          label: `${model.provider.name} / ${model.name}`,
+          provider: model.provider.name,
+          model: model.name,
+        }
+      })
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  )
+  const modelOptionsForDraft = createMemo(() => {
+    const selected = actionDraft.model.trim()
+    if (!selected || modelOptions().some((option) => option.key === selected)) return modelOptions()
+    return [
+      {
+        key: selected,
+        label: selected,
+        provider: language.t("session.goal.template.savedPin"),
+        model: selected,
+      },
+      ...modelOptions(),
+    ]
+  })
+  const modelLabelByKey = createMemo(() => new Map(modelOptionsForDraft().map((option) => [option.key, option.label])))
+  const modelLabel = (model?: GoalTemplateModel) => {
+    const key = modelKey(model)
+    if (!key) return ""
+    return modelLabelByKey().get(key) ?? (isGoalPinnedModel(model) ? `${model.providerID} / ${model.modelID}` : key)
+  }
+  const skillOptionsForDraft = createMemo(() => {
+    const seen = new Set<string>()
+    const out: SkillOption[] = []
+    for (const skill of actionDraft.skills) {
+      const name = cleanText(skill).trim().slice(0, 80)
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      out.push({ name, description: language.t("session.goal.template.savedPin") })
+    }
+    for (const skill of availableSkills()) {
+      if (seen.has(skill.name)) continue
+      seen.add(skill.name)
+      out.push(skill)
+    }
+    return out
+  })
+  const toggleActionSkill = (name: string) => {
+    const clean = cleanText(name).trim().slice(0, 80)
+    if (!clean) return
+    setActionDraft("skills", (current) => {
+      if (current.includes(clean)) return current.filter((skill) => skill !== clean)
+      return [...current, clean].slice(0, 8)
+    })
+  }
+  const openActionEditor = (template?: GoalTemplateButton) => {
+    if (!template) {
+      setSelectedTemplateID(null)
+      setTemplateVars({})
+    }
+    seedActionDraft(template)
+  }
   const editTemplateDraft = (template: GoalTemplateButton) => {
     openActionEditor(template)
   }
-  const updateTemplateVariable = (key: string, value: string) => {
-    const next = { ...templateVars(), [key]: value }
-    setTemplateVars(next)
-    const template = selectedTemplate()
-    if (!template) return
-    const draft = templateDraftFromButton(template, next)
-    setNewCondition(draft.condition)
-    setNewCommand(draft.command)
-  }
-  const saveTemplateDraft = async () => {
-    const id = actionDraft.id.trim()
-    const condition = actionDraft.prompt.trim()
-    if (!TEMPLATE_SAVE_ID_RE.test(id) || !condition) return
+  const actionDraftTemplate = (): ActionDraftTemplate => {
+    const id = actionDraft.id.trim() || actionIDFromLabel(actionDraft.label)
     const label = actionDraft.label.trim() || id
-    const payload: Record<string, unknown> = {
+    const condition = actionDraft.prompt.trim()
+    const command = actionDraft.command.trim()
+    const sourceTemplate = selectedTemplate()
+    const pinnedModel = pinnedModelFromKey(actionDraft.model)
+    const referencedVars = referencedTemplateVariables(condition, command)
+    const variables =
+      sourceTemplate?.variables && referencedVars.size > 0
+        ? Object.fromEntries(Object.entries(sourceTemplate.variables).filter(([key]) => referencedVars.has(key)))
+        : undefined
+    return {
+      id,
       label,
-      condition,
       description: label || (condition.length > 80 ? `${condition.slice(0, 77)}...` : condition),
+      condition,
+      ...(command ? { command } : {}),
       constraints: {
         maxTurns: Math.max(1, Math.round(actionDraft.turns)),
         maxTimeMinutes: Math.max(1, Math.round(actionDraft.minutes)),
       },
+      ...(variables && Object.keys(variables).length > 0 ? { variables } : {}),
       category: actionDraft.category,
-      gate: actionDraft.gate,
       tone: actionDraft.tone,
       elevation: actionDraft.elevation,
+      ...(actionDraft.skills.length > 0 ? { skills: [...actionDraft.skills] } : {}),
+      ...(pinnedModel ? { model: pinnedModel } : {}),
+      builtin: false,
     }
-    const command = actionDraft.command?.trim()
-    if (command) payload.command = command
+  }
+  const upsertLocalTemplate = (template: GoalTemplateButton) => {
+    setDeletedTemplateIDs((current) => {
+      const next = { ...current }
+      delete next[template.id]
+      return next
+    })
+    setLocalTemplateOverrides((current) => {
+      const next = { ...current, [template.id]: template }
+      setTemplates(mergeTemplates(templates(), next, deletedTemplateIDs()))
+      return next
+    })
+  }
+  const removeLocalTemplate = (id: string) => {
+    setLocalTemplateOverrides((current) => {
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+    setDeletedTemplateIDs((current) => {
+      const next = { ...current, [id]: true as const }
+      setTemplates(mergeTemplates(templates(), localTemplateOverrides(), next))
+      return next
+    })
+  }
+  const addActionDraftToChain = () => {
+    const template = actionDraftTemplate()
+    if (!template.condition.trim()) return
+    const step = chainStepFromTemplate(template, templateVars(), `${template.id}-${Date.now()}-${chainDraft.steps.length}`)
+    if (!step.condition.trim()) return
+    setChainDraft("steps", chainDraft.steps.length, step)
+  }
+  const actionDraftPayload = () => {
+    const template = actionDraftTemplate()
+    return {
+      label: template.label,
+      description: template.description || template.label,
+      condition: template.condition,
+      ...(template.command ? { command: template.command } : {}),
+      ...(template.constraints ? { constraints: template.constraints } : {}),
+      ...(template.variables ? { variables: template.variables } : {}),
+      category: template.category,
+      ...(template.tone ? { tone: template.tone } : {}),
+      ...(template.elevation ? { elevation: template.elevation } : {}),
+      ...(template.skills && template.skills.length > 0 ? { skills: [...template.skills] } : {}),
+      ...(template.model ? { model: template.model } : {}),
+    }
+  }
+  const saveTemplateDraft = async () => {
+    const existingID = actionDraft.id.trim()
+    const id = TEMPLATE_SAVE_ID_RE.test(existingID)
+      ? existingID
+      : uniqueTemplateID(actionIDFromLabel(actionDraft.label))
+    const condition = actionDraft.prompt.trim()
+    if (!condition) return
+    const payload = actionDraftPayload()
     const sent = await sendGoalCommand("template", `template import ${id} ${JSON.stringify(payload)}`)
     if (sent) {
+      const savedTemplate = { ...actionDraftTemplate(), id, actionID: id, sourceID: id, builtin: false }
+      upsertLocalTemplate(savedTemplate)
       setSelectedTemplateID(id)
-      setActionDraft("open", false)
+      setActionDraft("sourceID", id)
+      setActionDraft("id", id)
+    }
+  }
+  const duplicateActionDraft = async () => {
+    const condition = actionDraft.prompt.trim()
+    if (!condition) return
+    const id = uniqueTemplateID(`${actionDraft.id.trim() || "custom-action"}-copy`)
+    const sent = await sendGoalCommand("template", `template import ${id} ${JSON.stringify(actionDraftPayload())}`)
+    if (sent) {
+      const savedTemplate = { ...actionDraftTemplate(), id, actionID: id, sourceID: id, builtin: false }
+      upsertLocalTemplate(savedTemplate)
+      setSelectedTemplateID(id)
+      setActionDraft("sourceID", id)
+      setActionDraft("id", id)
     }
   }
   const duplicateActionTemplate = async (template: GoalTemplateButton) => {
@@ -1049,6 +1870,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const payload = templatePayload(template)
     const sent = await sendGoalCommand("template", `template import ${id} ${JSON.stringify(payload)}`)
     if (sent) {
+      const duplicatedTemplate = { ...template, id, actionID: id, sourceID: id, label: template.label, builtin: false }
+      upsertLocalTemplate(duplicatedTemplate)
       setSelectedTemplateID(id)
     }
   }
@@ -1056,7 +1879,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (template.builtin) return
     const sent = await sendGoalCommand("template", `template delete ${template.id}`)
     if (sent) {
-      setSelectedTemplateID(templates().find((candidate) => candidate.id !== template.id)?.id ?? null)
+      removeLocalTemplate(template.id)
+      const next = templates().find((candidate) => candidate.id !== template.id)
+      if (next) {
+        selectActionForView(next)
+      } else {
+        openActionEditor()
+      }
     }
   }
   const uniqueTemplateID = (base: string) => {
@@ -1079,9 +1908,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     ...(template.constraints ? { constraints: template.constraints } : {}),
     ...(template.variables ? { variables: template.variables } : {}),
     category: inferActionCategory(template),
-    gate: inferActionGate(template),
     ...(template.tone ? { tone: template.tone } : {}),
     ...(template.elevation ? { elevation: template.elevation } : {}),
+    ...(template.skills && template.skills.length > 0 ? { skills: [...template.skills] } : {}),
+    ...(template.model ? { model: template.model } : {}),
   })
   const selectTemplateAt = (index: number) => {
     const list = filteredTemplates()
@@ -1098,54 +1928,53 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (event.key === "End") return selectTemplateAt(list.length - 1)
     selectTemplateAt(event.key === "ArrowDown" ? current + 1 : current <= 0 ? 0 : current - 1)
   }
+  const runnableChainSteps = () => chainDraft.steps
   const startGoalChain = async () => {
-    if (chainDraft.steps.length === 0) return
+    const steps = runnableChainSteps()
+    if (steps.length === 0) return
+    const errors = validateChainDraft(steps, {
+      maxTurns: chainDraft.master.maxTurns,
+      maxTimeMinutes: chainDraft.master.maxTimeMinutes,
+    })
+    setChainErrors(errors)
+    if (errors.length > 0) return
+    const firstStepModel = pinnedModelForRuntime(steps[0]?.model)
+    const firstStepSkills = steps[0]?.skills
     const payload = JSON.stringify({
       master: { maxTurns: chainDraft.master.maxTurns, maxMinutes: chainDraft.master.maxTimeMinutes },
-      steps: chainDraft.steps.map((step) => ({
-        condition: step.condition,
-        ...(step.command.trim()
-          ? {
-              command: step.command.trim(),
-              verification: { type: "shell", command: step.command.trim() },
-            }
-          : { verification: { type: "marker" } }),
-        maxTurns: step.maxTurns,
-        maxMinutes: step.maxTimeMinutes,
-        ...(step.category ? { category: step.category } : {}),
-        ...(step.gate ? { gate: step.gate } : {}),
-        ...(step.tone ? { tone: step.tone } : {}),
-        ...(step.elevation ? { elevation: step.elevation } : {}),
-      })),
+      steps: steps.map((step) => {
+        const model = pinnedModelForRuntime(step.model)
+        return {
+          condition: step.condition,
+          ...(step.command.trim()
+            ? {
+                command: step.command.trim(),
+                verification: { type: "shell", command: step.command.trim() },
+              }
+            : { verification: { type: "marker" } }),
+          maxTurns: step.maxTurns,
+          maxMinutes: step.maxTimeMinutes,
+          ...(step.category ? { category: step.category } : {}),
+          ...(step.tone ? { tone: step.tone } : {}),
+          ...(step.elevation ? { elevation: step.elevation } : {}),
+          ...(step.skills && step.skills.length > 0 ? { skills: [...step.skills] } : {}),
+          ...(model ? { model } : {}),
+        }
+      }),
     })
     const sent = await sendGoalCommand("chain", `chain start-json ${payload}`)
     if (sent) {
       if (props.sessionID) {
-        await startGoalRun(sdk.client, {
+        const prompted = await startGoalRun(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
+          ...(firstStepModel ? { model: firstStepModel } : {}),
+          ...(firstStepSkills && firstStepSkills.length > 0 ? { skills: firstStepSkills } : {}),
         })
+        if (!prompted) await sendGoalCommand("pause", "pause")
       }
-      setChainDraft("steps", [])
       setShowCreate(false)
     }
-  }
-
-  /** Raise/lower a live budget inline. The goal plugin enforces the hard-stop
-   *  semantics; the dock just sends the new cap via `/goal turns|time <n>`.
-   *  Guards against decreasing below current usage (which would trip the
-   *  constraint on the next evaluation). */
-  const adjustBudget = (field: "turns" | "time", current: number, delta: number) => {
-    const s = state()
-    if (!s) return
-    const used = field === "turns" ? s.turnsEvaluated : elapsedMinutes()
-    const next = Math.max(1, current + delta)
-    if (next === current) return
-    // Don't let the user set the cap below what's already been used — that
-    // would cause an immediate constraint stop on the next evaluation, which
-    // reads as a broken button.
-    if (next < used) return
-    void sendGoalCommand("budget", `${field} ${next}`)
   }
 
   const progressPct = createMemo(() => {
@@ -1160,6 +1989,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const end = s.completedAt ?? Date.now()
     return Math.max(0, Math.round((end - s.startedAt) / 60_000))
   })
+  const currentGoalTurns = createMemo(() => state()?.turnsEvaluated ?? 0)
+  const maxGoalTurns = createMemo(() => state()?.constraints.maxTurns ?? masterTurns())
+  const currentGoalMinutes = createMemo(() => (state() ? elapsedMinutes() : 0))
+  const maxGoalMinutes = createMemo(() => state()?.constraints.maxTimeMinutes ?? masterMinutes())
 
   const selectedHistoryRun = createMemo(
     () => archive().find((run) => run.summary.goalID === selectedHistoryGoalID()) ?? null,
@@ -1205,6 +2038,62 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   //     null and the run is already in the history timeline.
   const liveGoal = createMemo(() => liveGoalOf(state()))
   const terminalGoal = createMemo(() => terminalGoalOf(state()))
+  const visibleChainSteps = createMemo<GoalChainDraftStep[]>(() => {
+    const runningChain = chain()
+    if (!liveGoal() && chainDraft.steps.length > 0) return chainDraft.steps
+    if (!runningChain) return chainDraft.steps
+    const s = state()
+    return runningChain.steps.map((step, index) => ({
+      id: `running-${index}`,
+      actionID: `running-${index}`,
+      label: cleanText(step.condition).slice(0, 52) || `Step ${index + 1}`,
+      condition: cleanText(step.condition),
+      command: cleanText(step.command ?? ""),
+      maxTurns: step.maxTurns ?? s?.constraints.maxTurns ?? chainDraft.master.maxTurns,
+      maxTimeMinutes: step.maxTimeMinutes ?? s?.constraints.maxTimeMinutes ?? chainDraft.master.maxTimeMinutes,
+      category: step.category ?? inferActionCategory(step),
+      tone: step.tone ?? inferredActionTone(step),
+      elevation: step.elevation ?? "flat",
+      builtin: false,
+      skills: Array.isArray(step.skills)
+        ? [...new Set(step.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean))].slice(0, 8)
+        : [],
+      model: templateModelFromSnapshot(step.model) ?? "",
+    }))
+  })
+  const visibleStepCount = createMemo(() => visibleChainSteps().length)
+  const runningStepIndex = createMemo(() => {
+    if (!liveGoal()) return -1
+    const runningChain = chain()
+    if (runningChain) return Math.max(0, Math.min(runningChain.current, Math.max(0, runningChain.steps.length - 1)))
+    return visibleStepCount() > 0 ? 0 : -1
+  })
+  const liveRunStatus = createMemo<GoalState["status"] | null>(() => optimisticStatus() ?? liveGoal()?.status ?? null)
+  const latestActivityAt = createMemo(() => activity()[0]?.at ?? null)
+  const liveRunStalled = createMemo(() => isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), Date.now()))
+  const liveRunIdleMinutes = createMemo(() => goalIdleMinutes(latestActivityAt(), Date.now()))
+  const stepRunState = (index: number): ChainStepRunState => {
+    if (!liveGoal()) return "draft"
+    const current = runningStepIndex()
+    if (current < 0) return "draft"
+    const status = liveRunStatus()
+    if (status === "achieved") return index <= current ? "done" : "queued"
+    if (index < current) return "done"
+    if (index === current) {
+      if (status === "paused") return "paused"
+      if (status === "active") return liveRunStalled() ? "stalled" : "running"
+      return "queued"
+    }
+    return "queued"
+  }
+  const removeLiveChainStep = async (index: number) => {
+    if (index <= runningStepIndex()) return false
+    return sendGoalCommand("chain", `chain remove ${index + 1}`)
+  }
+  const removeVisibleStep = (step: GoalChainDraftStep, index: number) => {
+    if (liveGoal()) return void removeLiveChainStep(index)
+    removeDraftStep(step.id)
+  }
   const unarchivedTerminalGoal = createMemo(() => {
     const goal = terminalGoal()
     if (!goal) return null
@@ -1214,21 +2103,35 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
   // The pause/resume toggle's next action, honoring the optimistic override.
   const pauseResume = createMemo(() => pauseResumeAction(state()?.status, optimisticStatus()))
+  const chainRunStateLabel = createMemo(() => {
+    const status = liveRunStatus()
+    if (status === "active") return liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton") : language.t("session.goal.chainBuilder.runningButton")
+    if (status === "paused") return language.t("session.goal.chainBuilder.pausedButton")
+    if (status === "achieved") return language.t("session.goal.chainBuilder.completedButton")
+    if (status === "cleared") return language.t("session.goal.chainBuilder.stoppedButton")
+    return language.t("session.goal.chainBuilder.planChain")
+  })
+  const chainRunStateTitle = createMemo(() => {
+    return language.t("session.goal.chainBuilder.title")
+  })
+  const chainRunStateSubtitle = createMemo(() => {
+    if (liveGoal()) return "Progress, controls, and step status stay in this workspace."
+    return language.t("session.goal.chainBuilder.subtitle")
+  })
 
-  // Drop the optimistic override once the polled status catches up to it (or
-  // the goal leaves the active/paused cycle entirely), so the toggle resumes
-  // tracking real state. Without this the override could pin a stale label if
-  // the command silently no-op'd.
+  // Drop the optimistic override once polling returns any concrete lifecycle
+  // status. A contradictory active/paused value must win over optimism; a
+  // provider/session error can pause the goal after prompt admission, and the
+  // panel must not keep saying Running in that case.
   createEffect(() => {
     const opt = optimisticStatus()
     if (!opt) return
     const real = state()?.status
-    if (real === opt || (real !== "active" && real !== "paused")) {
+    if (real === "active" || real === "paused" || real === "achieved" || real === "cleared") {
       setOptimisticStatus(null)
     }
   })
 
-  const verifyCommand = createMemo(() => cleanText(liveGoal()?.command ?? ""))
   const showForm = createMemo(() => shouldShowCreateFormOf(state(), showCreate()))
   const statusMeta = (s: GoalState["status"] | undefined) => statusMetaOf(s)
   const nodeColor = (status: string) => nodeColorOf(status)
@@ -1248,63 +2151,80 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             <div class="text-12-regular text-text-weak">{language.t("session.goal.error.corrupt.hint")}</div>
           </div>
         </Match>
-        <Match when={props.goal.store.loaded && !props.goal.store.corrupt && showForm()}>
-          <div data-component="goal-playbook-workspace" class="flex min-w-0 flex-col gap-2.5 pb-2">
+        <Match when={props.goal.store.loaded && !props.goal.store.corrupt}>
+          <div data-component="goal-playbook-workspace" class="flex min-h-0 min-w-0 flex-col gap-3 pb-2">
+            <div
+              data-testid="chain-workspace"
+              data-component="goal-chain-builder-workspace"
+              class="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:h-[calc(100vh-8rem)] xl:grid-cols-[minmax(620px,1fr)_minmax(360px,420px)] xl:gap-3"
+            >
+              <section data-testid="goal-status-card" data-component="goal-status-card" class="hidden">
             <Show when={unarchivedTerminalGoal()} keyed>
               {(terminal) => (
-                <div
-                  data-component="goal-terminal-summary"
-                  class="min-w-0 rounded-lg border border-border-base bg-background-panel/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                <GoalConsoleSection
+                  zone="last-result"
+                  title={language.t("session.goal.lastResult")}
+                  subtitle="Most recent run outcome and evidence."
                 >
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                        {language.t("session.goal.lastResult")}
+                  <div data-component="goal-terminal-summary" class="min-w-0 p-3">
+                    <div
+                      data-component="goal-terminal-output-card"
+                      class="rounded-lg border border-border-base bg-background-base/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    >
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-weaker">
+                          Last run outcome
+                        </span>
+                        <span
+                          data-component="goal-terminal-outcome-badge"
+                          class={`inline-flex min-h-7 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${terminalOutcomeTone(terminal.status).class}`}
+                          style={terminalOutcomeTone(terminal.status).style}
+                        >
+                          <span aria-hidden>{statusMeta(terminal.status).glyph}</span>
+                          {statusMeta(terminal.status).label}
+                        </span>
                       </div>
-                      <div class="mt-1 break-words text-13-medium text-text-base" title={cleanText(terminal.condition)}>
+                      <div
+                        class="mt-3 break-words text-14-medium leading-5 text-text-base"
+                        title={cleanText(terminal.condition)}
+                      >
                         {cleanText(terminal.condition)}
                       </div>
+                      <Show when={terminal.lastEvaluation?.reason}>
+                        <div class="mt-3 rounded-md border border-border-base bg-background-panel/80 px-2.5 py-2 text-11-regular leading-5 text-text-weak">
+                          {cleanText(terminal.lastEvaluation!.reason)}
+                        </div>
+                      </Show>
                     </div>
-                    <span
-                      class={`shrink-0 rounded-md border border-border-base bg-background-base/80 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.08em] ${statusMeta(terminal.status).text}`}
+                    <div
+                      data-component="goal-terminal-stat-line"
+                      class="mt-2 grid grid-cols-2 gap-1.5 rounded-md border border-border-base bg-background-base/70 p-1.5 text-11-regular text-text-weak"
                     >
-                      {statusMeta(terminal.status).label}
-                    </span>
-                  </div>
-                  <div class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3">
-                    <RunMetricPill
-                      label="Status"
-                      value={statusMeta(terminal.status).label}
-                      detail="state file"
-                      tone={terminal.status === "achieved" ? "success" : "warning"}
-                    />
-                    <RunMetricPill label="Turns" value={String(terminal.turnsEvaluated)} detail="evaluated" />
-                    <RunMetricPill
-                      label="Elapsed"
-                      value={formatElapsed((terminal.completedAt ?? Date.now()) - terminal.startedAt)}
-                      detail="runtime"
-                    />
-                  </div>
-                  <Show when={terminal.lastEvaluation?.reason}>
-                    <div class="mt-3 rounded-md border border-border-base bg-background-base/70 px-3 py-2 text-12-regular leading-5 text-text-weak">
-                      {cleanText(terminal.lastEvaluation!.reason)}
+                      <div class="rounded border border-border-base bg-background-panel/70 px-2 py-1.5">
+                        <div class="text-[9px] uppercase tracking-[0.08em] text-text-weaker">Turns</div>
+                        <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
+                          {terminal.turnsEvaluated}/{terminal.constraints.maxTurns}
+                        </div>
+                      </div>
+                      <div class="rounded border border-border-base bg-background-panel/70 px-2 py-1.5">
+                        <div class="text-[9px] uppercase tracking-[0.08em] text-text-weaker">Time</div>
+                        <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
+                          {formatElapsed((terminal.completedAt ?? Date.now()) - terminal.startedAt)}/
+                          {terminal.constraints.maxTimeMinutes}m
+                        </div>
+                      </div>
                     </div>
-                  </Show>
-                </div>
+                  </div>
+                </GoalConsoleSection>
               )}
             </Show>
-            <div
-              data-component="goal-playbook-setup"
-              class="grid min-w-0 grid-cols-1 gap-2.5 xl:grid-cols-[minmax(0,1fr)_minmax(460px,0.78fr)]"
+            <GoalConsoleSection
+              zone="set-goal"
+              title={language.t("session.goal.create.title")}
+              subtitle="Create one standalone goal outside the chain."
             >
-              <div class="min-w-0 rounded-lg border border-border-base bg-background-panel/60 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="h-2 w-2 rounded-full bg-text-weaker/50 shrink-0" aria-hidden />
-                    <div class="text-11-regular font-medium uppercase tracking-[0.12em] text-text-weaker truncate">
-                      {language.t("session.goal.create.title")}
-                    </div>
-                  </div>
+              <div data-component="goal-playbook-setup" class="min-w-0 p-3">
+                <div class="flex justify-end">
                   <Show when={showCreate() && liveGoal()}>
                     <button
                       type="button"
@@ -1321,7 +2241,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     to set or control goals.
                   </div>
                 </Show>
-                <div class="mt-3 grid grid-cols-1 gap-2">
+                <div class="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-border-base bg-background-base/60 p-2">
                   <TextField
                     value={newCondition()}
                     onChange={setNewCondition}
@@ -1340,170 +2260,622 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
                     class="w-full"
                   />
-                  <Button
+                  <ActionButton
                     variant="primary"
-                    class="h-10 w-full"
+                    class="h-8 w-full"
+                    label={language.t("session.goal.create.submit")}
                     onClick={() => void createGoal()}
                     disabled={!newCondition().trim() || !props.sessionID || busy() !== null || goalCommandUnavailable()}
-                  >
-                    {busy() === "set" ? "…" : language.t("session.goal.create.submit")}
-                  </Button>
+                    busy={busy() === "set"}
+                  />
                 </div>
-              </div>
 
               <div
                 data-component="goal-playbook-budget-strip"
-                class="grid grid-cols-2 gap-1.5 rounded-lg border border-border-base bg-background-panel/45 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:grid-cols-3 2xl:grid-cols-5"
+                class="mt-3 grid grid-cols-2 overflow-hidden rounded-lg border border-border-base bg-background-base/70 text-11-regular text-text-weaker shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
               >
-                <RunMetricPill label="Max turns" value={String(masterTurns())} detail="master cap" />
-                <RunMetricPill label="Steps" value={String(budgetSummary().stepCount)} detail="queued" />
-                <RunMetricPill
-                  label="Est. turns"
-                  value={String(budgetSummary().effectiveTurns)}
-                  detail="possible max"
-                />
-                <RunMetricPill
-                  label="Checks"
-                  value={`${chainCommandCheckCount()} cmd`}
-                  detail={`${chainMarkerCheckCount()} marker`}
-                />
-                <RunMetricPill label="Budget" value={`${masterMinutes()}m`} detail="per run" />
+                <div class="border-b border-r border-border-base px-3 py-2">
+                  <div>Current turns</div>
+                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{currentGoalTurns()}</div>
+                </div>
+                <div class="border-b border-border-base px-3 py-2">
+                  <div>Max turns</div>
+                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{maxGoalTurns()}</div>
+                </div>
+                <div class="border-r border-border-base px-3 py-2">
+                  <div>Current time</div>
+                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{currentGoalMinutes()}m</div>
+                </div>
+                <div class="px-3 py-2">
+                  <div>Max time</div>
+                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{maxGoalMinutes()}m</div>
+                </div>
+                <div class="col-span-2 border-t border-border-base px-3 py-2">
+                  Draft steps <strong class={numericHighlightClass("ml-1")} style={numericHighlightStyle("violet")}>{budgetSummary().stepCount}</strong>
+                </div>
               </div>
-            </div>
-            <div
-              data-component="goal-chain-builder"
-              class="overflow-hidden rounded-lg border border-border-base bg-background-panel/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-            >
-              <div class="flex items-center justify-between gap-3 border-b border-border-base bg-background-base/55 px-3 py-2">
-                <div class="min-w-0">
-                  <div class="text-11-regular font-medium uppercase tracking-[0.12em] text-text-weaker">
-                    {language.t("session.goal.chainBuilder.title")}
+              </div>
+            </GoalConsoleSection>
+              </section>
+              <GoalConsoleSection
+                zone="chain-builder"
+                title={chainRunStateTitle()}
+                subtitle={chainRunStateSubtitle()}
+                class="min-h-0"
+              >
+              <div
+                data-component="goal-chain-builder"
+                data-testid="chain-builder"
+                class="flex h-full min-h-0 min-w-0 flex-col bg-[radial-gradient(circle_at_16%_0%,rgba(139,92,246,0.12),transparent_34%),linear-gradient(180deg,rgba(24,24,27,0.74),rgba(10,10,10,0.70))]"
+              >
+              <div
+                data-component="goal-chain-builder-header-strip"
+                class="relative z-10 shrink-0 border-b border-violet-400/18 bg-[linear-gradient(90deg,rgba(76,29,149,0.20),rgba(15,23,42,0.48))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.028)]"
+              >
+                <div class="grid min-w-0 gap-2 lg:grid-cols-[minmax(260px,1fr)_auto] lg:items-start">
+                  <div
+                    class="min-w-0"
+                    title={liveGoal() ? chainRunStateSubtitle() : language.t("session.goal.chainBuilder.subtitle")}
+                  >
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span
+                        class="h-5 w-1.5 shrink-0 rounded-full"
+                        classList={{
+                          "bg-orange-300/90": liveRunStalled(),
+                          "bg-emerald-300/90": liveRunStatus() === "active" && !liveRunStalled(),
+                          "bg-amber-300/90": liveRunStatus() === "paused",
+                          "bg-violet-300/80": !liveGoal(),
+                        }}
+                        aria-hidden
+                      />
+                      <div class="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-violet-50">
+                        {liveGoal() ? language.t("session.goal.chainBuilder.runningHeader") : chainRunStateLabel()}
+                      </div>
+                    </div>
+                    <div class="mt-0.5 truncate text-11-regular text-violet-100/70">
+                      {liveGoal() ? cleanText(liveGoal()!.condition) : language.t("session.goal.chainBuilder.planChainHint")}
+                    </div>
                   </div>
-                  <div class="mt-0.5 truncate font-mono text-[10px] text-text-weaker">
-                    {language.t("session.goal.chainBuilder.path")}
+                  <Show when={!liveGoal()}>
+                    <div data-component="goal-target-toolbar" class="flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end">
+                      <ActionButton
+                        label={language.t("session.goal.chainBuilder.validate")}
+                        variant="secondary"
+                        class="h-7 shrink-0 px-3 text-12-medium"
+                        disabled={busy() !== null || !props.sessionID}
+                        onClick={() => {
+                          const errors = validateChainDraft(runnableChainSteps(), {
+                            maxTurns: chainDraft.master.maxTurns,
+                            maxTimeMinutes: chainDraft.master.maxTimeMinutes,
+                          })
+                          setChainErrors(errors)
+                          if (errors.length === 0) {
+                            refreshChain()
+                            void props.goal.refresh().catch(ignoreRefreshError)
+                          }
+                        }}
+                      />
+                      <ActionButton
+                        label={language.t("session.goal.chainBuilder.saveDraft")}
+                        variant="secondary"
+                        class="h-7 shrink-0 px-3 text-12-medium"
+                        disabled={busy() !== null}
+                        onClick={() => {
+                          writeStoredChainDraft(props.sessionID, {
+                            steps: chainDraft.steps.map((step) => ({ ...step })),
+                            master: {
+                              maxTurns: chainDraft.master.maxTurns,
+                              maxTimeMinutes: chainDraft.master.maxTimeMinutes,
+                            },
+                          })
+                          refreshChain()
+                        }}
+                      />
+                      <ActionButton
+                        label={language.t("session.goal.chainBuilder.start")}
+                        variant="primary"
+                        class="h-7 shrink-0 px-3 text-12-medium"
+                        busy={busy() === "chain"}
+                        disabled={
+                          busy() !== null ||
+                          !props.sessionID ||
+                          goalCommandUnavailable() ||
+                          runnableChainSteps().length === 0
+                        }
+                        onClick={() => void startGoalChain()}
+                      />
+                    </div>
+                    <Show when={chainErrors().length > 0}>
+                      <div
+                        data-component="goal-chain-validation-errors"
+                        class="mt-2 flex flex-col gap-1 rounded-md border border-amber-600/40 bg-amber-950/30 px-3 py-2"
+                      >
+                        <For each={chainErrors()}>
+                          {(error) => (
+                            <div class="text-11-regular text-amber-200/90">
+                              {error.stepIndex >= 0 ? `Step ${error.stepIndex + 1}: ` : ""}
+                              {error.message}
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </Show>
+                </div>
+                <Show when={!liveGoal()}>
+                  <div
+                    data-component="goal-global-budget"
+                    data-layout="compact-chain-header"
+                    class="mt-2 min-w-0"
+                    aria-label={`Chain limits: ${chainLimitSummary()}`}
+                  >
+                    <div
+                      data-component="goal-target-stat-strip"
+                      class="rounded-lg border border-violet-400/18 bg-slate-950/32 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
+                    >
+                    <div
+                      data-component="goal-chain-compact-stats"
+                      class="grid min-w-0 grid-cols-2 gap-1.5 lg:grid-cols-[118px_128px_112px_132px]"
+                    >
+                    <label
+                      data-component="goal-chain-compact-stat"
+                      class="flex h-9 min-w-0 items-center gap-1.5 rounded-md border border-blue-400/24 bg-blue-500/[0.07] px-2"
+                      title={chainLimitSummary()}
+                    >
+                      <span class="text-[9px] font-semibold uppercase tracking-[0.08em] text-blue-100/72">
+                        {language.t("session.goal.chainBuilder.stat.turns")}
+                      </span>
+                      <input
+                        aria-label="Chain turn limit"
+                        type="number"
+                        min="1"
+                        value={String(masterTurns())}
+                        disabled={busy() !== null || !!liveGoal()}
+                        onInput={(event) => updateMasterBudget("maxTurns", event.currentTarget.value)}
+                        class="h-6 w-10 rounded border px-1 text-center text-12-medium tabular-nums outline-none"
+                        style={numericHighlightStyle("violet")}
+                      />
+                    </label>
+                    <label
+                      data-component="goal-chain-compact-stat"
+                      class="flex h-9 min-w-0 items-center gap-1.5 rounded-md border border-violet-400/24 bg-violet-500/[0.08] px-2"
+                      title={chainLimitSummary()}
+                    >
+                      <span class="text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-100/72">
+                        {language.t("session.goal.chainBuilder.stat.time")}
+                      </span>
+                      <input
+                        aria-label="Chain time limit"
+                        type="number"
+                        min="1"
+                        value={String(masterMinutes())}
+                        disabled={busy() !== null || !!liveGoal()}
+                        onInput={(event) => updateMasterBudget("maxTimeMinutes", event.currentTarget.value)}
+                        class="h-6 w-10 rounded border px-1 text-center text-12-medium tabular-nums outline-none"
+                        style={numericHighlightStyle("violet")}
+                      />
+                      <span class="text-[10px] font-semibold text-violet-100/62">m</span>
+                    </label>
+                    <span
+                      data-component="goal-chain-compact-stat"
+                      class="flex h-9 min-w-0 items-center gap-1.5 rounded-md border border-emerald-400/22 bg-emerald-500/[0.07] px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-100/72"
+                    >
+                      <span>{language.t("session.goal.chainBuilder.stat.actions")}</span>
+                      <strong class={numericHighlightClass()} style={numericHighlightStyle("violet")}>
+                        {visibleStepCount()}
+                      </strong>
+                    </span>
+                    <span
+                      data-component="goal-chain-summary-line"
+                      class="flex h-9 min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-emerald-400/22 bg-emerald-500/[0.07] px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-100/72"
+                      title={chainVerifySummary()}
+                      aria-label={`${chainVerifyCommandCount()} command steps`}
+                    >
+                      <span>{language.t("session.goal.chainBuilder.stat.commands")}</span>
+                      <strong class={numericHighlightClass()} style={numericHighlightStyle("emerald")}>
+                        {chainVerifyCommandCount()}
+                      </strong>
+                    </span>
+                    </div>
+                    </div>
                   </div>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <span class="rounded-md border border-border-base bg-background-base/70 px-2 py-1 text-[10px] uppercase tracking-[0.08em] text-text-weaker">
-                    {chainDraft.steps.length} {language.t("session.goal.chainBuilder.steps")}
-                  </span>
-                  <ActionButton
-                    label={language.t("session.goal.chainBuilder.start")}
-                    variant="primary"
-                    busy={busy() === "chain"}
-                    disabled={
-                      busy() !== null || !props.sessionID || goalCommandUnavailable() || chainDraft.steps.length === 0
-                    }
-                    onClick={() => void startGoalChain()}
-                  />
-                </div>
+                </Show>
+                <Show when={chainErrors().length > 0}>
+                  <div class="mt-2 rounded-lg border border-orange-300/35 bg-orange-500/10 px-3 py-2 text-11-regular leading-5 text-orange-50/88">
+                    <For each={chainErrors()}>
+                      {(error) => (
+                        <div>
+                          <span class="font-semibold tabular-nums">
+                            {error.stepIndex >= 0 ? `#${error.stepIndex + 1}` : language.t("session.goal.chainBuilder.title")}
+                          </span>
+                          {": "}
+                          {error.message}
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </div>
 
-              <div class="grid grid-cols-1 items-start lg:grid-cols-[minmax(540px,1.5fr)_minmax(360px,0.82fr)]">
-                <div
-                  data-component="goal-playbook-chain-pane"
-                  class="min-w-0 border-b border-border-base bg-background-base/50 lg:border-b-0 lg:border-r"
-                >
-                  <div data-component="goal-plan-chain" class="min-w-0 p-2.5">
-                    <div class="flex items-start justify-between gap-3">
+              <Show when={liveGoal()} keyed>
+                {(running) => (
+                  <div
+                    data-component="goal-chain-running-status"
+                    class="border-b px-3 py-2.5"
+                    style={runningStatusPanelStyle(liveRunStalled() ? "stalled" : running.status)}
+                  >
+                    <div class="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_240px] xl:items-start">
                       <div class="min-w-0">
-                        <div class="text-12-medium text-text-base">
-                          {language.t("session.goal.chainBuilder.planChain")}
+                        <div class="flex min-w-0 items-center gap-2">
+                          <span
+                            class={`inline-flex min-h-6 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${terminalOutcomeTone(liveRunStalled() ? "paused" : running.status).class}`}
+                            style={terminalOutcomeTone(liveRunStalled() ? "paused" : running.status).style}
+                          >
+                            <span
+                              class={`h-2 w-2 rounded-full ${liveRunStalled() ? "bg-orange-300" : statusMeta(running.status).dot}`}
+                              aria-hidden
+                            />
+                            {liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton") : statusMeta(running.status).label}
+                          </span>
+                          <div class="min-w-0 truncate text-13-medium font-semibold text-text-base" title={cleanText(running.condition)}>
+                            {cleanText(running.condition)}
+                          </div>
                         </div>
-                        <div class="mt-1 text-11-regular text-text-weaker">
-                          {language.t("session.goal.chainBuilder.planChainHint")}
+                        <Show when={liveRunStalled()}>
+                          <div
+                            data-component="goal-running-stalled-hint"
+                            class="mt-2 rounded-md border border-orange-300/24 bg-orange-500/10 px-2 py-1 text-11-regular font-semibold text-orange-50/82"
+                          >
+                            {language.t("session.goal.chainBuilder.stalledHint")} {liveRunIdleMinutes()}m idle.
+                          </div>
+                        </Show>
+                        <div
+                          data-component="goal-running-metric-strip"
+                          class="mt-2 grid min-w-0 grid-cols-3 gap-2"
+                        >
+                          <div
+                            data-component="goal-running-clock"
+                            class="rounded-xl border border-blue-300/38 bg-[linear-gradient(135deg,rgba(37,99,235,0.26),rgba(14,165,233,0.10)_48%,rgba(15,23,42,0.42))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_24px_rgba(37,99,235,0.10)]"
+                          >
+                            <div class="bg-gradient-to-r from-blue-100 to-cyan-200 bg-clip-text text-[12px] font-black uppercase text-transparent">Clock</div>
+                            <div class="mt-1 text-[30px] font-black leading-none tabular-nums text-blue-50">
+                              {elapsedMinutes()}m
+                            </div>
+                            <div class="mt-1 truncate text-[12px] font-bold text-blue-100/72">
+                              of {running.constraints.maxTimeMinutes}m
+                            </div>
+                          </div>
+                          <div
+                            data-component="goal-running-turns"
+                            class="rounded-xl border border-violet-300/38 bg-[linear-gradient(135deg,rgba(109,40,217,0.28),rgba(168,85,247,0.12)_48%,rgba(15,23,42,0.42))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_24px_rgba(109,40,217,0.12)]"
+                          >
+                            <div class="bg-gradient-to-r from-violet-100 to-fuchsia-200 bg-clip-text text-[12px] font-black uppercase text-transparent">Turns</div>
+                            <div class="mt-1 text-[30px] font-black leading-none tabular-nums text-violet-50">
+                              {running.turnsEvaluated}
+                              <span class="text-[15px] font-black text-violet-100/65">/{running.constraints.maxTurns}</span>
+                            </div>
+                            <div class="mt-1 truncate text-[12px] font-bold text-violet-100/72">ticks used</div>
+                          </div>
+                          <div
+                            data-component="goal-running-step"
+                            class="rounded-xl border border-emerald-300/38 bg-[linear-gradient(135deg,rgba(5,150,105,0.26),rgba(45,212,191,0.10)_48%,rgba(15,23,42,0.42))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_24px_rgba(5,150,105,0.12)]"
+                          >
+                            <div class="bg-gradient-to-r from-emerald-100 to-teal-200 bg-clip-text text-[12px] font-black uppercase text-transparent">Step</div>
+                            <div class="mt-1 text-[30px] font-black leading-none tabular-nums text-emerald-50">
+                              {runningStepIndex() + 1}
+                              <span class="text-[15px] font-black text-emerald-100/65">/{Math.max(visibleStepCount(), 1)}</span>
+                            </div>
+                            <div class="mt-1 truncate text-[12px] font-bold text-emerald-100/72">current item</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="min-w-0">
+                        <div
+                          data-component="goal-running-progress-hero"
+                          class="rounded-xl border border-emerald-300/44 bg-[radial-gradient(circle_at_90%_10%,rgba(167,243,208,0.22),transparent_30%),linear-gradient(135deg,rgba(6,95,70,0.42),rgba(15,23,42,0.52))] px-3 py-3 text-right shadow-[inset_0_1px_0_rgba(255,255,255,0.065),0_14px_28px_rgba(5,150,105,0.16)]"
+                        >
+                          <div class="bg-gradient-to-r from-emerald-100 via-teal-100 to-cyan-200 bg-clip-text text-[13px] font-black uppercase text-transparent">
+                            {language.t("session.goal.progress")}
+                          </div>
+                          <div class="text-[52px] font-black leading-none tracking-normal text-emerald-50 tabular-nums">
+                            {running.status === "achieved" ? 100 : progressPct()}%
+                          </div>
+                        </div>
+                        <div class="mt-2 grid grid-cols-2 gap-1.5">
+                          <Show when={pauseResume()}>
+                            {(action) => (
+                              <ActionButton
+                                label={
+                                  action() === "pause"
+                                    ? language.t("session.goal.action.pause")
+                                    : language.t("session.goal.action.resume")
+                                }
+                                variant="primary"
+                                busy={busy() === "pause" || busy() === "resume"}
+                                disabled={busy() !== null || goalCommandUnavailable()}
+                                class="h-8 px-3 text-12-medium"
+                                onClick={() => {
+                                  const next = action()
+                                  setOptimisticStatus(next === "pause" ? "paused" : "active")
+                                  void runAction(next)
+                                    .then((ok) => {
+                                      if (!ok) setOptimisticStatus(null)
+                                    })
+                                    .catch(() => setOptimisticStatus(null))
+                                }}
+                              />
+                            )}
+                          </Show>
+                          <ActionButton
+                            label={language.t("session.goal.action.restart")}
+                            variant="secondary"
+                            busy={busy() === "restart"}
+                            disabled={busy() !== null || goalCommandUnavailable()}
+                            class="h-8 px-3 text-12-medium"
+                            onClick={() => void runAction("restart")}
+                          />
+                          <ActionButton
+                            label={language.t("session.goal.action.stop")}
+                            variant={confirmingClear() ? "primary" : "secondary"}
+                            tone="danger"
+                            busy={busy() === "clear" && confirmingClear()}
+                            disabled={busy() !== null || goalCommandUnavailable()}
+                            class="h-8 px-3 text-12-medium"
+                            onClick={() => setConfirmingClear(true)}
+                          />
+                          <ActionButton
+                            label={language.t("session.goal.action.steer")}
+                            variant="secondary"
+                            disabled={busy() !== null || goalCommandUnavailable()}
+                            class="h-8 px-3 text-12-medium"
+                            title="Inject guidance into this run without clearing or restarting the chain."
+                            onClick={() => setSteerOpen((v) => !v)}
+                          />
                         </div>
                       </div>
                     </div>
+                  </div>
+                )}
+              </Show>
 
-                    <div class="mt-2.5 overflow-x-auto rounded-lg border border-border-base bg-background-panel/70 p-1.5">
+              <Show when={liveGoal() && confirmingClear()}>
+                <div class="border-b border-orange-400/20 bg-orange-500/[0.08] px-3 py-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-11-regular text-orange-50/82">
+                      {language.t("session.goal.action.confirmStop")}
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <ActionButton
+                        label={language.t("session.goal.action.confirmStop")}
+                        variant="primary"
+                        tone="danger"
+                        busy={busy() === "clear"}
+                        disabled={busy() !== null || goalCommandUnavailable()}
+                        class="h-7 shrink-0 px-3 text-12-medium"
+                        onClick={() => void stopGoal()}
+                      />
+                      <ActionButton
+                        label={language.t("session.goal.action.cancel")}
+                        variant="ghost"
+                        disabled={busy() !== null || goalCommandUnavailable()}
+                        class="h-7 shrink-0 px-3 text-12-medium"
+                        onClick={() => setConfirmingClear(false)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={liveGoal() && steerOpen()}>
+                <div class="border-b border-sky-400/20 bg-sky-500/[0.07] px-3 py-2">
+                  <div class="flex min-w-0 flex-wrap items-center gap-2">
+                    <TextField
+                      value={steerText()}
+                      onChange={setSteerText}
+                      label={language.t("session.goal.action.steer")}
+                      hideLabel
+                      placeholder={language.t("session.goal.steer.placeholder")}
+                      disabled={busy() !== null}
+                      class="min-w-48 flex-1"
+                    />
+                    <ActionButton
+                      label={language.t("session.goal.steer.send")}
+                      variant="primary"
+                      busy={busy() === "steer"}
+                      disabled={busy() !== null || !steerText().trim() || goalCommandUnavailable()}
+                      class="h-8 shrink-0 px-3"
+                      onClick={() => void steerGoal()}
+                    />
+                    <ActionButton
+                      label={language.t("session.goal.action.cancel")}
+                      variant="ghost"
+                      disabled={busy() !== null || goalCommandUnavailable()}
+                      class="h-8 shrink-0 px-3"
+                      onClick={() => {
+                        setSteerOpen(false)
+                        setSteerText("")
+                      }}
+                    />
+                  </div>
+                </div>
+              </Show>
+
+              <div
+                  data-component="goal-playbook-chain-pane"
+                class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(180deg,rgba(46,16,101,0.06),rgba(10,10,10,0.42))]"
+                >
+                  <div data-component="goal-plan-chain" class="flex h-full min-h-0 min-w-0 flex-col p-2.5">
+                    <div class="flex items-center justify-between gap-3 rounded-md border border-violet-400/18 bg-violet-500/[0.055] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                      <div class="min-w-0 flex items-center gap-2">
+                        <span class="h-4 w-1.5 shrink-0 rounded-full bg-violet-300/75" aria-hidden />
+                        <div class="text-12-medium font-bold uppercase tracking-[0.12em] text-violet-50">
+                          {liveGoal()
+                            ? language.t("session.goal.chainBuilder.runningHeader")
+                            : language.t("session.goal.chainBuilder.planChain")}
+                        </div>
+                      </div>
+                      <div class="shrink-0 rounded-md border border-violet-400/22 bg-violet-500/[0.08] px-2 py-1 text-11-regular font-semibold text-violet-100/80">
+                        <strong class={numericHighlightClass("mr-1")} style={numericHighlightStyle("violet")}>
+                          {visibleStepCount()}
+                        </strong>
+                        {language.t("session.goal.chainBuilder.steps")}
+                      </div>
+                    </div>
+
+                    <div class="mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-violet-400/18 bg-background-panel/76 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                       <Show
-                        when={chainDraft.steps.length > 0}
+                        when={visibleStepCount() > 0}
                         fallback={
-                          <div class="px-3 py-6 text-center text-11-regular text-text-weaker">
-                            {language.t("session.goal.chainBuilder.emptyChain")}
+                          <div
+                            data-component="goal-chain-empty-state"
+                            class="grid min-h-40 place-items-center rounded-md border border-violet-400/24 bg-[radial-gradient(circle_at_50%_0%,rgba(139,92,246,0.16),transparent_45%),linear-gradient(180deg,rgba(46,16,101,0.14),rgba(18,18,18,0.72))] px-4 py-6 text-center"
+                          >
+                            <div class="max-w-sm">
+                              <div class="text-13-medium font-bold text-violet-50">
+                                {language.t("session.goal.chainBuilder.emptyChain")}
+                              </div>
+                              <div class="mt-2 text-12-regular leading-5 text-violet-100/72">
+                                Add actions from the library. Start Chain writes the ordered steps, activates step 1, and the engine advances after each step is achieved.
+                              </div>
+                              <div
+                                data-component="goal-chain-execution-note"
+                                class="mt-3 rounded-md border border-violet-400/22 bg-violet-500/[0.08] px-2.5 py-2 text-left text-11-regular leading-5 text-violet-100/72"
+                              >
+                                Draft edits stay local. Reorder, remove, turns, minutes, prompt, and command edits do not start a turn until Start Chain.
+                              </div>
+                            </div>
                           </div>
                         }
                       >
-                        <div class="flex min-w-[720px] flex-col gap-1">
-                          <For each={chainDraft.steps}>
+                        <div class="flex min-w-0 flex-col gap-1">
+                          <For each={visibleChainSteps()}>
                             {(step, i) => (
                               <div
                                 data-component="goal-chain-step-row"
                                 data-density="compact-chain-row"
-                                class={`group grid min-w-0 grid-cols-[16px_30px_30px_minmax(160px,1fr)_58px_58px_92px_82px] items-center gap-1.5 rounded-md border border-border-base bg-background-base/75 px-2 py-1.5 ${actionSurfaceClass(step)}`}
+                                data-run-state={stepRunState(i())}
+                                class={`group grid min-w-[790px] grid-cols-[30px_42px_minmax(220px,1fr)_98px_172px_150px] items-center gap-2 rounded-lg border px-2.5 py-2.5 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
+                                classList={{
+                                  "ring-2 ring-emerald-300/45 shadow-[0_0_22px_rgba(16,185,129,0.18)]":
+                                    stepRunState(i()) === "running",
+                                  "ring-2 ring-amber-300/42 shadow-[0_0_22px_rgba(245,158,11,0.16)]":
+                                    stepRunState(i()) === "paused",
+                                  "ring-2 ring-orange-300/42 shadow-[0_0_22px_rgba(249,115,22,0.16)]":
+                                    stepRunState(i()) === "stalled",
+                                  "opacity-75": stepRunState(i()) === "done",
+                                  "opacity-[0.88]": stepRunState(i()) === "queued",
+                                }}
+                                style={chainStepRowStyle(step, stepRunState(i()))}
                               >
                                 <span
                                   data-component="goal-chain-run-rail"
-                                  class="relative flex h-9 items-center justify-center"
+                                  class="relative flex h-10 items-center justify-center"
                                   aria-hidden
                                 >
-                                  <span class="absolute inset-y-[-8px] left-1/2 border-l border-border-base/70" />
-                                  <span class="relative h-2 w-2 rounded-full border border-border-strong bg-background-panel" />
-                                </span>
-                                <span class="flex h-7 items-center justify-center rounded-md border border-border-base bg-background-panel text-11-medium tabular-nums text-text-base">
-                                  {i() + 1}
+                                  <span class="absolute inset-y-[-10px] left-1/2 border-l border-violet-400/18" />
+                                  <span
+                                    data-component="goal-chain-step-number"
+                                    class="relative flex h-7 w-7 items-center justify-center rounded-md border text-11-medium font-semibold tabular-nums shadow-[0_0_10px_rgba(0,0,0,0.16)]"
+                                    style={chainStepRunBadgeStyle(stepRunState(i()), step)}
+                                  >
+                                    {i() + 1}
+                                  </span>
                                 </span>
                                 <span
-                                  class={`flex h-7 w-7 items-center justify-center rounded-md border ${actionToneClass(step)}`}
+                                  data-component="goal-chain-step-icon"
+                                  class="flex h-9 w-9 items-center justify-center rounded-md border shadow-[0_6px_12px_rgba(0,0,0,0.14)]"
+                                  style={chainStepBadgeStyle(step)}
                                   aria-hidden
                                 >
                                   <IconV2 name={actionIconName(step)} size="small" />
                                 </span>
-                                <div class="min-w-0">
-                                  <div class="truncate text-12-medium text-text-base">{step.label}</div>
+                                <div class="flex min-w-0 flex-col gap-1">
+                                  <div class="truncate text-13-medium font-semibold text-text-base">{step.label}</div>
                                   <div
                                     class="mt-0.5 truncate text-[11px] leading-4 text-text-weaker"
                                     title={cleanText(step.condition)}
                                   >
-                                    {inferActionCategory(step)} · {cleanText(step.condition)}
+                                    {cleanText(step.condition)}
                                   </div>
+                                  <Show when={(step.skills?.length ?? 0) > 0 || step.model}>
+                                    <div class="flex min-w-0 gap-1 overflow-hidden">
+                                      <Show when={step.model}>
+                                        <span class="shrink-0 rounded border border-sky-300/50 bg-sky-500/18 px-1.5 py-0.5 text-[9px] font-bold text-sky-50">
+                                          {modelLabel(step.model)}
+                                        </span>
+                                      </Show>
+                                      <For each={(step.skills ?? []).slice(0, 2)}>
+                                        {(skill) => (
+                                          <span class="shrink-0 rounded border border-emerald-300/45 bg-emerald-500/18 px-1.5 py-0.5 text-[9px] font-bold text-emerald-50">
+                                            {skill}
+                                          </span>
+                                        )}
+                                      </For>
+                                      <Show when={(step.skills?.length ?? 0) > 2}>
+                                        <span class="shrink-0 rounded border border-emerald-300/35 bg-emerald-500/14 px-1.5 py-0.5 text-[9px] font-bold text-emerald-50">
+                                          +{(step.skills?.length ?? 0) - 2}
+                                        </span>
+                                      </Show>
+                                    </div>
+                                  </Show>
                                 </div>
-                                <label class="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-1 rounded-md border border-border-base bg-background-panel/80 px-1.5">
-                                  <span class="text-[9px] uppercase tracking-[0.08em] text-text-weaker">T</span>
-                                  <input
-                                    aria-label={`Turns for ${step.label}`}
-                                    type="number"
-                                    min="1"
-                                    value={String(step.maxTurns)}
-                                    disabled={busy() !== null}
-                                    onInput={(event) =>
-                                      updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
-                                    }
-                                    class="w-full bg-transparent text-12-medium tabular-nums text-text-base outline-none"
-                                  />
-                                </label>
-                                <label class="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-1 rounded-md border border-border-base bg-background-panel/80 px-1.5">
-                                  <span class="text-[9px] uppercase tracking-[0.08em] text-text-weaker">M</span>
-                                  <input
-                                    aria-label={`Minutes for ${step.label}`}
-                                    type="number"
-                                    min="1"
-                                    value={String(step.maxTimeMinutes)}
-                                    disabled={busy() !== null}
-                                    onInput={(event) =>
-                                      updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
-                                    }
-                                    class="w-full bg-transparent text-12-medium tabular-nums text-text-base outline-none"
-                                  />
-                                </label>
                                 <span
-                                  class="flex h-8 items-center justify-center rounded-md border px-2 text-[10px] font-medium"
-                                  classList={{
-                                    "border-amber-400/35 bg-amber-400/10 text-amber-200":
-                                      inferActionGate(step) !== "required",
-                                    "border-emerald-400/25 bg-emerald-400/10 text-emerald-200":
-                                      inferActionGate(step) === "required",
-                                  }}
+                                  class="flex h-8 items-center justify-center truncate rounded-md border px-2 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                                  style={chainStepSoftStyle(step)}
+                                  title={inferActionCategory(step)}
                                 >
-                                  {stepGateLabel(step)}
+                                  {inferActionCategory(step)}
                                 </span>
-                                <span class="flex shrink-0 items-center justify-end gap-1 opacity-100">
+                                <span data-component="goal-chain-step-budget" class="grid grid-cols-2 gap-1.5">
+                                  <label
+                                    class="grid h-10 grid-cols-[minmax(0,1fr)_44px] items-center gap-1 rounded-md border px-2"
+                                    style={chainStepSoftStyle(step)}
+                                  >
+                                    <span class="truncate text-[9px] font-semibold uppercase tracking-[0.08em] opacity-75">Turns</span>
+                                    <input
+                                      aria-label={`Turns for ${step.label}`}
+                                      type="number"
+                                      min="1"
+                                      value={String(step.maxTurns)}
+                                      disabled={busy() !== null || !!liveGoal()}
+                                      onInput={(event) =>
+                                        updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
+                                      }
+                                      class="h-7 w-full rounded-md border border-border-base bg-background-base/65 px-1 text-center text-12-medium font-semibold tabular-nums text-text-base outline-none"
+                                    />
+                                  </label>
+                                  <label
+                                    class="grid h-10 grid-cols-[minmax(0,1fr)_44px] items-center gap-1 rounded-md border px-2"
+                                    style={chainStepSoftStyle(step)}
+                                  >
+                                    <span class="truncate text-[9px] font-semibold uppercase tracking-[0.08em] opacity-75">Time</span>
+                                    <input
+                                      aria-label={`Minutes for ${step.label}`}
+                                      type="number"
+                                      min="1"
+                                      value={String(step.maxTimeMinutes)}
+                                      disabled={busy() !== null || !!liveGoal()}
+                                      onInput={(event) =>
+                                        updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
+                                      }
+                                      class="h-7 w-full rounded-md border border-border-base bg-background-base/65 px-1 text-center text-12-medium font-semibold tabular-nums text-text-base outline-none"
+                                    />
+                                  </label>
+                                </span>
+                                <span data-component="goal-chain-step-actions" class="flex shrink-0 items-center justify-end gap-0.5 opacity-100">
+                                  <span
+                                    class="mr-1 flex h-7 min-w-14 items-center justify-center rounded-md border px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em]"
+                                    style={chainStepRunBadgeStyle(stepRunState(i()), step)}
+                                    title={completionRuleLabel(step)}
+                                  >
+                                    {chainStepRunLabel(stepRunState(i()), step)}
+                                  </span>
                                   <button
                                     type="button"
                                     aria-label="Move up"
-                                    class="flex h-7 w-7 items-center justify-center rounded-md border border-border-base bg-background-panel text-11-regular text-text-weaker hover:border-border-strong hover:text-text-base disabled:opacity-30"
-                                    disabled={busy() !== null || i() === 0}
+                                    class={inlineCommandButtonClass("move")}
+                                    style={inlineCommandButtonStyle("move")}
+                                    disabled={busy() !== null || !!liveGoal() || i() === 0}
                                     onClick={() => moveDraftStep(i(), i() - 1)}
                                   >
                                     ↑
@@ -1511,18 +2883,20 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <button
                                     type="button"
                                     aria-label="Move down"
-                                    class="flex h-7 w-7 items-center justify-center rounded-md border border-border-base bg-background-panel text-11-regular text-text-weaker hover:border-border-strong hover:text-text-base disabled:opacity-30"
-                                    disabled={busy() !== null || i() === chainDraft.steps.length - 1}
+                                    class={inlineCommandButtonClass("move")}
+                                    style={inlineCommandButtonStyle("move")}
+                                    disabled={busy() !== null || !!liveGoal() || i() === visibleStepCount() - 1}
                                     onClick={() => moveDraftStep(i(), i() + 1)}
                                   >
                                     ↓
                                   </button>
                                   <button
                                     type="button"
-                                    aria-label="Remove"
-                                    class="flex h-7 w-7 items-center justify-center rounded-md border border-border-base bg-background-panel text-11-regular text-text-weaker hover:border-rose-400/50 hover:text-rose-300 disabled:opacity-30"
-                                    disabled={busy() !== null}
-                                    onClick={() => removeDraftStep(step.id)}
+                                    aria-label={liveGoal() ? "Remove pending step" : "Remove"}
+                                    class={inlineCommandButtonClass("remove")}
+                                    style={inlineCommandButtonStyle("remove")}
+                                    disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}
+                                    onClick={() => removeVisibleStep(step, i())}
                                   >
                                     ×
                                   </button>
@@ -1533,90 +2907,125 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </div>
                       </Show>
                     </div>
-                    <div
-                      data-component="goal-drop-zone"
-                      class="mt-3 flex min-h-14 items-center justify-center rounded-lg border border-dashed border-border-strong bg-background-panel/40 px-3 py-4 text-center text-12-regular text-text-weaker"
-                    >
-                      Actions added from the library appear here
-                    </div>
-                    <div data-component="goal-global-budget" class="mt-3 border-t border-border-base pt-3">
+
+                    <Show when={liveGoal()}>
                       <div
-                        data-component="goal-chain-budget-readout"
-                        class="grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-5"
+                        data-component="goal-chain-running-activity"
+                        class="mt-2 rounded-lg border border-cyan-400/20 bg-[linear-gradient(90deg,rgba(8,145,178,0.12),rgba(15,23,42,0.34))] p-2"
                       >
-                        <label class="rounded-lg border border-border-base bg-background-panel/70 px-3 py-2">
-                          <span class="block text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                            Time limit
+                        <div class="mb-1.5 flex items-center justify-between gap-2">
+                          <span class="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100/78">
+                            {language.t("session.goal.activity.title")}
                           </span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={String(masterMinutes())}
-                            disabled={busy() !== null}
-                            onInput={(event) => updateMasterBudget("maxTimeMinutes", event.currentTarget.value)}
-                            class="mt-1 w-full bg-transparent text-13-medium tabular-nums text-text-base outline-none"
-                          />
-                        </label>
-                        <label class="rounded-lg border border-border-base bg-background-panel/70 px-3 py-2">
-                          <span class="block text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                            Turn limit
+                          <span class={numericHighlightClass()} style={numericHighlightStyle("blue")}>
+                            {activity().length}
                           </span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={String(masterTurns())}
-                            disabled={busy() !== null}
-                            onInput={(event) => updateMasterBudget("maxTurns", event.currentTarget.value)}
-                            class="mt-1 w-full bg-transparent text-13-medium tabular-nums text-text-base outline-none"
-                          />
-                        </label>
-                        <RunMetricPill
-                          label="Checks"
-                          value={`${chainCommandCheckCount()} cmd`}
-                          detail={`${chainMarkerCheckCount()} marker`}
-                        />
-                        <RunMetricPill
-                          label="Est. total"
-                          value={`${budgetSummary().effectiveTurns}t`}
-                          detail={`${budgetSummary().effectiveTimeMinutes}m`}
-                        />
-                        <RunMetricPill
-                          label="Checkpoints"
-                          value={`${chainGateCount()} set`}
-                          detail="non-run checks"
-                          tone={chainGateCount() > 0 ? "warning" : "default"}
-                        />
+                        </div>
+                        <Show
+                          when={activity().length > 0}
+                          fallback={
+                            <div class="text-11-regular text-text-weaker">
+                              {language.t("session.goal.activity.empty")}
+                            </div>
+                          }
+                        >
+                          <div role="list" class="grid max-h-24 gap-1 overflow-y-auto">
+                            <For each={activity().slice(0, 4)}>
+                              {(event) => (
+                                <div
+                                  role="listitem"
+                                  class="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md border border-cyan-300/14 bg-background-base/54 px-2 py-1 text-[11px]"
+                                >
+                                  <span
+                                    class="text-center"
+                                    classList={{
+                                      "text-icon-success-base": event.kind === "tool-end" && event.ok === true,
+                                      "text-text-warning-base": event.kind === "tool-end" && event.ok === false,
+                                      "text-cyan-100/65": event.kind !== "tool-end",
+                                    }}
+                                    aria-hidden
+                                  >
+                                    {event.kind === "tool-end"
+                                      ? event.ok === false
+                                        ? "x"
+                                        : "✓"
+                                      : event.kind === "tool-start"
+                                        ? ">"
+                                        : "•"}
+                                  </span>
+                                  <span class="min-w-0 truncate text-text-base" title={cleanText(event.summary ?? event.tool ?? "")}>
+                                    <Show when={event.tool}>
+                                      <span class="font-semibold">{event.tool}</span>{" "}
+                                    </Show>
+                                    {cleanText(event.summary ?? "")}
+                                  </span>
+                                  <Show when={event.durationMs !== undefined}>
+                                    <span class="shrink-0 tabular-nums text-text-weaker">
+                                      {formatMs(event.durationMs!)}
+                                    </span>
+                                  </Show>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
                       </div>
-                    </div>
+                    </Show>
                   </div>
                 </div>
+              </div>
+              </GoalConsoleSection>
 
                 <aside
-                  data-component="goal-action-library-rail"
-                  class="min-w-0 bg-background-panel/30 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto"
+                  data-component="goal-method-library-rail"
+                  class="grid min-h-0 min-w-0 grid-rows-[minmax(320px,1fr)_minmax(280px,0.88fr)] gap-2 xl:h-[calc(100vh-8rem)]"
                 >
-                  <div data-component="goal-method-library" class="min-w-0 p-2.5">
+                  <GoalConsoleSection
+                    zone="action-library"
+                    title="Action Library"
+                    subtitle="Reusable actions. Add inserts into Run Order."
+                    class="min-h-0"
+                  >
+                  <section data-testid="action-library" data-component="goal-method-library" class="flex h-full min-h-0 min-w-0 flex-col bg-background-base/70 p-2.5">
                     <div
                       data-component="goal-method-library-header"
-                      class="flex items-start justify-between gap-3 border-b border-border-base pb-2"
+                      class="flex items-start justify-between gap-3 rounded-lg border px-2.5 py-2"
+                      style={actionLibraryPanelStyle({ category: "Custom" })}
                     >
                       <div class="min-w-0">
-                        <div class="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-text-weaker">
-                          {language.t("session.goal.create.templates")}
+                        <div class="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-text-base">
+                          Actions
                         </div>
-                        <div class="mt-0.5 text-11-regular text-text-weaker">
-                          {language.t("session.goal.template.path")}
+                        <div class="mt-0.5 text-12-regular leading-4 text-text-weaker">
+                          Add inserts locally. Edit loads the selected draft.
                         </div>
                       </div>
-                      <ActionButton
-                        label={language.t("session.goal.template.new")}
-                        variant="secondary"
-                        disabled={busy() !== null || goalCommandUnavailable()}
-                        onClick={() => openActionEditor()}
-                      />
                     </div>
 
-                    <div data-component="goal-method-rail-filters" class="mt-2.5">
+                    <div
+                      data-component="goal-method-category-tabs"
+                      class="mt-2 grid min-w-0 grid-cols-8 gap-1 rounded-lg border p-1"
+                      style={actionLibraryPanelStyle({ category: concreteActionCategory(templateCategory()) })}
+                    >
+                      <For each={ACTION_CATEGORIES}>
+                        {(category) => (
+                          <button
+                            type="button"
+                            class="h-6 min-w-0 rounded-md border px-1 text-center text-[10px] font-semibold leading-none transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/45"
+                            style={actionCategoryPillStyle(category, templateCategory() === category)}
+                            onClick={() => setTemplateCategory(category)}
+                          >
+                            {actionCategoryShortLabel(category)}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+
+                    <div
+                      data-component="goal-method-rail-filters"
+                      class="mt-2 rounded-lg border p-1.5"
+                      style={actionLibraryPanelStyle({ category: concreteActionCategory(templateCategory()) })}
+                    >
                       <TextField
                         value={templateSearch()}
                         onChange={setTemplateSearch}
@@ -1631,7 +3040,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       role="listbox"
                       aria-label={language.t("session.goal.create.templates")}
                       tabindex={0}
-                      class="mt-2.5 flex max-h-[24rem] flex-col gap-1.5 overflow-y-auto rounded-lg border border-border-base bg-background-panel/70 p-1.5"
+                      class="mt-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain rounded-lg border p-1.5"
+                      style={actionLibraryPanelStyle({ category: concreteActionCategory(templateCategory()) })}
                       onKeyDown={handleTemplateListboxKeyDown}
                     >
                       <Show
@@ -1644,754 +3054,341 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       >
                         <For each={filteredTemplates()}>
                           {(t) => (
-                            <button
-                              type="button"
+                            <div
                               data-component="goal-method-row"
                               role="option"
                               aria-selected={selectedTemplateID() === t.id}
-                              onClick={() => selectActionForView(t)}
                               title={t.description || t.condition || t.label}
-                              class="group flex min-w-0 flex-col gap-1 rounded-md border border-border-base/80 bg-background-base/70 px-3 py-2 text-left transition-all hover:border-border-strong hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-strong"
+                              class="group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_48px_48px] items-center gap-1.5 rounded-md border px-1.5 py-1 transition-all hover:brightness-110"
+                              style={actionLibraryRowStyle(t)}
                               classList={{
-                                "border-border-strong bg-white/[0.06] shadow-[0_0_0_1px_var(--border-strong)]":
+                                "outline outline-1 outline-offset-1 outline-emerald-200/65 brightness-110":
                                   selectedTemplateID() === t.id,
                               }}
                             >
-                              <div class="flex min-w-0 items-center justify-between gap-2">
-                                <span class="truncate text-12-medium text-text-base">{t.label}</span>
-                                <span class="flex shrink-0 items-center gap-1">
-                                  <For each={methodTags(t)}>
-                                    {(tag) => (
-                                      <span class="rounded border border-border-base bg-background-panel/80 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weaker">
-                                        {tag}
-                                      </span>
-                                    )}
-                                  </For>
+                              <button
+                                type="button"
+                                data-component="goal-method-select"
+                                class="flex min-w-0 items-center gap-1.5 rounded px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-strong"
+                                onClick={() => selectActionForView(t)}
+                              >
+                                <span class="shrink-0 text-12-medium text-text-base">{t.label}</span>
+                                <span aria-hidden="true" class="shrink-0 text-11-regular text-text-weaker">
+                                  ·
                                 </span>
-                              </div>
-                              <span class="block truncate text-[11px] text-text-weaker">
-                                {cleanText(t.description || t.condition || "")}
-                              </span>
-                            </button>
+                                <span data-component="goal-method-prompt-preview" class="min-w-0 truncate text-[11px] text-text-weak">
+                                  {cleanText(t.description || t.condition || "")}
+                                </span>
+                                <Show when={selectedTemplateID() === t.id}>
+                                  <span class="ml-auto shrink-0 rounded bg-emerald-300/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-emerald-100">
+                                    Editing
+                                  </span>
+                                </Show>
+                              </button>
+                              <button
+                                type="button"
+                                data-component="goal-method-add"
+                                class={inlineCommandButtonClass("add")}
+                                style={inlineCommandButtonStyle("add")}
+                                disabled={busy() !== null || !t.condition}
+                                onClick={() => {
+                                  selectActionForView(t)
+                                  addActionToChain(t, varsForAction(t))
+                                }}
+                              >
+                                Add
+                              </button>
+                              <button
+                                type="button"
+                                data-component="goal-method-edit"
+                                class={inlineCommandButtonClass("edit")}
+                                style={inlineCommandButtonStyle("edit")}
+                                disabled={busy() !== null || goalCommandUnavailable()}
+                                onClick={() => {
+                                  selectActionForView(t)
+                                  editTemplateDraft(t)
+                                }}
+                              >
+                                Edit
+                              </button>
+                            </div>
                           )}
                         </For>
                       </Show>
                     </div>
+                  </section>
+                  </GoalConsoleSection>
 
-                    <div
-                      data-component="goal-action-inspector"
-                      class="mt-2.5 min-w-0 rounded-lg border border-border-base bg-background-base/70 p-2.5"
+                  <GoalConsoleSection
+                    zone="action-editor"
+                    title="Action Editor"
+                    subtitle="Save changes or add the draft locally."
+                    class="min-h-0"
+                  >
+                    <section
+                      data-testid="action-editor"
+                      data-component="goal-method-inspector"
+                      class="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-background-base/70 p-2.5"
                     >
-                      <Show
-                        when={selectedTemplate()}
-                        fallback={
-                          <div class="text-11-regular text-text-weaker">
-                            {language.t("session.goal.template.empty")}
+                      <div class="flex min-w-0 flex-col gap-3">
+                        <div
+                          data-component="goal-action-editor-current"
+                          class="rounded-lg border px-2.5 py-2"
+                          style={actionLibraryRowStyle(actionDraft)}
+                        >
+                          <div class="flex min-w-0 items-center gap-2">
+                            <div class="min-w-0">
+                              <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
+                                {language.t("session.goal.template.editorTitle")}
+                              </div>
+                              <div class="mt-1 truncate text-14-medium font-semibold text-text-base" title={actionDraft.label}>
+                                {actionDraft.label.trim() || language.t("session.goal.template.newDraft")}
+                              </div>
+                            </div>
+                            <span
+                              class="ml-auto shrink-0 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                              style={actionCategoryPillStyle(actionDraft.category, true)}
+                            >
+                              {actionCategoryShortLabel(actionDraft.category)}
+                            </span>
                           </div>
-                        }
-                        keyed
-                      >
-                        {(template) => (
-                          <div class="flex min-w-0 flex-col gap-3">
-                            <div class="flex min-w-0 flex-col gap-1 border-b border-border-base pb-3">
-                              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                                <span class="truncate text-14-medium text-text-base">{template.label}</span>
-                                <For each={methodTags(template)}>
-                                  {(tag) => (
-                                    <span class="rounded border border-border-base bg-background-panel/80 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weaker">
-                                      {tag}
-                                    </span>
-                                  )}
-                                </For>
-                              </div>
-                              <Show when={template.description}>
-                                <div class="text-11-regular leading-4 text-text-weaker">
-                                  {cleanText(template.description)}
+                          <div data-component="goal-action-editor-footer" class="mt-3 grid grid-cols-6 gap-1.5">
+                            <ActionButton
+                              label={language.t("session.goal.template.new")}
+                              variant="secondary"
+                              class="col-span-2"
+                              disabled={busy() !== null || goalCommandUnavailable()}
+                              onClick={() => openActionEditor()}
+                            />
+                            <ActionButton
+                              label={language.t("session.goal.template.save")}
+                              variant="primary"
+                              tone="success"
+                              class="col-span-2"
+                              busy={busy() === "template"}
+                              disabled={
+                                busy() !== null ||
+                                !props.sessionID ||
+                                goalCommandUnavailable() ||
+                                !actionDraft.prompt.trim()
+                              }
+                              onClick={() => void saveTemplateDraft()}
+                            />
+                            <ActionButton
+                              label={language.t("session.goal.template.addToChain")}
+                              variant="primary"
+                              class="col-span-2"
+                              disabled={busy() !== null || !actionDraft.prompt.trim()}
+                              onClick={addActionDraftToChain}
+                            />
+                            <ActionButton
+                              label={language.t("session.goal.template.duplicate")}
+                              variant="secondary"
+                              class="col-span-3"
+                              busy={busy() === "template"}
+                              disabled={
+                                busy() !== null || !props.sessionID || goalCommandUnavailable() || !actionDraft.prompt.trim()
+                              }
+                              onClick={() => void duplicateActionDraft()}
+                            />
+                            <ActionButton
+                              label={language.t("session.goal.template.delete")}
+                              variant="primary"
+                              tone="danger"
+                              class="col-span-3"
+                              busy={busy() === "template"}
+                              disabled={busy() !== null || !props.sessionID || goalCommandUnavailable() || !selectedTemplate() || !!selectedTemplate()?.builtin}
+                              onClick={() => {
+                                const template = selectedTemplate()
+                                if (template) void deleteActionTemplate(template)
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div
+                          data-component="goal-action-editor-fields"
+                          class="grid grid-cols-1 gap-2 rounded-lg border p-2.5"
+                          style={actionLibraryRowStyle(actionDraft)}
+                        >
+                          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
+                            Action details
+                          </div>
+                          <TextField
+                            value={actionDraft.label}
+                            onChange={(value) => setActionDraft("label", value)}
+                            label={language.t("session.goal.template.label")}
+                            placeholder={language.t("session.goal.template.labelPlaceholder")}
+                            disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
+                            class="w-full"
+                          />
+                          <TextField
+                            value={actionDraft.prompt}
+                            onChange={(value) => setActionDraft("prompt", value)}
+                            label={language.t("session.goal.template.prompt")}
+                            multiline
+                            disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
+                            class="w-full"
+                          />
+                          <TextField
+                            value={actionDraft.command}
+                            onChange={(value) => setActionDraft("command", value)}
+                            label={language.t("session.goal.template.command")}
+                            placeholder={language.t("session.goal.create.commandPlaceholder")}
+                            disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
+                            class="w-full"
+                          />
+                        </div>
+
+                        <div
+                          data-component="goal-action-editor-limits"
+                          class="grid grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5 rounded-lg border px-2.5 py-2"
+                          style={actionLibraryRowStyle(actionDraft)}
+                        >
+                          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
+                            Limits
+                          </div>
+                            <label class="grid h-8 grid-cols-[minmax(0,1fr)_42px] items-center gap-1.5 rounded-md border border-blue-300/45 bg-blue-500/14 px-2">
+                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-100/80">
+                                Turns
+                              </span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={String(actionDraft.turns)}
+                                disabled={busy() !== null}
+                                onInput={(event) =>
+                                  setActionDraft(
+                                    "turns",
+                                    Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
+                                  )
+                                }
+                                class="h-5 w-full rounded border border-blue-200/25 bg-blue-950/20 text-center text-12-medium tabular-nums text-blue-50 outline-none"
+                              />
+                            </label>
+                            <label class="grid h-8 grid-cols-[minmax(0,1fr)_42px] items-center gap-1.5 rounded-md border border-violet-300/45 bg-violet-500/14 px-2">
+                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-100/80">
+                                Minutes
+                              </span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={String(actionDraft.minutes)}
+                                disabled={busy() !== null}
+                                onInput={(event) =>
+                                  setActionDraft(
+                                    "minutes",
+                                    Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
+                                  )
+                                }
+                                class="h-5 w-full rounded border border-violet-200/25 bg-violet-950/20 text-center text-12-medium tabular-nums text-violet-50 outline-none"
+                              />
+                            </label>
+                        </div>
+
+                        <div
+                          data-component="goal-action-editor-runtime-pins"
+                          class="grid grid-cols-1 gap-2 rounded-lg border p-2.5"
+                          style={actionLibraryRowStyle(actionDraft)}
+                        >
+                          <div class="flex min-w-0 items-center justify-between gap-2">
+                            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
+                              {language.t("session.goal.template.runtimePins")}
+                            </div>
+                            <div class="truncate text-[10px] text-text-weak">
+                              {language.t("session.goal.template.runtimePinsHint")}
+                            </div>
+                          </div>
+                          <label class="grid gap-1.5">
+                            <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100/85">
+                              {language.t("session.goal.template.pinnedModel")}
+                            </span>
+                            <select
+                              value={actionDraft.model}
+                              disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
+                              onChange={(event) => setActionDraft("model", event.currentTarget.value)}
+                              class="h-8 w-full rounded-md border border-sky-300/45 bg-sky-950/35 px-2 text-12-medium text-sky-50 outline-none transition focus:border-sky-200 focus:ring-2 focus:ring-sky-400/25 disabled:opacity-45"
+                            >
+                              <option value="">{language.t("session.goal.template.sessionDefaultModel")}</option>
+                              <For each={modelOptionsForDraft()}>
+                                {(option) => <option value={option.key}>{option.label}</option>}
+                              </For>
+                            </select>
+                          </label>
+                          <div class="grid gap-1.5">
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-100/85">
+                                {language.t("session.goal.template.pinnedSkills")}
+                              </span>
+                              <span class="rounded border border-emerald-200/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-emerald-100">
+                                {actionDraft.skills.length}/8
+                              </span>
+                            </div>
+                            <Show
+                              when={skillOptionsForDraft().length > 0}
+                              fallback={
+                                <div class="rounded-md border border-dashed border-border-base bg-background-base/35 px-2 py-2 text-11-regular text-text-weak">
+                                  {language.t("session.goal.template.noSkills")}
                                 </div>
-                              </Show>
-                            </div>
-
-                            <div class="rounded-lg border border-border-base bg-background-base/70 px-3 py-2">
-                              <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                                {language.t("session.goal.template.prompt")}
-                              </div>
-                              <div class="mt-1 text-12-regular leading-5 text-text-base">
-                                {cleanText(template.condition || "") || "-"}
-                              </div>
-                            </div>
-
-                            <div class="rounded-lg border border-border-base bg-background-base/70 px-3 py-2">
-                              <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                                {language.t("session.goal.template.command")}
-                              </div>
-                              <div
-                                class="mt-1 break-all text-[12px] text-text-base"
-                                classList={{ "font-mono": !!template.command, "text-text-weaker": !template.command }}
-                              >
-                                {cleanText(template.command) || language.t("session.goal.template.noCommand")}
-                              </div>
-                            </div>
-
-                            <div class="rounded-lg border border-border-base bg-background-base/70 px-3 py-2">
-                              <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                                {language.t("session.goal.template.constraints")}
-                              </div>
-                              <div class="mt-1 text-12-medium text-text-base">
-                                {templateConstraintsLabel(template) || language.t("session.goal.template.noLimits")}
-                              </div>
-                            </div>
-
-                            <Show when={selectedTemplateVariables().length > 0}>
-                              <div class="flex flex-col gap-2">
-                                <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                                  {language.t("session.goal.template.variables")}
-                                </div>
-                                <For each={selectedTemplateVariables()}>
-                                  {([key, variable]) => (
-                                    <TextField
-                                      value={templateVars()[key] ?? ""}
-                                      onChange={(value) => updateTemplateVariable(key, value)}
-                                      label={variable.description || key}
-                                      placeholder={variable.default || key}
-                                      disabled={busy() !== null || goalCommandUnavailable()}
-                                      class="w-full"
-                                    />
-                                  )}
+                              }
+                            >
+                              <div class="flex max-h-28 min-w-0 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-emerald-300/30 bg-emerald-950/15 p-1.5">
+                                <For each={skillOptionsForDraft()}>
+                                  {(skill) => {
+                                    const selected = () => actionDraft.skills.includes(skill.name)
+                                    return (
+                                      <button
+                                        type="button"
+                                        aria-pressed={selected()}
+                                        title={skill.description || skill.name}
+                                        disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
+                                        onClick={() => toggleActionSkill(skill.name)}
+                                        class="min-h-7 rounded-md border px-2 py-1 text-left text-[10px] font-semibold transition disabled:opacity-45"
+                                        classList={{
+                                          "border-emerald-200/75 bg-emerald-400/25 text-emerald-50 shadow-[0_0_0_1px_rgba(110,231,183,0.18)]":
+                                            selected(),
+                                          "border-border-base bg-background-panel/70 text-text-weak hover:border-emerald-300/45 hover:text-emerald-100":
+                                            !selected(),
+                                        }}
+                                      >
+                                        {skill.name}
+                                      </button>
+                                    )
+                                  }}
                                 </For>
                               </div>
                             </Show>
-
-                            <div class="flex flex-wrap items-center gap-2 border-t border-border-base pt-3">
-                              <ActionButton
-                                label={language.t("session.goal.template.edit")}
-                                variant="secondary"
-                                disabled={busy() !== null || goalCommandUnavailable()}
-                                onClick={() => editTemplateDraft(template)}
-                              />
-                              <ActionButton
-                                label={language.t("session.goal.template.apply")}
-                                variant="primary"
-                                disabled={busy() !== null || goalCommandUnavailable()}
-                                onClick={() => applyTemplateDraft(template, templateVars())}
-                              />
-                              <ActionButton
-                                label={language.t("session.goal.template.duplicate")}
-                                variant="secondary"
-                                busy={busy() === "template"}
-                                disabled={
-                                  busy() !== null || !props.sessionID || goalCommandUnavailable() || !template.condition
-                                }
-                                onClick={() => void duplicateActionTemplate(template)}
-                              />
-                              <ActionButton
-                                label={language.t("session.goal.template.addToChain")}
-                                variant="ghost"
-                                disabled={busy() !== null || !template.condition}
-                                onClick={() => addActionToChain(template, varsForAction(template))}
-                              />
-                              <Show when={!template.builtin}>
-                                <ActionButton
-                                  label={language.t("session.goal.template.delete")}
-                                  variant="ghost"
-                                  busy={busy() === "template"}
-                                  disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
-                                  onClick={() => void deleteActionTemplate(template)}
-                                />
-                              </Show>
-                            </div>
-
-                            {/* Always-visible save-as: name the current method and save it as
-                                a user method. "Edit draft" reveals the deeper editor below. */}
-                            <div class="flex flex-wrap items-end gap-2 border-t border-border-base pt-3">
-                              <TextField
-                                value={actionDraft.id}
-                                onChange={(value) => setActionDraft("id", value)}
-                                label={language.t("session.goal.template.saveName")}
-                                placeholder={language.t("session.goal.template.savePlaceholder")}
-                                disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
-                                class="min-w-[12rem] flex-1"
-                              />
-                              <ActionButton
-                                label={language.t("session.goal.template.save")}
-                                variant="secondary"
-                                busy={busy() === "template"}
-                                disabled={
-                                  busy() !== null ||
-                                  !props.sessionID ||
-                                  goalCommandUnavailable() ||
-                                  !actionDraft.prompt.trim() ||
-                                  !TEMPLATE_SAVE_ID_RE.test(actionDraft.id.trim())
-                                }
-                                onClick={() => void saveTemplateDraft()}
-                              />
-                            </div>
-
-                            <Show when={actionDraft.open}>
-                              <div class="grid grid-cols-1 gap-2 rounded-lg border border-border-base bg-background-panel/50 p-3">
-                                <TextField
-                                  value={actionDraft.label}
-                                  onChange={(value) => setActionDraft("label", value)}
-                                  label={language.t("session.goal.template.label")}
-                                  placeholder={language.t("session.goal.template.labelPlaceholder")}
-                                  disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
-                                  class="w-full"
-                                />
-                                <TextField
-                                  value={actionDraft.prompt}
-                                  onChange={(value) => setActionDraft("prompt", value)}
-                                  label={language.t("session.goal.template.prompt")}
-                                  multiline
-                                  disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
-                                  class="w-full"
-                                />
-                                <TextField
-                                  value={actionDraft.command}
-                                  onChange={(value) => setActionDraft("command", value)}
-                                  label={language.t("session.goal.template.command")}
-                                  placeholder={language.t("session.goal.create.commandPlaceholder")}
-                                  disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
-                                  class="w-full"
-                                />
-                                <div class="grid grid-cols-2 gap-2">
-                                  <label class="rounded-lg border border-border-base bg-background-panel/70 px-3 py-2">
-                                    <span class="block text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                                      Turns
-                                    </span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      value={String(actionDraft.turns)}
-                                      disabled={busy() !== null}
-                                      onInput={(event) =>
-                                        setActionDraft(
-                                          "turns",
-                                          Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
-                                        )
-                                      }
-                                      class="mt-1 w-full bg-transparent text-12-medium tabular-nums text-text-base outline-none"
-                                    />
-                                  </label>
-                                  <label class="rounded-lg border border-border-base bg-background-panel/70 px-3 py-2">
-                                    <span class="block text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                                      Minutes
-                                    </span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      value={String(actionDraft.minutes)}
-                                      disabled={busy() !== null}
-                                      onInput={(event) =>
-                                        setActionDraft(
-                                          "minutes",
-                                          Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
-                                        )
-                                      }
-                                      class="mt-1 w-full bg-transparent text-12-medium tabular-nums text-text-base outline-none"
-                                    />
-                                  </label>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                  <ActionButton
-                                    label={language.t("session.goal.action.cancel")}
-                                    variant="ghost"
-                                    disabled={busy() !== null}
-                                    onClick={() => setActionDraft("open", false)}
-                                  />
-                                </div>
-                              </div>
-                            </Show>
                           </div>
-                        )}
-                      </Show>
-                    </div>
-                  </div>
+                        </div>
+                      </div>
+                    </section>
+                  </GoalConsoleSection>
                 </aside>
-              </div>
             </div>
             <Show when={!props.sessionID}>
               <div class="text-11-regular text-text-weaker">{language.t("session.goal.controlsHint")}</div>
             </Show>
           </div>
         </Match>
-        <Match when={liveGoal()} keyed>
-          {(s) => (
-            <div class="flex flex-col gap-4 min-w-0">
-              <div class="rounded-2xl border border-border-base bg-background-panel/90 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-                <div class="flex flex-col gap-3 min-w-0">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="relative flex h-2 w-2 shrink-0">
-                          <Show when={s.status === "active"}>
-                            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60" />
-                          </Show>
-                          <span class={`relative inline-flex h-2 w-2 rounded-full ${statusMeta(s.status).dot}`} />
-                        </span>
-                        <span
-                          class={`text-11-regular font-medium uppercase tracking-[0.12em] ${statusMeta(s.status).text}`}
-                        >
-                          {statusMeta(s.status).label}
-                        </span>
-                      </div>
-                      <div
-                        class="mt-2 min-w-0 text-[15px] font-semibold leading-snug text-text-base break-words"
-                        title={cleanText(s.condition)}
-                      >
-                        {cleanText(s.condition)}
-                      </div>
-                    </div>
-                    <div class="shrink-0 rounded-xl border border-border-base bg-background-base/80 px-3 py-2 text-right">
-                      <div class="text-[11px] uppercase tracking-[0.12em] text-text-weaker">
-                        {language.t("session.goal.progress")}
-                      </div>
-                      <div class="mt-1 text-2xl font-semibold tabular-nums text-text-base">
-                        {s.status === "achieved" ? 100 : progressPct()}%
-                      </div>
-                    </div>
-                  </div>
-
-                  <ProgressBar
-                    pct={s.status === "achieved" ? 100 : progressPct()}
-                    status={s.status === "paused" ? "paused" : s.status === "achieved" ? "achieved" : "active"}
-                  />
-
-                  <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <BudgetDial
-                      label="Turns"
-                      value={`${s.turnsEvaluated}/${s.constraints.maxTurns}`}
-                      detail={`${Math.max(0, s.constraints.maxTurns - s.turnsEvaluated)} remaining`}
-                      disabled={busy() !== null || !props.sessionID}
-                      decreaseLabel="Decrease turn limit"
-                      increaseLabel="Increase turn limit"
-                      onDecrease={() => adjustBudget("turns", s.constraints.maxTurns, -1)}
-                      onIncrease={() => adjustBudget("turns", s.constraints.maxTurns, 1)}
-                    />
-                    <BudgetDial
-                      label="Time"
-                      value={`${elapsedMinutes()}/${s.constraints.maxTimeMinutes}m`}
-                      detail={`${Math.max(0, s.constraints.maxTimeMinutes - elapsedMinutes())}m remaining`}
-                      disabled={busy() !== null || !props.sessionID}
-                      decreaseLabel="Decrease time limit"
-                      increaseLabel="Increase time limit"
-                      onDecrease={() => adjustBudget("time", s.constraints.maxTimeMinutes, -1)}
-                      onIncrease={() => adjustBudget("time", s.constraints.maxTimeMinutes, 1)}
-                    />
-                  </div>
-
-                  <Show when={s.lastEvaluation}>
-                    <div
-                      class="rounded-xl border border-border-base bg-background-base/70 px-3 py-2 text-12-regular text-text-weak"
-                      aria-live="polite"
-                    >
-                      {cleanText(s.lastEvaluation!.reason)}
-                    </div>
-                  </Show>
-                </div>
-              </div>
-
-              <Show
-                when={(s.status === "active" || s.status === "paused") && props.sessionID}
-                fallback={
-                  <Show when={s.status === "active" || s.status === "paused"}>
-                    <div class="text-11-regular text-text-weaker">{language.t("session.goal.controlsHint")}</div>
-                  </Show>
-                }
-              >
-                <div class="rounded-2xl border-2 border-border-strong bg-background-panel/80 p-3.5 shadow-[0_0_0_1px_var(--border-strong)]">
-                  <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.10em] text-text-base opacity-70">
-                    {language.t("session.goal.runControls")}
-                  </div>
-                  <div class="grid grid-cols-2 gap-2 xl:grid-cols-5">
-                    {/* Single pause/resume toggle in a STABLE slot — the label
-                        changes but the button never swaps position (which used
-                        to let a stale click land on the wrong action). It flips
-                        optimistically on click so it doesn't lag the 2s poll. */}
-                    <Show when={pauseResume()}>
-                      {(action) => (
-                        <ActionButton
-                          label={
-                            action() === "pause"
-                              ? language.t("session.goal.action.pause")
-                              : language.t("session.goal.action.resume")
-                          }
-                          variant="primary"
-                          busy={busy() === "pause" || busy() === "resume"}
-                          disabled={busy() !== null || goalCommandUnavailable()}
-                          class="w-full justify-center"
-                          onClick={() => {
-                            const next = action()
-                            setOptimisticStatus(next === "pause" ? "paused" : "active")
-                            void runAction(next).then((ok) => {
-                              if (!ok) setOptimisticStatus(null)
-                            })
-                          }}
-                        />
-                      )}
-                    </Show>
-                    <ActionButton
-                      label={language.t("session.goal.action.steer")}
-                      variant="secondary"
-                      disabled={busy() !== null || goalCommandUnavailable()}
-                      class="w-full justify-center"
-                      onClick={() => setSteerOpen((v) => !v)}
-                    />
-                    <ActionButton
-                      label={language.t("session.goal.action.restart")}
-                      variant="secondary"
-                      busy={busy() === "restart"}
-                      disabled={busy() !== null || goalCommandUnavailable()}
-                      class="w-full justify-center"
-                      onClick={() => void runAction("restart")}
-                    />
-                    <ActionButton
-                      label={language.t("session.goal.action.stop")}
-                      variant={confirmingClear() ? "primary" : "secondary"}
-                      busy={busy() === "clear" && confirmingClear()}
-                      disabled={busy() !== null || goalCommandUnavailable()}
-                      class="w-full justify-center"
-                      onClick={() => setConfirmingClear(true)}
-                    />
-                    <ActionButton
-                      label={language.t("session.goal.action.newGoal")}
-                      variant="ghost"
-                      disabled={busy() !== null || goalCommandUnavailable()}
-                      class="w-full justify-center"
-                      onClick={() => setShowCreate(true)}
-                    />
-                  </div>
-
-                  <Show when={confirmingClear()}>
-                    <div class="mt-3 flex flex-col gap-2 rounded-xl border border-rose-400/30 bg-rose-500/8 p-3">
-                      <div class="text-11-regular text-text-weak">{language.t("session.goal.action.confirmStop")}</div>
-                      <div class="flex flex-wrap items-center gap-2">
-                        <ActionButton
-                          label={language.t("session.goal.action.confirmStop")}
-                          variant="primary"
-                          busy={busy() === "clear"}
-                          disabled={busy() !== null || goalCommandUnavailable()}
-                          onClick={() => void stopGoal()}
-                        />
-                        <ActionButton
-                          label={language.t("session.goal.action.cancel")}
-                          variant="ghost"
-                          disabled={busy() !== null || goalCommandUnavailable()}
-                          onClick={() => setConfirmingClear(false)}
-                        />
-                      </div>
-                    </div>
-                  </Show>
-
-                  <Show when={steerOpen()}>
-                    <div class="mt-3 flex flex-col gap-2 rounded-xl border border-border-base bg-background-base/70 p-3">
-                      <TextField
-                        value={steerText()}
-                        onChange={setSteerText}
-                        label={language.t("session.goal.action.steer")}
-                        hideLabel
-                        placeholder={language.t("session.goal.steer.placeholder")}
-                        disabled={busy() !== null}
-                        class="w-full"
-                      />
-                      <div class="flex items-center gap-2">
-                        <ActionButton
-                          label={language.t("session.goal.steer.send")}
-                          variant="primary"
-                          busy={busy() === "steer"}
-                          disabled={busy() !== null || !steerText().trim() || goalCommandUnavailable()}
-                          onClick={() => void steerGoal()}
-                        />
-                        <ActionButton
-                          label={language.t("session.goal.action.cancel")}
-                          variant="ghost"
-                          disabled={busy() !== null || goalCommandUnavailable()}
-                          onClick={() => {
-                            setSteerOpen(false)
-                            setSteerText("")
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-              </Show>
-
-              <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                <div class="flex min-w-0 flex-col gap-3">
-                  <Show when={chain() || s.status === "active" || s.status === "paused"}>
-                    <div
-                      data-component="goal-chain-board"
-                      class="rounded-2xl border border-border-base bg-background-panel/70 p-3 min-w-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                    >
-                      <div class="flex items-center justify-between gap-2">
-                        <div class="min-w-0">
-                          <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                            {language.t("session.goal.steps.title")}
-                          </div>
-                          <Show when={chain()} keyed>
-                            {(c) => (
-                              <div class="mt-1 text-11-regular text-text-weaker">
-                                {c.current}/{c.steps.length} {language.t("session.goal.steps.done")}
-                              </div>
-                            )}
-                          </Show>
-                        </div>
-                        <Show when={(s.status === "active" || s.status === "paused") && props.sessionID}>
-                          <button
-                            type="button"
-                            class="rounded-lg border border-border-base bg-background-base/70 px-2.5 py-1 text-11-regular text-text-weak transition-all hover:border-border-strong hover:text-text-base disabled:opacity-50"
-                            disabled={busy() !== null || goalCommandUnavailable()}
-                            onClick={() => setAddingStep((v) => !v)}
-                          >
-                            + {language.t("session.goal.steps.add")}
-                          </button>
-                        </Show>
-                      </div>
-
-                      <Show
-                        when={chain()}
-                        fallback={
-                          <div class="mt-3 text-11-regular text-text-weaker">
-                            {language.t("session.goal.steps.empty")}
-                          </div>
-                        }
-                        keyed
-                      >
-                        {(c) => (
-                          <>
-                            <div class="mt-3 flex flex-col gap-2 min-w-0" role="list">
-                              <For each={c.steps}>
-                                {(step, i) => (
-                                  <div
-                                    data-component="goal-chain-pill"
-                                    role="listitem"
-                                    class={`group grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border-base bg-background-base/70 px-3 py-2.5 transition-colors ${actionSurfaceClass(step)}`}
-                                    classList={{
-                                      "border-emerald-400/30 bg-emerald-400/8": i() < c.current,
-                                      "border-border-strong bg-white/[0.06] shadow-[0_0_0_1px_var(--border-strong)]":
-                                        i() === c.current,
-                                    }}
-                                  >
-                                    <span
-                                      class="flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[11px] font-semibold tabular-nums"
-                                      classList={{
-                                        "border-emerald-400/30 bg-emerald-400/10 text-emerald-300": i() < c.current,
-                                        "border-border-strong bg-background-panel text-text-base": i() === c.current,
-                                        "border-border-base bg-background-panel/60 text-text-weaker": i() > c.current,
-                                      }}
-                                    >
-                                      {i() + 1}
-                                    </span>
-                                    <div class="min-w-0">
-                                      <div
-                                        class="truncate text-12-regular"
-                                        classList={{
-                                          "text-text-weaker line-through": i() < c.current,
-                                          "text-text-base font-medium": i() === c.current,
-                                          "text-text-weak": i() > c.current,
-                                        }}
-                                        title={cleanText(step.condition)}
-                                      >
-                                        {cleanText(step.condition)}
-                                      </div>
-                                      <div class="mt-1 flex items-center gap-1.5">
-                                        <span
-                                          class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.08em]"
-                                          classList={{
-                                            "border-emerald-400/30 text-emerald-300": i() < c.current,
-                                            "border-border-strong text-text-base": i() === c.current,
-                                            "border-border-base text-text-weaker": i() > c.current,
-                                          }}
-                                        >
-                                          {i() < c.current
-                                            ? language.t("session.goal.steps.status.done")
-                                            : i() === c.current
-                                              ? language.t("session.goal.steps.status.current")
-                                              : language.t("session.goal.steps.status.queued")}
-                                        </span>
-                                        <span class="rounded-full border border-border-base px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weaker">
-                                          {inferActionCategory(step)}
-                                        </span>
-                                        <span
-                                          class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.08em]"
-                                          classList={{
-                                            "border-amber-400/35 text-amber-200": inferActionGate(step) !== "required",
-                                            "border-border-base text-text-weaker": inferActionGate(step) === "required",
-                                          }}
-                                        >
-                                          {stepGateLabel(step)}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <Show when={(s.status === "active" || s.status === "paused") && props.sessionID}>
-                                      <span class="shrink-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                                        <button
-                                          type="button"
-                                          aria-label="Move up"
-                                          class="flex h-7 w-7 items-center justify-center rounded-md border border-border-base bg-background-panel text-11-regular text-text-weaker hover:border-border-strong hover:text-text-base disabled:opacity-30"
-                                          disabled={busy() !== null || i() === 0}
-                                          onClick={() => void moveStep(i(), i() - 1)}
-                                        >
-                                          ↑
-                                        </button>
-                                        <button
-                                          type="button"
-                                          aria-label="Move down"
-                                          class="flex h-7 w-7 items-center justify-center rounded-md border border-border-base bg-background-panel text-11-regular text-text-weaker hover:border-border-strong hover:text-text-base disabled:opacity-30"
-                                          disabled={
-                                            busy() !== null || goalCommandUnavailable() || i() === c.steps.length - 1
-                                          }
-                                          onClick={() => void moveStep(i(), i() + 1)}
-                                        >
-                                          ↓
-                                        </button>
-                                      </span>
-                                    </Show>
-                                  </div>
-                                )}
-                              </For>
-                            </div>
-                          </>
-                        )}
-                      </Show>
-
-                      <Show when={addingStep()}>
-                        <div class="mt-3 flex items-center gap-2">
-                          <TextField
-                            value={stepText()}
-                            onChange={setStepText}
-                            label={language.t("session.goal.steps.add")}
-                            hideLabel
-                            placeholder={language.t("session.goal.steps.placeholder")}
-                            disabled={busy() !== null}
-                            class="w-full"
-                          />
-                          <ActionButton
-                            label={language.t("session.goal.steps.addAction")}
-                            variant="primary"
-                            busy={busy() === "step"}
-                            disabled={busy() !== null || !stepText().trim()}
-                            onClick={() => void addStep()}
-                          />
-                        </div>
-                      </Show>
-                    </div>
-                  </Show>
-
-                  <div class="rounded-2xl border border-border-base bg-background-panel/70 p-3">
-                    <div class="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                      {language.t("session.goal.constraints")}
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 text-11-regular">
-                      <div class="rounded-xl border border-border-base bg-background-base/70 px-3 py-2">
-                        <div class="text-text-weaker">{language.t("session.goal.budget.turnsLabel")}</div>
-                        <div class="mt-1 text-12-medium tabular-nums text-text-base">{s.constraints.maxTurns}</div>
-                      </div>
-                      <div class="rounded-xl border border-border-base bg-background-base/70 px-3 py-2">
-                        <div class="text-text-weaker">{language.t("session.goal.budget.timeLabel")}</div>
-                        <div class="mt-1 text-12-medium tabular-nums text-text-base">
-                          {s.constraints.maxTimeMinutes}m
-                        </div>
-                      </div>
-                      <div class="rounded-xl border border-border-base bg-background-base/70 px-3 py-2">
-                        <div class="text-text-weaker">{language.t("session.goal.budget.maxTokensLabel")}</div>
-                        <div class="mt-1 text-12-medium tabular-nums text-text-base">
-                          {s.constraints.maxTokens.toLocaleString()}
-                        </div>
-                      </div>
-                      <div class="rounded-xl border border-border-base bg-background-base/70 px-3 py-2">
-                        <div class="text-text-weaker">{language.t("session.goal.budget.usedTokensLabel")}</div>
-                        <div class="mt-1 text-12-medium tabular-nums text-text-base">
-                          {s.tokensUsed.toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-                    <Show when={verifyCommand()}>
-                      <div class="mt-3 rounded-xl border border-border-base bg-background-base/70 px-3 py-2">
-                        <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                          {language.t("session.goal.verifyCommand")}
-                        </div>
-                        <div class="mt-2 break-all font-mono text-[12px] text-text-base">{verifyCommand()}</div>
-                      </div>
-                    </Show>
-                  </div>
-                </div>
-
-                <div class="rounded-2xl border border-border-base bg-background-panel/70 p-3">
-                  <div class="mb-3 flex items-center justify-between gap-2">
-                    <span class="text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                      {language.t("session.goal.activity.title")}
-                    </span>
-                    <span class="text-11-regular text-text-weaker">{activity().length}</span>
-                  </div>
-                  <Show
-                    when={activity().length > 0}
-                    fallback={
-                      <div class="text-11-regular text-text-weaker">{language.t("session.goal.activity.empty")}</div>
-                    }
-                  >
-                    <div role="list" class="flex max-h-80 flex-col gap-1 overflow-y-auto">
-                      <For each={activity()}>
-                        {(e) => (
-                          <div
-                            role="listitem"
-                            class="rounded-xl border border-border-base bg-background-base/70 px-3 py-2 text-11-regular"
-                          >
-                            <div class="flex items-start gap-2">
-                              <span
-                                class="shrink-0"
-                                classList={{
-                                  "text-icon-success-base": e.kind === "tool-end" && e.ok === true,
-                                  "text-text-warning-base": e.kind === "tool-end" && e.ok === false,
-                                  "text-text-weaker": e.kind !== "tool-end",
-                                }}
-                              >
-                                {e.kind === "tool-end"
-                                  ? e.ok === false
-                                    ? "✗"
-                                    : "✓"
-                                  : e.kind === "tool-start"
-                                    ? "▸"
-                                    : "•"}
-                              </span>
-                              <div class="min-w-0 flex-1">
-                                <div
-                                  class="min-w-0 truncate text-text-base"
-                                  title={cleanText(e.summary ?? e.tool ?? "")}
-                                >
-                                  <Show when={e.tool}>
-                                    <span class="font-medium">{e.tool}</span>{" "}
-                                  </Show>
-                                  {cleanText(e.summary ?? "")}
-                                </div>
-                              </div>
-                              <Show when={e.durationMs !== undefined}>
-                                <span class="shrink-0 tabular-nums text-text-weaker">{formatMs(e.durationMs!)}</span>
-                              </Show>
-                            </div>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-              </div>
-            </div>
-          )}
-        </Match>
       </Switch>
 
-      {/* ── History timeline — always visible (the "history line") ──────────
+      {/* ── History timeline — visible outside the action-editing workspace ─
           A vertical rail of past runs. A cleared goal lands here as
           "Cancelled"; an achieved goal as "Achieved". This is where terminal
-          goals go instead of blanking the panel.
+          goals go instead of blanking the panel. Hidden while the chain/action
+          editor workspace is open so an expanded archive cannot cover controls.
 
           Visibility is keyed ONLY on the archive (goal-history.json, polled
           every 2s into `archive()`) — NOT on the live goal store. Coupling it
           to `store.loaded && !store.corrupt` made history vanish the moment a
           run was stopped/cleared (the live state momentarily reloads/empties),
           even though the archived runs are intact and independent. */}
-      <Show when={archive().length > 0}>
-        <div class="mt-1 min-w-0 border-t border-border-base pt-3">
+      <Show when={archive().length > 0 && !showForm()}>
+        <div
+          data-testid="run-history"
+          data-component="goal-history-panel"
+          class="mt-1 min-w-0 border-t border-border-base pt-3"
+        >
           <div class="rounded-2xl border border-border-base bg-background-panel/70 p-3 min-w-0">
             <button
               type="button"
@@ -2401,9 +3398,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             >
               <div class="min-w-0">
                 <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                  {language.t("session.goal.recentRuns")}
+                  {language.t("session.goal.history.title")}
                 </div>
-                <div class="mt-1 text-12-regular text-text-weaker">{archive().length} archived runs</div>
+                <div class="mt-1 text-12-regular text-text-weaker">
+                  {language.t("session.goal.recentRuns")} · {archive().length} archived runs
+                </div>
               </div>
               <span class="shrink-0 text-text-weaker" aria-hidden>
                 {historyOpen() ? "▾" : "▸"}
@@ -2499,7 +3498,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           detail="runtime"
                         />
                         <RunMetricPill
-                          label="Checks"
+                          label="Passed"
                           value={String(run().summary.successCount)}
                           detail="passed"
                           tone={run().summary.successCount > 0 ? "success" : "default"}

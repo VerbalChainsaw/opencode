@@ -1,8 +1,22 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 
-import { type GoalSdkClient, type GoalState, cleanText, isGoalStateShape, readGoalFromSdk } from "./goal-panel-pure"
-import { executeGoalCommand, startGoalRun, stopGoalRun, type GoalCommandClient } from "./goal-panel-actions"
+import {
+  type GoalSdkClient,
+  type GoalState,
+  cleanText,
+  isGoalStateShape,
+  readGoalFromSdk,
+  selectRunnableChainSteps,
+} from "./goal-panel-pure"
+import {
+  executeGoalCommand,
+  goalSteerPrompt,
+  startGoalRun,
+  steerGoalRun,
+  type GoalCommandClient,
+} from "./goal-panel-actions"
+import { goalIdleMinutes, isGoalStalled } from "./goal-panel-lifecycle"
 
 const validState: GoalState = {
   id: "test-id",
@@ -38,11 +52,12 @@ function mockSdk(overrides: Partial<GoalSdkClient["client"]["file"]> = {}): Goal
 }
 
 const goalPanelSource = async () => (await Bun.file(new URL("./goal-panel.tsx", import.meta.url)).text()).toString()
+const sourceText = async (path: string) => (await Bun.file(new URL(path, import.meta.url)).text()).toString()
 
 describe("goal panel mission-control contracts", () => {
   test("keeps a persistent history drawer state instead of rendering pills only", async () => {
     const src = await goalPanelSource()
-    expect(src).toContain("const [historyOpen, setHistoryOpen] = createSignal(true)")
+    expect(src).toContain("const [historyOpen, setHistoryOpen] = createSignal(false)")
     expect(src).toContain("aria-expanded={historyOpen()}")
   })
 
@@ -50,6 +65,29 @@ describe("goal panel mission-control contracts", () => {
     const src = await goalPanelSource()
     expect(src).toContain("const previous = archive()")
     expect(src).toContain("if (runs.length === 0 && previous.length > 0) return")
+  })
+
+  test("command controls contain refresh failures after command execution", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const ignoreRefreshError = (_error?: unknown) => undefined")
+    expect(src).toContain("const refreshGoalSurfaces = async")
+    expect(src).toContain("await props.goal.refresh().catch(ignoreRefreshError)")
+    expect(src).toContain("void props.goal.refresh().catch(ignoreRefreshError)")
+    expect(src).toContain("const refreshChain = () => void readChain(sdk).then(setChain).catch(ignoreRefreshError)")
+    expect(src).toContain("void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)")
+    expect(src).toContain(".catch(() => setOptimisticStatus(null))")
+
+    const sendGoalStart = src.indexOf("const sendGoalCommand = async")
+    const sendGoalEnd = src.indexOf("const runAction = async", sendGoalStart)
+    expect(sendGoalStart).toBeGreaterThan(-1)
+    expect(sendGoalEnd).toBeGreaterThan(sendGoalStart)
+    expect(src.slice(sendGoalStart, sendGoalEnd)).toContain("await refreshGoalSurfaces")
+
+    const stopGoalStart = src.indexOf("const stopGoal = async")
+    const stopGoalEnd = src.indexOf("const createGoal = async", stopGoalStart)
+    expect(stopGoalStart).toBeGreaterThan(-1)
+    expect(stopGoalEnd).toBeGreaterThan(stopGoalStart)
+    expect(src.slice(stopGoalStart, stopGoalEnd)).toContain("await refreshGoalSurfaces()")
   })
 
   test("terminal goals remain visible when archive history is missing", async () => {
@@ -64,7 +102,7 @@ describe("goal panel mission-control contracts", () => {
   test("stop confirmation renders in a separate callout instead of reordering the main action row", async () => {
     const src = await goalPanelSource()
     expect(src).toMatch(/label=\{language\.t\("session\.goal\.action\.stop"\)\}[\s\S]*setConfirmingClear\(true\)/)
-    expect(src).toMatch(/<Show when=\{confirmingClear\(\)\}>[\s\S]*session\.goal\.action\.confirmStop/)
+    expect(src).toMatch(/<Show when=\{liveGoal\(\) && confirmingClear\(\)\}>[\s\S]*session\.goal\.action\.confirmStop/)
   })
 
   test("create goal starts the agent after state is written, but shared controls stay turnless", async () => {
@@ -79,12 +117,14 @@ describe("goal panel mission-control contracts", () => {
     expect(sendGoalCommand![0]).not.toContain("startGoalRun")
   })
 
-  test("confirmed stop clears the goal and aborts the active session turn", async () => {
+  test("confirmed stop clears goal state without using the permission-bound abort endpoint", async () => {
     const src = await goalPanelSource()
     const stopGoal = src.match(/const stopGoal = async \(\) => \{[\s\S]*?\n  \}/)
     expect(stopGoal).toBeTruthy()
-    expect(stopGoal![0]).toContain('sendGoalCommand("clear", "clear")')
-    expect(stopGoal![0]).toContain("stopGoalRun")
+    expect(stopGoal![0]).toContain("executeGoalCommand")
+    expect(stopGoal![0]).toContain('arguments: "clear"')
+    expect(stopGoal![0]).not.toContain("stopGoalRun")
+    expect(stopGoal![0]).not.toContain("abort")
     expect(src).toMatch(/onClick=\{\(\) => void stopGoal\(\)\}/)
     expect(src).not.toContain('onClick={() => void runAction("clear")}')
   })
@@ -94,39 +134,59 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.action.restart")
     expect(src).toContain('busy={busy() === "restart"}')
     expect(src).toContain('onClick={() => void runAction("restart")}')
+    const runActionStart = src.indexOf("const runAction = async")
+    const runActionEnd = src.indexOf("const stopGoal =", runActionStart)
+    expect(runActionStart).toBeGreaterThan(-1)
+    expect(runActionEnd).toBeGreaterThan(runActionStart)
+    const runAction = src.slice(runActionStart, runActionEnd)
+    expect(runAction).toContain("sendGoalCommand(action, action)")
+    expect(runAction).toContain('action === "restart" || action === "resume"')
+    expect(runAction.match(/startGoalRun/g) ?? []).toHaveLength(1)
     expect(src).toContain("xl:grid-cols-5")
   })
 
-  test("action library selects for viewing and exposes edit/duplicate/delete actions", async () => {
+  test("action library selects reusable actions into the draft editor", async () => {
     const src = await goalPanelSource()
-    expect(src).toContain("applyTemplateDraft")
     expect(src).toContain("selectActionForView")
+    expect(src).toContain("seedActionDraft")
     expect(src).toContain("editTemplateDraft")
-    expect(src).toContain("duplicateActionTemplate")
+    expect(src).toContain("duplicateActionDraft")
     expect(src).toContain("deleteActionTemplate")
     expect(src).toContain("selectedTemplate")
     expect(src).toContain('role="listbox"')
     expect(src).toContain('role="option"')
     expect(src).toContain("template delete")
-    expect(src).not.toContain("onClick={() => applyTemplateDraft(t)}")
+    expect(src).not.toContain("applyTemplateDraft")
+    expect(src).not.toContain("session.goal.template.apply")
+    expect(src).not.toContain("setNewCondition(draft.condition)")
     expect(src).not.toMatch(/sendGoalCommand\("set",\s*`template\s+\$\{id\}`/)
   })
 
-  test("chain builder uses a two-column plan chain and action library instead of loose buttons", async () => {
+  test("chain builder and action library are separate workflow panels instead of loose buttons", async () => {
     const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-chain-builder-workspace"')
     expect(src).toContain('data-component="goal-chain-builder"')
     expect(src).toContain('data-component="goal-plan-chain"')
     expect(src).toContain('data-component="goal-method-library"')
-    expect(src).toContain('data-component="goal-chain-budget-readout"')
+    expect(src).toContain('data-component="goal-chain-builder-header-strip"')
+    expect(src).toContain('data-component="goal-chain-compact-stats"')
+    expect(src).toContain('data-component="goal-target-toolbar"')
+    expect(src).toContain("session.goal.chainBuilder.validate")
+    expect(src).toContain("session.goal.chainBuilder.saveDraft")
+    expect(src).not.toContain("Chain settings")
+    expect(src).toContain("session.goal.chainBuilder.stat.commands")
+    expect(src).toContain('data-component="goal-method-add"')
     expect(src).toContain("templateSearch")
     expect(src).toContain("filteredTemplates")
     expect(src).toContain("handleTemplateListboxKeyDown")
-    expect(src).toContain('data-component="goal-action-inspector"')
+    expect(src).toContain('data-component="goal-method-inspector"')
     expect(src).toContain("session.goal.template.searchPlaceholder")
     expect(src).toContain("session.goal.template.empty")
     expect(src).toContain("session.goal.chainBuilder.steps")
-    expect(src).toContain("session.goal.template.noCommand")
-    expect(src).toMatch(/class="[^"]*grid-cols-\[minmax\(540px,1\.5fr\)_minmax\(360px,0\.82fr\)\]/)
+    expect(src).toMatch(/xl:grid-cols-\[minmax\(620px,1fr\)_minmax\(360px,420px\)\]/)
+    expect(src).toMatch(/data-component="goal-chain-builder"[\s\S]*data-component="goal-chain-builder-header-strip"[\s\S]*data-component="goal-global-budget"[\s\S]*data-component="goal-playbook-chain-pane"/)
+    expect(src).toMatch(/data-testid="chain-workspace"[\s\S]*data-testid="chain-builder"[\s\S]*data-component="goal-method-library-rail"/)
+    expect(src).toContain('data-component="goal-status-card" class="hidden"')
     expect(src).toContain("templateCategory")
     expect(src).toContain("inferActionCategory")
     expect(src).not.toContain('data-component="goal-action-context-summary"')
@@ -134,6 +194,21 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("Block context setup")
     expect(src).not.toContain("compactBefore")
     expect(src).not.toContain("compactAfter")
+  })
+
+  test("chain builder header is a compact control strip instead of tall budget cards", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-chain-builder-header-strip"')
+    expect(src).toContain('data-component="goal-chain-compact-stats"')
+    expect(src).toContain('data-component="goal-chain-compact-stat"')
+    expect(src).toContain("chainLimitSummary")
+    expect(src).toContain("chainVerifySummary")
+    expect(src).toContain("lg:grid-cols-[minmax(260px,1fr)_auto]")
+    expect(src).toContain("flex min-w-0 flex-wrap items-center justify-start")
+    expect(src).not.toContain('data-component="goal-chain-budget-readout"')
+    expect(src).not.toContain("grid grid-cols-2 gap-1.5 sm:grid-cols")
+    expect(src).not.toContain("with verify command")
+    expect(src).not.toContain("agent-reported")
   })
 
   test("draft chain editing is local state only and start chain is the explicit run boundary", async () => {
@@ -168,13 +243,22 @@ describe("goal panel mission-control contracts", () => {
   test("playbook workspace matches the approved session-native layout", async () => {
     const src = await goalPanelSource()
     expect(src).toContain('data-component="goal-playbook-workspace"')
-    expect(src).toContain('data-component="goal-playbook-setup"')
-    expect(src).toContain('data-component="goal-playbook-budget-strip"')
+    expect(src).toContain('data-component="goal-chain-builder-workspace"')
+    expect(src).toContain('data-component="goal-target-toolbar"')
+    expect(src).toContain('data-component="goal-target-stat-strip"')
+    expect(src).toContain('data-component="goal-status-card" class="hidden"')
+    expect(src).toContain('data-testid="chain-workspace"')
+    expect(src).toContain('data-testid="chain-builder"')
+    expect(src).toContain('data-testid="action-library"')
+    expect(src).toContain('data-testid="action-editor"')
     expect(src).toContain('data-component="goal-playbook-chain-pane"')
-    expect(src).toContain('data-component="goal-action-library-rail"')
+    expect(src).toContain('data-component="goal-method-library-rail"')
+    expect(src).not.toContain('data-component="goal-action-library-rail"')
     expect(src).toContain('data-component="goal-method-row"')
-    expect(src).toContain('data-component="goal-drop-zone"')
+    expect(src).not.toContain('data-component="goal-drop-zone"')
     expect(src).toContain('data-component="goal-global-budget"')
+    expect(src).toContain('data-component="goal-terminal-stat-line"')
+    expect(src).toContain('data-component="goal-history-panel"')
     expect(src).not.toContain("lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.72fr)_112px]")
   })
 
@@ -182,83 +266,509 @@ describe("goal panel mission-control contracts", () => {
     const src = await goalPanelSource()
     expect(src).toContain('data-component="goal-chain-run-rail"')
     expect(src).toContain('data-density="compact-chain-row"')
+    expect(src).toContain("grid-cols-[30px_42px_minmax(220px,1fr)_98px_172px_150px]")
+    expect(src).toContain('data-component="goal-chain-step-number"')
+    expect(src).toContain('data-component="goal-chain-step-icon"')
+    expect(src).toContain('data-component="goal-chain-step-budget"')
+    expect(src).toContain('data-component="goal-chain-step-actions"')
+    expect(src).toContain("chainStepRowStyle")
+    expect(src).toContain("chainStepBadgeStyle")
+    expect(src).toContain("chainStepSoftStyle")
+    expect(src).toContain("flex min-w-0 flex-col gap-1")
+    expect(src).not.toContain("min-w-[560px]")
+    expect(src).toContain('data-component="goal-chain-empty-state"')
+    expect(src).toContain('data-component="goal-chain-execution-note"')
+    expect(src).toContain('data-component="goal-chain-summary-line"')
     expect(src).toContain('data-component="goal-method-library-header"')
     expect(src).toContain('data-component="goal-method-rail-filters"')
+    expect(src).toContain('data-component="goal-method-edit"')
+    expect(src).toContain("currentGoalTurns")
+    expect(src).toContain("maxGoalTurns")
+    expect(src).toContain("currentGoalMinutes")
+    expect(src).toContain("maxGoalMinutes")
     expect(src).not.toContain(">Packs</span>")
     expect(src).not.toContain(">Archived</span>")
     expect(src).not.toContain("session.goal.template.source.builtin")
     expect(src).not.toContain("session.goal.template.kind.method")
     expect(src).not.toContain("Retry limit")
     expect(src).not.toContain("Drop an action or pack")
-    // The Method Library detail no longer renders the taxonomy "Tags" card.
+    expect(src).not.toContain("border-dashed border-border-strong")
+    // The Method Library no longer renders taxonomy tags or source-kind chips.
     expect(src).not.toContain(">Tags</div>")
+    expect(src).not.toContain("methodTags")
+    expect(src).not.toContain("BUILT-IN")
+    expect(src).not.toContain("PROMPT")
+    expect(src).not.toContain("Goal marker")
+    expect(src).not.toContain("Command check")
+    expect(src).not.toContain("completionRuleShortLabel")
+    expect(src).not.toContain("Use as draft")
+    expect(src).not.toContain("Actions added from the library appear here")
     expect(src).not.toContain('label="Gates"')
-    expect(src).toContain("Actions added from the library appear here")
+    expect(src).not.toContain('label="Checkpoints"')
+    expect(src).not.toContain("ACTION_GATE_LABELS")
+    expect(src).not.toContain("inferActionGate")
+    expect(src).not.toContain("stepGateLabel")
   })
 
-  test("method editor exposes the core fields without the taxonomy controls", async () => {
+  test("live goals keep the chain builder as the running screen and highlight steps", async () => {
     const src = await goalPanelSource()
-    // The reshaped Method Library editor keeps name / label / prompt / verify / save…
-    expect(src).toContain("session.goal.template.saveName")
+    expect(src).toContain("<Match when={props.goal.store.loaded && !props.goal.store.corrupt}>")
+    expect(src).toContain('data-component="goal-chain-running-status"')
+    expect(src).toContain('data-component="goal-chain-running-activity"')
+    expect(src).toContain("liveRunStatus")
+    expect(src).toContain("chainRunStateLabel")
+    expect(src).toContain("chainRunStateTitle")
+    expect(src).toContain("chainRunStateSubtitle")
+    expect(src).toContain("visibleChainSteps")
+    expect(src).toContain("stepRunState")
+    expect(src).toContain("<For each={visibleChainSteps()}>")
+    expect(src).toContain('data-run-state={stepRunState(i())}')
+    expect(src).toContain('stepRunState(i()) === "running"')
+    expect(src).toContain('stepRunState(i()) === "paused"')
+    expect(src).toContain('liveRunStatus() === "active"')
+    expect(src).toContain('liveRunStatus() === "paused"')
+    expect(src).toContain('data-component="goal-running-metric-strip"')
+    expect(src).toContain('data-component="goal-running-progress-hero"')
+    expect(src).toContain("chainStepRunLabel")
+    expect(src).toContain("chainStepRunBadgeStyle")
+    expect(src).toContain("liveRunStalled")
+    expect(src).toContain('stepRunState(i()) === "stalled"')
+    expect(src).toContain("session.goal.chainBuilder.stalledButton")
+    expect(src).toContain("session.goal.chainBuilder.stalledHint")
+    expect(src).toContain("<Show when={!liveGoal()}>")
+    expect(src).toContain("lg:grid-cols-[minmax(260px,1fr)_auto]")
+    expect(src).toContain("flex min-w-0 flex-wrap items-center justify-start")
+    expect(src).toContain("relative z-10 shrink-0 border-b")
+    expect(src).not.toContain('data-component="goal-running-status-workspace"')
+    expect(src).not.toContain('data-component="goal-command-strip"')
+    expect(src).not.toContain('data-component="goal-chain-board"')
+    expect(src).not.toContain('data-component="goal-activity-block"')
+    expect(src).not.toContain("<Match when={liveGoal()} keyed>")
+    expect(src).not.toContain('setChainDraft("steps", [])')
+  })
+
+  test("active goals with stale activity render a waiting state instead of claiming active work", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const latestActivityAt = createMemo")
+    expect(src).toContain("isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), Date.now())")
+    expect(src).toContain("goalIdleMinutes(latestActivityAt(), Date.now())")
+    expect(src).toContain('if (status === "active") return liveRunStalled() ? "stalled" : "running"')
+    expect(src).toContain('liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton")')
+  })
+
+  test("chain builder empty state names the real execution boundary instead of implying drag and drop", async () => {
+    const src = await goalPanelSource()
+    const emptyStart = src.indexOf('data-component="goal-chain-empty-state"')
+    const emptyEnd = src.indexOf("<For each={visibleChainSteps()}>", emptyStart)
+    expect(emptyStart).toBeGreaterThan(-1)
+    expect(emptyEnd).toBeGreaterThan(emptyStart)
+    const emptySrc = src.slice(emptyStart, emptyEnd)
+    expect(emptySrc).toContain("Start Chain writes the ordered steps")
+    expect(emptySrc).toContain("activates step 1")
+    expect(emptySrc).toContain("Draft edits stay local")
+    expect(emptySrc).not.toContain("border-dashed")
+    expect(emptySrc).not.toContain("Plan</span>")
+    expect(emptySrc).not.toContain("Build</span>")
+    expect(emptySrc).not.toContain("Verify</span>")
+  })
+
+  test("goal console uses the four-zone visual architecture from the target mock", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-console-section"')
+    expect(src).toContain("data-zone={props.zone}")
+    expect(src).toContain('zone="last-result"')
+    expect(src).toContain('zone="set-goal"')
+    expect(src).toContain('zone="chain-builder"')
+    expect(src).toContain('zone="action-library"')
+    expect(src).toContain('zone="action-editor"')
+    expect(src).toContain('data-component="goal-console-section-title"')
+    expect(src).toContain('data-component="goal-console-section-subtitle"')
+    expect(src).toContain('data-component="goal-action-editor-footer"')
+    expect(src).toContain("border-rose-400/70")
+    expect(src).toContain("border-blue-400/70")
+    expect(src).toContain("border-violet-500/45")
+    expect(src).toContain("border-emerald-400/70")
+    expect(src).toContain("Action Library")
+    expect(src).toContain("Action Editor")
+  })
+
+  test("goal console panels use bounded scroll bodies instead of clipping rail content", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-console-section-body"')
+    expect(src).toContain("flex min-h-0 min-w-0 flex-col")
+    expect(src).toContain("min-h-0 flex-1 overflow-hidden")
+    expect(src).toContain("xl:h-[calc(100vh-8rem)]")
+    expect(src).toContain("flex h-full min-h-0 min-w-0 flex-col bg-background-base/70 p-2.5")
+    expect(src).toContain("flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden")
+    expect(src).toContain("mt-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto")
+  })
+
+  test("last result renders as a prominent labeled output card with filled terminal states", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("terminalOutcomeTone")
+    expect(src).toContain('data-component="goal-terminal-output-card"')
+    expect(src).toContain('data-component="goal-terminal-outcome-badge"')
+    expect(src).toContain("Last run outcome")
+    expect(src).toContain("bg-orange-500/25")
+    expect(src).toContain("text-orange-100")
+    expect(src).toContain('"background-color": "rgba(249, 115, 22, 0.34)"')
+    expect(src).toContain("text-14-medium leading-5 text-text-base")
+    expect(src).toContain("grid grid-cols-2 gap-1.5")
+  })
+
+  test("action library rows are compact command rows instead of tall category cards", async () => {
+    const src = await goalPanelSource()
+    const library = src.match(/data-testid="action-library"[\s\S]*?<\/section>/)
+    expect(library).toBeTruthy()
+    const librarySrc = library![0]
+    expect(librarySrc).toContain('data-component="goal-method-category-tabs"')
+    expect(librarySrc).toContain('data-component="goal-method-prompt-preview"')
+    expect(librarySrc).toContain("grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_48px_48px]")
+    expect(librarySrc).toContain("class=\"flex min-w-0 items-center gap-1.5")
+    expect(librarySrc).toContain('class={inlineCommandButtonClass("add")}')
+    expect(librarySrc).toContain('class={inlineCommandButtonClass("edit")}')
+    expect(librarySrc).not.toContain("shrink-0 rounded border border-border-base px-1.5 py-0.5 text-[9px] uppercase")
+  })
+
+  test("goal console uses high-contrast command buttons and meaningful helper copy", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("goalCommandButtonClass")
+    expect(src).toContain("goalCommandButtonStyle")
+    expect(src).toContain("inlineCommandButtonStyle")
+    expect(src).toContain("numericHighlightClass")
+    expect(src).toContain("numericHighlightStyle")
+    expect(src).toContain("goal-number-highlight")
+    expect(src).toContain("goal-command-button-primary")
+    expect(src).toContain("goal-command-button-secondary")
+    expect(src).toContain("goal-command-button-success")
+    expect(src).toContain("goal-command-button-danger")
+    expect(src).toContain("goal-inline-command-add")
+    expect(src).toContain("goal-inline-command-edit")
+    expect(src).toContain("goal-inline-command-remove")
+    expect(src).toContain('"background-color": "rgba(59, 130, 246, 0.9)"')
+    expect(src).toContain('"background-color": "rgba(249, 115, 22, 0.88)"')
+    expect(src).toContain('"background-color": "rgba(16, 185, 129, 0.78)"')
+    expect(src).toContain("border bg-background-panel/80")
+    expect(src).toContain("border-b border-border-base/80 px-3 py-2.5")
+    expect(src).toContain("h-5 w-1.5 shrink-0 rounded-full")
+    expect(src).toContain("linear-gradient(90deg")
+    expect(src).toContain("Most recent run outcome and evidence.")
+    expect(src).toContain("Create one standalone goal outside the chain.")
+    expect(src).toContain("session.goal.chainBuilder.planChainHint")
+    expect(src).toContain("Progress, controls, and step status stay in this workspace.")
+    expect(src).toContain('data-component="goal-running-clock"')
+    expect(src).toContain('data-component="goal-running-turns"')
+    expect(src).toContain('data-component="goal-running-step"')
+    expect(src).toContain("bg-gradient-to-r from-emerald-100")
+    expect(src).toContain("session.goal.chainBuilder.validate")
+    expect(src).toContain("session.goal.chainBuilder.saveDraft")
+    expect(src).toContain("Reusable actions. Add inserts into Run Order.")
+    expect(src).toContain("Save changes or add the draft locally.")
+    expect(src).toContain("Add inserts locally. Edit loads the selected draft.")
+    expect(src).not.toContain("Always shows the outcome of the most recent run.")
+    expect(src).not.toContain("Manage reusable actions and selected details.")
+    expect(src).not.toContain("Shows the ordered list of actions that will run.")
+  })
+
+  test("history is a collapsed secondary section behind the workflow builder", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const [historyOpen, setHistoryOpen] = createSignal(false)")
+    expect(src).toMatch(/data-testid="run-history"[\s\S]*aria-expanded={historyOpen\(\)}/)
+    expect(src).toContain('data-component="goal-history-panel"')
+    expect(src).toContain("session.goal.history.title")
+    expect(src).not.toContain("const [historyOpen, setHistoryOpen] = createSignal(true)")
+  })
+
+  test("action editor exposes editable action fields and top-level actions", async () => {
+    const src = await goalPanelSource()
+    const editor = src.match(/data-testid="action-editor"[\s\S]*?<\/section>/)
+    expect(editor).toBeTruthy()
+    const editorSrc = editor![0]
+
+    expect(src).toContain("session.goal.template.label")
     expect(src).toContain("session.goal.template.prompt")
     expect(src).toContain("session.goal.template.command")
     expect(src).toContain("session.goal.template.save")
+    expect(src).toContain("session.goal.template.addToChain")
+    expect(src).toContain("session.goal.template.duplicate")
+    expect(src).toContain("session.goal.template.delete")
+    expect(src).toContain("session.goal.template.newDraft")
+    expect(src).toContain("session.goal.template.editorTitle")
     expect(src).toContain("const label = actionDraft.label.trim() || id")
     expect(src).toContain("label,")
-    // …but no longer renders the category / checkpoint / color / elevation taxonomy.
+    expect(src).toContain("actionDraftTemplate")
+    expect(src).toContain("actionDraftPayload")
+    expect(src).toContain("addActionDraftToChain")
+    expect(src).toContain("duplicateActionDraft")
+    expect(editorSrc).not.toContain("session.goal.template.saveName")
+    expect(editorSrc.indexOf('session.goal.template.save')).toBeLessThan(
+      editorSrc.indexOf('session.goal.template.label'),
+    )
+    expect(editorSrc.indexOf('session.goal.template.addToChain')).toBeLessThan(
+      editorSrc.indexOf('session.goal.template.label'),
+    )
+
     expect(src).not.toContain('data-component="goal-action-style-controls"')
+    expect(src).not.toContain("session.goal.template.gate")
     expect(src).not.toContain("session.goal.template.tone")
     expect(src).not.toContain("session.goal.template.elevation")
-    // The save payload still carries auto-inferred metadata (chain styling uses it).
+    expect(src).not.toContain("session.goal.template.apply")
+    expect(src).not.toContain("Load goal form")
     expect(src).toContain("category: actionDraft.category")
     expect(src).toContain("tone: actionDraft.tone")
     expect(src).toContain("elevation: actionDraft.elevation")
+    expect(src).not.toContain("gate: actionDraft.gate")
   })
 
-  test("action editor cancel stays local and edit reopen repopulates action fields", async () => {
+  test("action editor saves only still-referenced template variables", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("function referencedTemplateVariables")
+    const draftStart = src.indexOf("const actionDraftTemplate = (): ActionDraftTemplate => {")
+    const draftEnd = src.indexOf("const upsertLocalTemplate =", draftStart)
+    expect(draftStart).toBeGreaterThan(-1)
+    expect(draftEnd).toBeGreaterThan(draftStart)
+    const draft = src.slice(draftStart, draftEnd)
+    expect(draft).toContain("const referencedVars = referencedTemplateVariables(condition, command)")
+    expect(draft).toContain("Object.entries(sourceTemplate.variables).filter(([key]) => referencedVars.has(key))")
+    expect(draft).toContain("...(variables && Object.keys(variables).length > 0 ? { variables } : {})")
+    expect(draft).not.toContain("variables: sourceTemplate.variables")
+  })
+
+  test("model pin keys are serialized as bounded provider/model fields", async () => {
+    const src = await goalPanelSource()
+    const fnStart = src.indexOf("function pinnedModelFromKey")
+    const fnEnd = src.indexOf("function pinnedModelForRuntime", fnStart)
+    expect(fnStart).toBeGreaterThan(-1)
+    expect(fnEnd).toBeGreaterThan(fnStart)
+    const fn = src.slice(fnStart, fnEnd)
+    expect(fn).toContain("const providerID = clean.slice(0, sep).trim().slice(0, 160)")
+    expect(fn).toContain("const modelID = clean.slice(sep + 1).trim().slice(0, 160)")
+    expect(fn).not.toContain("trim().slice(0, 200)")
+  })
+
+  test("action editor is draft-first without a hidden cancel or goal-form load path", async () => {
     const src = await goalPanelSource()
     expect(src).toContain("const openActionEditor = (template?: GoalTemplateButton)")
     expect(src).toContain("const editTemplateDraft = (template: GoalTemplateButton)")
     expect(src).toContain("openActionEditor(template)")
-    expect(src).toContain('onClick={() => setActionDraft("open", false)}')
     expect(src).toContain('category: template ? inferActionCategory(template) : "Custom"')
     expect(src).toContain("tone: template?.tone ?? inferredActionTone(template ?? {})")
     expect(src).toContain('elevation: template?.elevation ?? "flat"')
-    expect(src).toContain('gate: template ? inferActionGate(template) : "required"')
+    expect(src).not.toContain('gate: template ? inferActionGate(template) : "required"')
+    expect(src).not.toContain('onClick={() => setActionDraft("open", false)}')
+    expect(src).not.toContain("applyTemplateDraft")
+    const draftSeedStart = src.indexOf("const seedActionDraft =")
+    const draftSeedEnd = src.indexOf("const selectActionForView", draftSeedStart)
+    expect(draftSeedStart).toBeGreaterThan(-1)
+    expect(draftSeedEnd).toBeGreaterThan(draftSeedStart)
+    const draftSeed = src.slice(draftSeedStart, draftSeedEnd)
+    expect(draftSeed).not.toContain("setShowCreate(true)")
+    expect(draftSeed).not.toContain("setNewCommand(draft.command)")
+  })
 
-    const cancelButton = src.match(
-      /label={language\.t\("session\.goal\.action\.cancel"\)}[\s\S]*?setActionDraft\("open", false\)/,
-    )
-    expect(cancelButton).toBeTruthy()
-    expect(cancelButton![0]).not.toContain("sendGoalCommand")
-    expect(cancelButton![0]).not.toContain("startGoalRun")
+  test("template mutations refresh the action library before editor selection changes", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const refreshTemplates = () =>")
+    expect(src).toContain("const [localTemplateOverrides, setLocalTemplateOverrides]")
+    expect(src).toContain("const [deletedTemplateIDs, setDeletedTemplateIDs]")
+    expect(src).toContain("const mergeTemplates = (")
+    expect(src).toContain("const upsertLocalTemplate = (template: GoalTemplateButton)")
+    expect(src).toContain("const removeLocalTemplate = (id: string)")
+    const sendGoalCommandStart = src.indexOf("const sendGoalCommand = async")
+    const sendGoalCommandEnd = src.indexOf("const runAction =", sendGoalCommandStart)
+    expect(sendGoalCommandStart).toBeGreaterThan(-1)
+    expect(sendGoalCommandEnd).toBeGreaterThan(sendGoalCommandStart)
+    const sendGoalCommand = src.slice(sendGoalCommandStart, sendGoalCommandEnd)
+    expect(sendGoalCommand).toContain('await refreshGoalSurfaces({ templates: ok && label === "template" })')
+    expect(src).toContain("if (options.templates) await refreshTemplates()")
+    expect(sendGoalCommand).not.toContain('if (ok && label === "template") refreshTemplates()')
+
+    const saveStart = src.indexOf("const saveTemplateDraft =")
+    const saveEnd = src.indexOf("const duplicateActionDraft =", saveStart)
+    expect(saveStart).toBeGreaterThan(-1)
+    expect(saveEnd).toBeGreaterThan(saveStart)
+    expect(src.slice(saveStart, saveEnd)).toContain("upsertLocalTemplate(savedTemplate)")
+
+    const duplicateStart = src.indexOf("const duplicateActionTemplate =")
+    const duplicateEnd = src.indexOf("const deleteActionTemplate =", duplicateStart)
+    expect(duplicateStart).toBeGreaterThan(-1)
+    expect(duplicateEnd).toBeGreaterThan(duplicateStart)
+    const duplicateTemplate = src.slice(duplicateStart, duplicateEnd)
+    expect(duplicateTemplate).toContain("actionID: id")
+    expect(duplicateTemplate).toContain("sourceID: id")
+
+    const deleteStart = src.indexOf("const deleteActionTemplate =")
+    const deleteEnd = src.indexOf("const uniqueTemplateID =", deleteStart)
+    expect(deleteStart).toBeGreaterThan(-1)
+    expect(deleteEnd).toBeGreaterThan(deleteStart)
+    expect(src.slice(deleteStart, deleteEnd)).toContain("removeLocalTemplate(template.id)")
   })
 
   test("start chain preserves ordered steps and explicit operator metadata", async () => {
     const src = await goalPanelSource()
     const startChain = src.match(/const startGoalChain = async \(\) => \{[\s\S]*?sendGoalCommand\("chain"/)
     expect(startChain).toBeTruthy()
-    expect(startChain![0]).toContain("steps: chainDraft.steps.map((step) => ({")
+    expect(startChain![0]).toContain("const firstStepModel = pinnedModelForRuntime(steps[0]?.model)")
+    expect(startChain![0]).toContain("const firstStepSkills = steps[0]?.skills")
+    expect(startChain![0]).toContain("steps: steps.map((step) => {")
+    expect(startChain![0]).toContain("const model = pinnedModelForRuntime(step.model)")
     expect(startChain![0]).toContain("condition: step.condition")
     expect(startChain![0]).toContain('verification: { type: "shell", command: step.command.trim() }')
     expect(startChain![0]).toContain('{ verification: { type: "marker" } }')
     expect(startChain![0]).toContain("maxTurns: step.maxTurns")
+    expect(startChain![0]).toContain("maxMinutes: step.maxTimeMinutes")
     expect(startChain![0]).toContain("category: step.category")
     expect(startChain![0]).toContain("tone: step.tone")
     expect(startChain![0]).toContain("elevation: step.elevation")
+    expect(startChain![0]).toContain("skills: [...step.skills]")
+    expect(startChain![0]).toContain("...(model ? { model } : {})")
+    expect(startChain![0]).not.toContain("agent:")
+    expect(startChain![0]).not.toContain("gate: step.gate")
     expect(startChain![0]).not.toContain("sort(")
     expect(startChain![0]).not.toContain("reverse(")
   })
 
-  test("adding a method to the chain stays local and does not cross the run boundary", async () => {
+  test("recovered visible chain steps stay runnable when the local draft is empty", async () => {
+    const recoveredStep = { id: "from-file", condition: "Recovered file-backed step" }
+    const draftStep = { id: "from-draft", condition: "Local draft step" }
+
+    expect(selectRunnableChainSteps([], [recoveredStep])).toEqual([recoveredStep])
+    expect(selectRunnableChainSteps([draftStep], [recoveredStep])).toEqual([draftStep])
+
     const src = await goalPanelSource()
-    // The detail "Add to chain" action feeds the local chain draft…
-    expect(src).toContain("addActionToChain(template, varsForAction(template))")
-    // …and the handler itself never starts a run or sends a command.
-    const addAction = src.match(/const addActionToChain = [\s\S]*?\n  \}/)
-    expect(addAction).toBeTruthy()
-    expect(addAction![0]).not.toContain("sendGoalCommand")
-    expect(addAction![0]).not.toContain("startGoalRun")
+    const startChainStart = src.indexOf("const startGoalChain = async () => {")
+    const startChainEnd = src.indexOf("const progressPct = createMemo", startChainStart)
+    expect(startChainStart).toBeGreaterThan(-1)
+    expect(startChainEnd).toBeGreaterThan(startChainStart)
+    const startChain = src.slice(startChainStart, startChainEnd)
+    expect(startChain).toContain("const steps = runnableChainSteps()")
+    expect(startChain).toContain("validateChainDraft(steps")
+
+    const toolbarStart = src.indexOf('label={language.t("session.goal.chainBuilder.validate")}')
+    const toolbarEnd = src.indexOf('<Show when={chainErrors().length > 0}>', toolbarStart)
+    expect(toolbarStart).toBeGreaterThan(-1)
+    expect(toolbarEnd).toBeGreaterThan(toolbarStart)
+    const toolbar = src.slice(toolbarStart, toolbarEnd)
+    expect(toolbar).toContain("validateChainDraft(runnableChainSteps()")
+    expect(toolbar).toContain("runnableChainSteps().length === 0")
+  })
+
+  test("start chain admits exactly one run after deterministic chain state write", async () => {
+    const src = await goalPanelSource()
+    const startChainStart = src.indexOf("const startGoalChain = async () => {")
+    const startChainEnd = src.indexOf("const progressPct = createMemo", startChainStart)
+    expect(startChainStart).toBeGreaterThan(-1)
+    expect(startChainEnd).toBeGreaterThan(startChainStart)
+    const startChain = src.slice(startChainStart, startChainEnd)
+
+    expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${payload}`)')
+    expect(startChain.match(/startGoalRun/g) ?? []).toHaveLength(1)
+    expect(startChain).toContain("...(firstStepModel ? { model: firstStepModel } : {})")
+    expect(startChain).toContain("...(firstStepSkills && firstStepSkills.length > 0 ? { skills: firstStepSkills } : {})")
+    expect(startChain).not.toContain("promptAsync")
+  })
+
+  test("permission approval dock is viewport-clamped so approval actions stay reachable", async () => {
+    const permissionDock = await sourceText("./composer/session-permission-dock.tsx")
+    const messagePartCss = await sourceText("../../../../ui/src/components/message-part.css")
+
+    expect(permissionDock).toContain("createResizeObserver")
+    expect(permissionDock).toContain("--permission-prompt-max-height")
+    expect(permissionDock).toContain('ref={(el) => (root = el)}')
+    expect(messagePartCss).toContain('max-height: var(--permission-prompt-max-height, 100dvh);')
+  })
+
+  test("adding an edited action draft to the chain stays local and does not cross the run boundary", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("addActionDraftToChain")
+    expect(src).toContain("addActionToChain(t, varsForAction(t))")
+    const addActionStart = src.indexOf("const addActionDraftToChain = () => {")
+    const addActionEnd = src.indexOf("const actionDraftPayload", addActionStart)
+    expect(addActionStart).toBeGreaterThan(-1)
+    expect(addActionEnd).toBeGreaterThan(addActionStart)
+    const addAction = src.slice(addActionStart, addActionEnd)
+    expect(addAction).not.toContain("sendGoalCommand")
+    expect(addAction).not.toContain("startGoalRun")
+  })
+
+  test("button scoping keeps local edits, template mutations, and run boundaries separate", async () => {
+    const src = await goalPanelSource()
+
+    const addLibraryStart = src.indexOf("const addActionToChain =")
+    const addLibraryEnd = src.indexOf("const moveDraftStep =", addLibraryStart)
+    expect(addLibraryStart).toBeGreaterThan(-1)
+    expect(addLibraryEnd).toBeGreaterThan(addLibraryStart)
+    const addLibrary = src.slice(addLibraryStart, addLibraryEnd)
+    expect(addLibrary).toContain('setChainDraft("steps"')
+    expect(addLibrary).not.toContain("sendGoalCommand")
+    expect(addLibrary).not.toContain("startGoalRun")
+
+    const updateBudgetStart = src.indexOf("const updateDraftStepBudget =")
+    const updateBudgetEnd = src.indexOf("const updateMasterBudget =", updateBudgetStart)
+    expect(updateBudgetStart).toBeGreaterThan(-1)
+    expect(updateBudgetEnd).toBeGreaterThan(updateBudgetStart)
+    const updateBudget = src.slice(updateBudgetStart, updateBudgetEnd)
+    expect(updateBudget).toContain('setChainDraft("steps"')
+    expect(updateBudget).not.toContain("sendGoalCommand")
+
+    const saveStart = src.indexOf("const saveTemplateDraft =")
+    const saveEnd = src.indexOf("const duplicateActionDraft =", saveStart)
+    expect(saveStart).toBeGreaterThan(-1)
+    expect(saveEnd).toBeGreaterThan(saveStart)
+    const saveTemplate = src.slice(saveStart, saveEnd)
+    expect(saveTemplate).toContain('sendGoalCommand("template"')
+    expect(saveTemplate).not.toContain("startGoalRun")
+
+    const startChainStart = src.indexOf("const startGoalChain = async () => {")
+    const startChainEnd = src.indexOf("const progressPct = createMemo", startChainStart)
+    expect(startChainStart).toBeGreaterThan(-1)
+    expect(startChainEnd).toBeGreaterThan(startChainStart)
+    const startChain = src.slice(startChainStart, startChainEnd)
+    expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${payload}`)')
+    expect(startChain.match(/startGoalRun/g) ?? []).toHaveLength(1)
+
+    const createGoalStart = src.indexOf("const createGoal = async () => {")
+    const createGoalEnd = src.indexOf("const steerGoal =", createGoalStart)
+    expect(createGoalStart).toBeGreaterThan(-1)
+    expect(createGoalEnd).toBeGreaterThan(createGoalStart)
+    const createGoal = src.slice(createGoalStart, createGoalEnd)
+    expect(createGoal).toContain('sendGoalCommand("set", args)')
+    expect(createGoal).toContain("startGoalRun")
+
+    const steerStart = src.indexOf("const steerGoal = async () => {")
+    const steerEnd = src.indexOf("const filteredTemplates =", steerStart)
+    expect(steerStart).toBeGreaterThan(-1)
+    expect(steerEnd).toBeGreaterThan(steerStart)
+    const steerGoal = src.slice(steerStart, steerEnd)
+    expect(steerGoal).toContain('sendGoalCommand("steer", `steer "${note}"`)')
+    expect(steerGoal).toContain("steerGoalRun")
+    expect(steerGoal).toContain('const shouldWakeRun = liveRunStatus() !== "active" || liveRunStalled()')
+    expect(steerGoal).toContain("if (shouldWakeRun && props.sessionID)")
+    expect(steerGoal).toContain('setSteerText("")')
+    expect(steerGoal).toContain("setSteerOpen(false)")
+  })
+
+  test("live run-order delete removes only pending steps through the chain command", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const removeLiveChainStep = async (index: number) => {")
+    expect(src).toContain("if (index <= runningStepIndex()) return false")
+    expect(src).toContain('sendGoalCommand("chain", `chain remove ${index + 1}`)')
+    expect(src).toContain("if (liveGoal()) return void removeLiveChainStep(index)")
+    expect(src).toContain("removeDraftStep(step.id)")
+    expect(src).toContain('aria-label={liveGoal() ? "Remove pending step" : "Remove"}')
+    expect(src).toContain("disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}")
+    expect(src).toContain("onClick={() => removeVisibleStep(step, i())}")
+  })
+
+  test("live chain reader preserves model and skill pins for chained rows", async () => {
+    const src = await goalPanelSource()
+    const readChainStart = src.indexOf("async function readChain")
+    const readChainEnd = src.indexOf("const TEMPLATES_PATH", readChainStart)
+    expect(readChainStart).toBeGreaterThan(-1)
+    expect(readChainEnd).toBeGreaterThan(readChainStart)
+    const readChain = src.slice(readChainStart, readChainEnd)
+    expect(readChain).toContain("s.skills.map")
+    expect(readChain).toContain("templateModelFromSnapshot(s.model)")
   })
 
   test("recent runs render as a vertical listbox, not wrapping pills", async () => {
@@ -888,6 +1398,139 @@ describe("startGoalRun", () => {
     })
   })
 
+  test("falls back to raw transport via host composer path when generated prompt is unavailable", async () => {
+    const post = mock(async () => undefined)
+
+    const ok = await startGoalRun(
+      {
+        session: {},
+        client: { post },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+        workspace: "workspace-1",
+      },
+    )
+
+    expect(ok).toBe(true)
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith({
+      url: "/session/{sessionID}/message",
+      path: { sessionID: "session-1" },
+      query: {
+        directory: "C:\\repo\\project",
+        workspace: "workspace-1",
+      },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: expect.stringContaining("Begin working toward the current OpenGoal goal now."),
+          },
+        ],
+      },
+    })
+  })
+
+  test("carries pinned skills as prompt text without sending an unsupported skills field", async () => {
+    const promptAsync = mock(async () => undefined)
+
+    const ok = await startGoalRun(
+      {
+        session: { promptAsync },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+        skills: ["frontend-design", "playwright"],
+      },
+    )
+
+    expect(ok).toBe(true)
+    expect(promptAsync).toHaveBeenCalledTimes(1)
+    const calls = promptAsync.mock.calls as unknown as Array<[Record<string, unknown>]>
+    const payload = calls[0]![0]
+    expect(payload).not.toHaveProperty("skills")
+    expect(payload.parts).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining("Pinned skills for this OpenGoal action: frontend-design, playwright"),
+      },
+    ])
+  })
+
+  test("raw prompt_async fallback also strips pinned skills from the request body", async () => {
+    const post = mock(async () => undefined)
+
+    const ok = await startGoalRun(
+      {
+        session: {},
+        client: { post },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+        skills: ["frontend-design"],
+      },
+    )
+
+    expect(ok).toBe(true)
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith({
+      url: "/session/{sessionID}/message",
+      path: { sessionID: "session-1" },
+      query: {
+        directory: "C:\\repo\\project",
+      },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: expect.stringContaining("Pinned skills for this OpenGoal action: frontend-design"),
+          },
+        ],
+      },
+    })
+  })
+
+  test("falls back to the raw prompt_async transport when generated promptAsync rejects", async () => {
+    const promptAsync = mock(async () => {
+      throw new Error("generated method failed before transport")
+    })
+    const post = mock(async () => undefined)
+
+    const ok = await startGoalRun(
+      {
+        session: { promptAsync },
+        client: { post },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+      },
+    )
+
+    expect(ok).toBe(true)
+    expect(promptAsync).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith({
+      url: "/session/{sessionID}/message",
+      path: { sessionID: "session-1" },
+      query: {
+        directory: "C:\\repo\\project",
+      },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: expect.stringContaining("Read .opencode/.goal-state.json"),
+          },
+        ],
+      },
+    })
+  })
+
   test("returns false when async prompt admission is unavailable", async () => {
     const ok = await startGoalRun(
       { session: {} },
@@ -903,17 +1546,17 @@ describe("startGoalRun", () => {
   })
 })
 
-describe("stopGoalRun", () => {
-  test("aborts the active OpenCode session turn without using chat commands", async () => {
-    const abort = mock(async () => undefined)
+describe("steerGoalRun", () => {
+  test("submits steering through promptAsync so the active continuation can consume it", async () => {
+    const promptAsync = mock(async () => undefined)
     const sessionCommand = mock(async () => {
-      throw new Error("session.command must not stop goals")
+      throw new Error("session.command must not steer goals")
     })
 
-    const ok = await stopGoalRun(
+    const ok = await steerGoalRun(
       {
         session: {
-          abort,
+          promptAsync,
           command: sessionCommand,
         },
       },
@@ -921,26 +1564,73 @@ describe("stopGoalRun", () => {
         sessionID: "session-1",
         directory: "C:\\repo\\project",
       },
+      "focus on the failing typecheck",
     )
 
     expect(ok).toBe(true)
     expect(sessionCommand).not.toHaveBeenCalled()
-    expect(abort).toHaveBeenCalledWith({
+    expect(promptAsync).toHaveBeenCalledTimes(1)
+    expect(promptAsync).toHaveBeenCalledWith({
       sessionID: "session-1",
       directory: "C:\\repo\\project",
+      parts: [
+        {
+          type: "text",
+          text: goalSteerPrompt("focus on the failing typecheck"),
+        },
+      ],
     })
   })
 
-  test("returns false when session abort is unavailable", async () => {
-    const ok = await stopGoalRun(
-      { session: {} },
+  test("does not submit empty steering prompts", async () => {
+    const promptAsync = mock(async () => undefined)
+    const ok = await steerGoalRun({ session: { promptAsync } }, { sessionID: "session-1" }, "   ")
+    expect(ok).toBe(false)
+    expect(promptAsync).not.toHaveBeenCalled()
+  })
+
+  test("falls back to raw prompt_async transport for steering injection", async () => {
+    const post = mock(async () => undefined)
+
+    const ok = await steerGoalRun(
+      {
+        session: {},
+        client: { post },
+      },
       {
         sessionID: "session-1",
         directory: "C:\\repo\\project",
       },
+      "keep working in the same chain step",
     )
 
-    expect(ok).toBe(false)
+    expect(ok).toBe(true)
+    expect(post).toHaveBeenCalledWith({
+      url: "/session/{sessionID}/message",
+      path: { sessionID: "session-1" },
+      query: {
+        directory: "C:\\repo\\project",
+      },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: goalSteerPrompt("keep working in the same chain step"),
+          },
+        ],
+      },
+    })
+  })
+})
+
+describe("goal panel lifecycle stalled state", () => {
+  test("detects only active goals with stale activity as stalled", () => {
+    const now = 1_700_000_000_000
+    expect(goalIdleMinutes(now - 6 * 60_000, now)).toBe(6)
+    expect(isGoalStalled("active", now - 6 * 60_000, now)).toBe(true)
+    expect(isGoalStalled("active", now - 4 * 60_000, now)).toBe(false)
+    expect(isGoalStalled("paused", now - 60 * 60_000, now)).toBe(false)
+    expect(isGoalStalled("active", null, now)).toBe(false)
   })
 })
 
@@ -970,8 +1660,16 @@ describe("useGoal hook", () => {
     mock.module("@/context/language", () => ({
       useLanguage: () => ({ t: (k: string) => k }),
     }))
+    mock.module("@/context/models", () => ({
+      useModels: () => ({
+        list: () => [],
+      }),
+    }))
     mock.module("@/context/sdk", () => ({
       useSDK: () => sdkRef,
+    }))
+    mock.module("@/context/sync", () => ({
+      useSync: () => ({}),
     }))
     const mod = await import("./goal-panel")
     useGoal = mod.useGoal
