@@ -2270,30 +2270,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   />
                 </div>
 
-              <div
-                data-component="goal-playbook-budget-strip"
-                class="mt-3 grid grid-cols-2 overflow-hidden rounded-lg border border-border-base bg-background-base/70 text-11-regular text-text-weaker shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-              >
-                <div class="border-b border-r border-border-base px-3 py-2">
-                  <div>Current turns</div>
-                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{currentGoalTurns()}</div>
+                <div
+                  data-component="goal-playbook-budget-strip"
+                  class="mt-3 flex items-center gap-4 overflow-hidden rounded-lg border border-border-base bg-background-base/70 px-3 py-2 text-11-regular text-text-weaker shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                >
+                  <span>Turns: <strong class="tabular-nums text-text-base">{currentGoalTurns()}/{maxGoalTurns()}</strong></span>
+                  <span>Time: <strong class="tabular-nums text-text-base">{currentGoalMinutes()}m/{maxGoalMinutes()}m</strong></span>
+                  <span class="ml-auto">{budgetSummary().stepCount} step{budgetSummary().stepCount !== 1 ? "s" : ""}</span>
                 </div>
-                <div class="border-b border-border-base px-3 py-2">
-                  <div>Max turns</div>
-                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{maxGoalTurns()}</div>
-                </div>
-                <div class="border-r border-border-base px-3 py-2">
-                  <div>Current time</div>
-                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{currentGoalMinutes()}m</div>
-                </div>
-                <div class="px-3 py-2">
-                  <div>Max time</div>
-                  <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>{maxGoalMinutes()}m</div>
-                </div>
-                <div class="col-span-2 border-t border-border-base px-3 py-2">
-                  Draft steps <strong class={numericHighlightClass("ml-1")} style={numericHighlightStyle("violet")}>{budgetSummary().stepCount}</strong>
-                </div>
-              </div>
               </div>
             </GoalConsoleSection>
               </section>
