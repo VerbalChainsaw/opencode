@@ -1725,6 +1725,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (providerID && modelID) {
       return modelLabel({ providerID, modelID }) || `${providerID} / ${modelID}`
     }
+    const agentModel = sync.data.agent.find((item) => item.mode !== "subagent" && !item.hidden)?.model
+    if (agentModel?.providerID && agentModel.modelID) {
+      return modelLabel(agentModel) || `${agentModel.providerID} / ${agentModel.modelID}`
+    }
     return "Session default model"
   }
   const stepRuntimeModelLabel = (step: GoalChainDraftStep) => modelLabel(step.model) || sessionModelLabel()
@@ -2832,19 +2836,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <Show when={(step.skills?.length ?? 0) > 0 || step.model}>
                                     <div class="flex min-w-0 gap-1 overflow-hidden">
                                       <Show when={step.model}>
-                                        <span class="shrink-0 rounded border border-sky-300/50 bg-sky-500/18 px-1.5 py-0.5 text-[9px] font-bold text-sky-50">
+                                        <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-sky-200/80">
                                           {modelLabel(step.model)}
                                         </span>
                                       </Show>
                                       <For each={(step.skills ?? []).slice(0, 2)}>
                                         {(skill) => (
-                                          <span class="shrink-0 rounded border border-emerald-300/45 bg-emerald-500/18 px-1.5 py-0.5 text-[9px] font-bold text-emerald-50">
+                                          <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200/80">
                                             {skill}
                                           </span>
                                         )}
                                       </For>
                                       <Show when={(step.skills?.length ?? 0) > 2}>
-                                        <span class="shrink-0 rounded border border-emerald-300/35 bg-emerald-500/14 px-1.5 py-0.5 text-[9px] font-bold text-emerald-50">
+                                        <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200/60">
                                           +{(step.skills?.length ?? 0) - 2}
                                         </span>
                                       </Show>
@@ -3383,7 +3387,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 </div>
                               }
                             >
-                              <div class="flex max-h-28 min-w-0 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-emerald-300/30 bg-emerald-950/15 p-1.5">
+                              <div class="flex max-h-28 min-w-0 flex-wrap gap-1 overflow-y-auto p-1">
                                 <For each={skillOptionsForDraft()}>
                                   {(skill) => {
                                     const selected = () => actionDraft.skills.includes(skill.name)
@@ -3394,12 +3398,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                         title={skill.description || skill.name}
                                         disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
                                         onClick={() => toggleActionSkill(skill.name)}
-                                        class="min-h-7 rounded-md border px-2 py-1 text-left text-[10px] font-semibold transition disabled:opacity-45"
+                                        class="rounded px-2 py-0.5 text-left text-[10px] font-semibold transition disabled:opacity-30"
                                         classList={{
-                                          "border-emerald-200/75 bg-emerald-400/25 text-emerald-50 shadow-[0_0_0_1px_rgba(110,231,183,0.18)]":
-                                            selected(),
-                                          "border-border-base bg-background-panel/70 text-text-weak hover:border-emerald-300/45 hover:text-emerald-100":
-                                            !selected(),
+                                          "bg-emerald-500/20 text-emerald-200": selected(),
+                                          "text-text-weaker hover:bg-emerald-500/10 hover:text-emerald-200/80": !selected(),
                                         }}
                                       >
                                         {skill.name}
@@ -3434,7 +3436,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           to `store.loaded && !store.corrupt` made history vanish the moment a
           run was stopped/cleared (the live state momentarily reloads/empties),
           even though the archived runs are intact and independent. */}
-      <Show when={archive().length > 0 && !showForm()}>
+      <Show when={archive().length > 0 && !showForm() && !liveGoal()}>
         <div
           data-testid="run-history"
           data-component="goal-history-panel"
