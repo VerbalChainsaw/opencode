@@ -2811,8 +2811,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 >
                                   <span
                                     data-component="goal-chain-step-number"
-                                    class="relative z-10 flex h-7 w-7 items-center justify-center rounded-md border text-11-medium font-semibold tabular-nums shadow-[0_0_10px_rgba(0,0,0,0.16)]"
-                                    style={chainStepRunBadgeStyle(stepRunState(i()), step)}
+                                    class="z-10 flex h-7 w-7 items-center justify-center rounded-full text-11-medium font-bold tabular-nums"
+                                    classList={{
+                                      "bg-gradient-to-br from-emerald-400/40 to-emerald-600/20 text-emerald-100 ring-1 ring-emerald-400/30":
+                                        stepRunState(i()) === "running",
+                                      "bg-gradient-to-br from-amber-400/40 to-amber-600/20 text-amber-100 ring-1 ring-amber-400/30":
+                                        stepRunState(i()) === "paused",
+                                      "bg-gradient-to-br from-orange-400/40 to-orange-600/20 text-orange-100 ring-1 ring-orange-400/30":
+                                        stepRunState(i()) === "stalled",
+                                      "bg-gradient-to-br from-violet-400/30 to-violet-600/15 text-violet-200 ring-1 ring-violet-400/25":
+                                        stepRunState(i()) === "queued",
+                                      "bg-gradient-to-br from-zinc-400/20 to-zinc-600/10 text-zinc-300 ring-1 ring-zinc-400/20":
+                                        stepRunState(i()) === "done",
+                                    }}
                                   >
                                     {i() + 1}
                                   </span>
@@ -3362,9 +3373,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               value={actionDraft.model}
                               disabled={busy() !== null || !props.sessionID || goalCommandUnavailable()}
                               onChange={(event) => setActionDraft("model", event.currentTarget.value)}
-                              class="h-8 w-full rounded-md border border-sky-300/45 bg-sky-950/35 px-2 text-12-medium text-sky-50 outline-none transition focus:border-sky-200 focus:ring-2 focus:ring-sky-400/25 disabled:opacity-45"
+                              class="h-7 w-full rounded bg-transparent px-1 text-11-medium text-sky-200/80 outline-none disabled:opacity-30"
                             >
-                              <option value="">{language.t("session.goal.template.sessionDefaultModel")}</option>
+                              <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultModel")}</option>
                               <For each={modelOptionsForDraft()}>
                                 {(option) => <option value={option.key}>{option.label}</option>}
                               </For>
