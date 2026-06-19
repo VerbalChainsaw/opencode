@@ -2651,21 +2651,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       </div>
                     </Show>
                   </div>
-                    <Show when={chainErrors().length > 0}>
-                      <div
-                        data-component="goal-chain-validation-errors"
-                        class="basis-full rounded-md border border-amber-600/40 bg-amber-950/30 px-3 py-1.5"
-                      >
-                        <For each={chainErrors()}>
-                          {(error) => (
-                            <div class="text-11-regular text-amber-200/90">
-                              {error.stepIndex >= 0 ? `Step ${error.stepIndex + 1}: ` : ""}
-                              {error.message}
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
                 </div>
                 <Show when={!liveGoal()}>
                   <div
@@ -2769,10 +2754,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <For each={chainErrors()}>
                       {(error) => (
                         <div>
-                          <span class="font-semibold tabular-nums">
-                            {error.stepIndex >= 0 ? `#${error.stepIndex + 1}` : language.t("session.goal.chainBuilder.title")}
-                          </span>
-                          {": "}
+                          <Show when={error.stepIndex >= 0}>
+                            <span class="font-semibold tabular-nums">{`#${error.stepIndex + 1}: `}</span>
+                          </Show>
                           {error.message}
                         </div>
                       )}
