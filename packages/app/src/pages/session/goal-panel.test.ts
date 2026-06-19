@@ -105,11 +105,18 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("archive().some((run) => run.summary.goalID === goal.id)")
   })
 
-  test("stop confirmation renders in a separate callout instead of reordering the main action row", async () => {
+  test("runtime detail actions share one stable tray slot instead of mounting page sections", async () => {
     const src = await goalPanelSource()
-    expect(src).toMatch(/confirmingClear\(\)[\s\S]*session\.goal\.action\.confirmStop[\s\S]*session\.goal\.action\.stop/)
-    expect(src).toMatch(/if \(confirmingClear\(\)\) void stopGoal\(\)[\s\S]*else setConfirmingClear\(true\)/)
-    expect(src).toMatch(/<Show when=\{liveGoal\(\) && confirmingClear\(\)\}>[\s\S]*session\.goal\.action\.confirmStop/)
+    expect(src).toContain('data-component="goal-runtime-command-tray"')
+    expect(src).toContain('data-component="goal-runtime-detail-slot"')
+    expect(src).toContain('data-component="goal-runtime-primary-actions"')
+    expect(src).toContain('data-component="goal-runtime-support-actions"')
+    expect(src).toMatch(/const runtimeDetailState = createMemo[\s\S]*confirmingClear\(\)[\s\S]*steerOpen\(\)[\s\S]*handoffOpen\(\)/)
+    expect(src).toMatch(/const openRuntimePanel = [\s\S]*setConfirmingClear\(panel === "stop"\)[\s\S]*setSteerOpen\(panel === "steer"\)[\s\S]*setHandoffOpen\(panel === "handoff"\)/)
+    expect(src).toContain('onClick={() => openRuntimePanel("stop")}')
+    expect(src).not.toContain("<Show when={liveGoal() && confirmingClear()}>")
+    expect(src).not.toContain("<Show when={liveGoal() && steerOpen()}>")
+    expect(src).not.toContain("<Show when={liveGoal() && handoffOpen()}>")
   })
 
   test("create goal starts the agent after state is written, but shared controls stay turnless", async () => {
@@ -154,8 +161,10 @@ describe("goal panel mission-control contracts", () => {
   test("run controls expose restart as a first-class lifecycle action", async () => {
     const src = await goalPanelSource()
     expect(src).toContain("session.goal.action.restart")
+    expect(src).toContain("runtimeCanRestart")
+    expect(src).toContain('data-component="goal-runtime-support-actions"')
     expect(src).toContain('busy={busy() === "restart"}')
-    expect(src).toContain('onClick={() => void runAction("restart")}')
+    expect(src).toContain('void runAction("restart")')
     const runActionStart = src.indexOf("const runAction = async")
     const runActionEnd = src.indexOf("const stopGoal =", runActionStart)
     expect(runActionStart).toBeGreaterThan(-1)
@@ -164,7 +173,6 @@ describe("goal panel mission-control contracts", () => {
     expect(runAction).toContain("sendGoalCommand(action, action)")
     expect(runAction).toContain('action === "restart" || action === "resume"')
     expect(runAction.match(/startGoalRun/g) ?? []).toHaveLength(1)
-    expect(src).toContain("xl:grid-cols-5")
   })
 
   test("action library selects reusable actions into the draft editor", async () => {
@@ -611,8 +619,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-running-turns"')
     expect(src).toContain('data-component="goal-running-step"')
     expect(src).toContain("runningMetricTileStyle")
-    expect(src).toContain('data-component="goal-running-command-strip"')
-    expect(src).toContain("grid grid-cols-5 gap-1 rounded-md border p-1")
+    expect(src).toContain('data-component="goal-runtime-command-tray"')
+    expect(src).toContain('data-component="goal-runtime-detail-slot"')
+    expect(src).toContain('data-component="goal-runtime-primary-actions"')
+    expect(src).toContain('data-component="goal-runtime-support-actions"')
+    expect(src).toContain("runtimeDetailState")
     expect(src).toContain("flex h-9 min-w-0 items-center justify-between")
     expect(src).toContain('data-component="goal-running-inline-panel"')
     expect(src).toContain("runningInlinePanelStyle")
@@ -955,7 +966,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("Read .opencode/.goal-state.json and .opencode/.goal-handoff.json before changing code.")
     expect(src).toContain("Treat this as a continuation from handoff, but do not rely on the previous chat context.")
     expect(src).toContain("SessionStateKey.from(server.scope(), SessionRouteKey.fromRoute(slug))")
-    expect(src).toContain("session.goal.handoff.explain")
+    expect(src).toContain("session.goal.handoff.placeholder")
   })
 
   test("live run-order delete removes only pending steps through the chain command", async () => {

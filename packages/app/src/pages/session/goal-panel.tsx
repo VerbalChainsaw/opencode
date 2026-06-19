@@ -2403,6 +2403,24 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
   // The pause/resume toggle's next action, honoring the optimistic override.
   const pauseResume = createMemo(() => pauseResumeAction(state()?.status, optimisticStatus()))
+  const runtimeDetailState = createMemo<"ready" | "stop" | "steer" | "handoff">(() => {
+    if (confirmingClear()) return "stop"
+    if (steerOpen()) return "steer"
+    if (handoffOpen()) return "handoff"
+    return "ready"
+  })
+  const runtimeCanInteract = createMemo(() => !!liveGoal() && state()?.status !== "achieved" && state()?.status !== "cleared")
+  const runtimeCanRestart = createMemo(() => !!liveGoal() && (state()?.status === "paused" || liveRunStalled()))
+  const openRuntimePanel = (panel: "stop" | "steer" | "handoff") => {
+    setConfirmingClear(panel === "stop")
+    setSteerOpen(panel === "steer")
+    setHandoffOpen(panel === "handoff")
+  }
+  const closeRuntimePanel = () => {
+    setConfirmingClear(false)
+    setSteerOpen(false)
+    setHandoffOpen(false)
+  }
   const chainRunStateLabel = createMemo(() => {
     const status = liveRunStatus()
     if (status === "active") return liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton") : language.t("session.goal.chainBuilder.runningButton")
@@ -2955,201 +2973,220 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                         </div>
                         <div
-                          data-component="goal-running-command-strip"
-                          class="mt-1.5 grid grid-cols-5 gap-1 rounded-md border p-1"
+                          data-component="goal-runtime-command-tray"
+                          data-state={runtimeDetailState()}
+                          class="mt-1.5 rounded-md border p-1.5"
                           style={{
                             "background-color": "rgba(2, 6, 23, 0.30)",
                             "border-color": "rgba(148, 163, 184, 0.14)",
                           }}
                         >
-                          <Show when={pauseResume()}>
-                            {(action) => (
-                              <ActionButton
-                                label={
-                                  action() === "pause"
-                                    ? language.t("session.goal.action.pause")
-                                    : language.t("session.goal.action.resume")
-                                }
-                                variant="primary"
-                                busy={busy() === "pause" || busy() === "resume"}
-                                disabled={busy() !== null || !props.sessionID}
-                                class="h-7 px-2 text-11-medium"
-                                onClick={() => {
-                                  const next = action()
-                                  setOptimisticStatus(next === "pause" ? "paused" : "active")
-                                  // Pause is a HARD pause: it aborts the in-flight turn so the
-                                  // chat stops immediately (resume re-nudges via runAction).
-                                  void (next === "pause" ? pauseGoal() : runAction("resume"))
-                                    .then((ok) => {
-                                      if (!ok) setOptimisticStatus(null)
-                                    })
-                                    .catch(() => setOptimisticStatus(null))
-                                }}
-                              />
-                            )}
-                          </Show>
-                          <ActionButton
-                            label={language.t("session.goal.action.restart")}
-                            variant="secondary"
-                            busy={busy() === "restart"}
-                            disabled={busy() !== null || !props.sessionID}
-                            class="h-7 px-2 text-11-medium"
-                            onClick={() => void runAction("restart")}
-                          />
-                          <ActionButton
-                            label={
-                              confirmingClear()
-                                ? language.t("session.goal.action.confirmStop")
-                                : language.t("session.goal.action.stop")
-                            }
-                            variant={confirmingClear() ? "primary" : "secondary"}
-                            tone="danger"
-                            busy={busy() === "clear" && confirmingClear()}
-                            disabled={busy() !== null || !props.sessionID}
-                            class="h-7 px-2 text-11-medium"
-                            onClick={() => {
-                              if (confirmingClear()) void stopGoal()
-                              else setConfirmingClear(true)
+                          <div class="grid min-w-0 gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto]">
+                            <div data-component="goal-runtime-primary-actions" class="grid min-w-0 grid-cols-2 gap-1">
+                              <Show when={pauseResume()}>
+                                {(action) => (
+                                  <ActionButton
+                                    label={
+                                      action() === "pause"
+                                        ? language.t("session.goal.action.pause")
+                                        : language.t("session.goal.action.resume")
+                                    }
+                                    variant="primary"
+                                    busy={busy() === "pause" || busy() === "resume"}
+                                    disabled={busy() !== null || !props.sessionID}
+                                    class="h-7 px-2 text-11-medium"
+                                    onClick={() => {
+                                      closeRuntimePanel()
+                                      const next = action()
+                                      setOptimisticStatus(next === "pause" ? "paused" : "active")
+                                      // Pause is a HARD pause: it aborts the in-flight turn so the
+                                      // chat stops immediately (resume re-nudges via runAction).
+                                      void (next === "pause" ? pauseGoal() : runAction("resume"))
+                                        .then((ok) => {
+                                          if (!ok) setOptimisticStatus(null)
+                                        })
+                                        .catch(() => setOptimisticStatus(null))
+                                    }}
+                                  />
+                                )}
+                              </Show>
+                              <Show when={runtimeCanInteract()}>
+                                <ActionButton
+                                  label={language.t("session.goal.action.stop")}
+                                  variant={confirmingClear() ? "primary" : "secondary"}
+                                  tone="danger"
+                                  disabled={busy() !== null || !props.sessionID}
+                                  class="h-7 px-2 text-11-medium"
+                                  onClick={() => openRuntimePanel("stop")}
+                                />
+                              </Show>
+                            </div>
+                            <div data-component="goal-runtime-support-actions" class="grid min-w-0 grid-cols-3 gap-1 sm:flex sm:justify-end">
+                              <Show when={runtimeCanRestart()}>
+                                <ActionButton
+                                  label={language.t("session.goal.action.restart")}
+                                  variant="secondary"
+                                  busy={busy() === "restart"}
+                                  disabled={busy() !== null || !props.sessionID}
+                                  class="h-7 px-2 text-11-medium"
+                                  onClick={() => {
+                                    closeRuntimePanel()
+                                    void runAction("restart")
+                                  }}
+                                />
+                              </Show>
+                              <Show when={runtimeCanInteract()}>
+                                <ActionButton
+                                  label={language.t("session.goal.action.steer")}
+                                  variant={steerOpen() ? "primary" : "secondary"}
+                                  disabled={busy() !== null || !props.sessionID}
+                                  class="h-7 px-2 text-11-medium"
+                                  title={language.t("session.goal.steer.hint")}
+                                  onClick={() => (steerOpen() ? closeRuntimePanel() : openRuntimePanel("steer"))}
+                                />
+                              </Show>
+                              <Show when={runtimeCanInteract() && !handoff().handoff}>
+                                <ActionButton
+                                  label={language.t("session.goal.action.handoff")}
+                                  variant={handoffOpen() ? "primary" : "secondary"}
+                                  busy={busy() === "handoff"}
+                                  disabled={busy() !== null || !props.sessionID}
+                                  class="h-7 px-2 text-11-medium"
+                                  title={language.t("session.goal.handoff.hint")}
+                                  onClick={() => (handoffOpen() ? closeRuntimePanel() : openRuntimePanel("handoff"))}
+                                />
+                              </Show>
+                            </div>
+                          </div>
+                          <div
+                            data-component="goal-runtime-detail-slot"
+                            data-state={runtimeDetailState()}
+                            class="mt-1.5 min-h-[46px] rounded-md border p-1.5"
+                            style={{
+                              "background-color": "rgba(15, 23, 42, 0.30)",
+                              "border-color": "rgba(148, 163, 184, 0.10)",
                             }}
-                          />
-                          <ActionButton
-                            label={language.t("session.goal.action.steer")}
-                            variant="secondary"
-                            disabled={busy() !== null || !props.sessionID}
-                            class="h-7 px-2 text-11-medium"
-                            title={language.t("session.goal.steer.hint")}
-                            onClick={() => setSteerOpen((v) => !v)}
-                          />
-                          <ActionButton
-                            label={language.t("session.goal.action.handoff")}
-                            variant={handoff().handoff ? "primary" : "secondary"}
-                            busy={busy() === "handoff"}
-                            disabled={busy() !== null || !props.sessionID || !!handoff().handoff}
-                            class="h-7 px-2 text-11-medium"
-                            title={language.t("session.goal.handoff.hint")}
-                            onClick={() => setHandoffOpen((v) => !v)}
-                          />
+                          >
+                            <Switch>
+                              <Match when={confirmingClear()}>
+                                <div
+                                  data-component="goal-running-inline-panel"
+                                  data-state="stop-confirm"
+                                  class="flex min-h-9 flex-wrap items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                                  style={runningInlinePanelStyle("stop")}
+                                >
+                                  <div class="text-11-regular font-semibold text-orange-50/82">
+                                    {language.t("session.goal.action.confirmStop")}
+                                  </div>
+                                  <div class="flex items-center gap-1">
+                                    <ActionButton
+                                      label={language.t("session.goal.action.confirmStop")}
+                                      variant="primary"
+                                      tone="danger"
+                                      busy={busy() === "clear"}
+                                      disabled={busy() !== null || !props.sessionID}
+                                      class="h-7 shrink-0 px-2.5 text-11-medium"
+                                      onClick={() => void stopGoal()}
+                                    />
+                                    <ActionButton
+                                      label={language.t("session.goal.action.cancel")}
+                                      variant="ghost"
+                                      disabled={busy() !== null}
+                                      class="h-7 shrink-0 px-2.5 text-11-medium"
+                                      onClick={closeRuntimePanel}
+                                    />
+                                  </div>
+                                </div>
+                              </Match>
+                              <Match when={steerOpen()}>
+                                <div
+                                  data-component="goal-running-inline-panel"
+                                  data-state="steer"
+                                  class="flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5"
+                                  style={runningInlinePanelStyle("steer")}
+                                >
+                                  <TextField
+                                    value={steerText()}
+                                    onChange={setSteerText}
+                                    label={language.t("session.goal.action.steer")}
+                                    hideLabel
+                                    placeholder={language.t("session.goal.steer.placeholder")}
+                                    disabled={busy() !== null}
+                                    class="min-w-44 flex-1"
+                                  />
+                                  <ActionButton
+                                    label={language.t("session.goal.steer.send")}
+                                    variant="primary"
+                                    busy={busy() === "steer"}
+                                    disabled={busy() !== null || !props.sessionID || !steerText().trim()}
+                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    onClick={() => void steerGoal()}
+                                  />
+                                  <ActionButton
+                                    label={language.t("session.goal.action.cancel")}
+                                    variant="ghost"
+                                    disabled={busy() !== null}
+                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    onClick={() => {
+                                      closeRuntimePanel()
+                                      setSteerText("")
+                                    }}
+                                  />
+                                </div>
+                              </Match>
+                              <Match when={handoffOpen()}>
+                                <div
+                                  data-component="goal-running-inline-panel"
+                                  data-state="handoff"
+                                  class="flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5"
+                                  style={runningInlinePanelStyle("handoff")}
+                                >
+                                  <TextField
+                                    value={handoffText()}
+                                    onChange={setHandoffText}
+                                    label={language.t("session.goal.action.handoff")}
+                                    hideLabel
+                                    placeholder={language.t("session.goal.handoff.placeholder")}
+                                    disabled={busy() !== null}
+                                    class="min-w-44 flex-1"
+                                  />
+                                  <ActionButton
+                                    label={language.t("session.goal.handoff.send")}
+                                    variant="primary"
+                                    busy={busy() === "handoff"}
+                                    disabled={busy() !== null || !props.sessionID}
+                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    onClick={() => void handoffGoal()}
+                                  />
+                                  <ActionButton
+                                    label={language.t("session.goal.action.cancel")}
+                                    variant="ghost"
+                                    disabled={busy() !== null}
+                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    onClick={() => {
+                                      closeRuntimePanel()
+                                      setHandoffText("")
+                                    }}
+                                  />
+                                </div>
+                              </Match>
+                              <Match when={true}>
+                                <div class="flex min-h-9 items-center justify-between gap-2 px-1">
+                                  <div class="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-100/78">
+                                    {language.t("session.goal.runControls")}
+                                  </div>
+                                  <div class="min-w-0 truncate text-right text-11-regular text-cyan-100/52">
+                                    {language.t("session.goal.commandStrip.hint")}
+                                  </div>
+                                </div>
+                              </Match>
+                            </Switch>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
-              </Show>
-
-              <Show when={liveGoal() && confirmingClear()}>
-                <div class="border-b px-3 py-2">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div
-                      data-component="goal-running-inline-panel"
-                      data-state="stop-confirm"
-                      class="flex flex-1 flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
-                      style={runningInlinePanelStyle("stop")}
-                    >
-                      <div class="text-11-regular font-semibold text-orange-50/82">
-                        {language.t("session.goal.action.confirmStop")}
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <ActionButton
-                          label={language.t("session.goal.action.confirmStop")}
-                          variant="primary"
-                          tone="danger"
-                          busy={busy() === "clear"}
-                          disabled={busy() !== null || !props.sessionID}
-                          class="h-7 shrink-0 px-3 text-12-medium"
-                          onClick={() => void stopGoal()}
-                        />
-                        <ActionButton
-                          label={language.t("session.goal.action.cancel")}
-                          variant="ghost"
-                          disabled={busy() !== null}
-                          class="h-7 shrink-0 px-3 text-12-medium"
-                          onClick={() => setConfirmingClear(false)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={liveGoal() && steerOpen()}>
-                <div class="border-b px-3 py-2">
-                  <div
-                    data-component="goal-running-inline-panel"
-                    data-state="steer"
-                    class="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
-                    style={runningInlinePanelStyle("steer")}
-                  >
-                    <TextField
-                      value={steerText()}
-                      onChange={setSteerText}
-                      label={language.t("session.goal.action.steer")}
-                      hideLabel
-                      placeholder={language.t("session.goal.steer.placeholder")}
-                      disabled={busy() !== null}
-                      class="min-w-48 flex-1"
-                    />
-                    <ActionButton
-                      label={language.t("session.goal.steer.send")}
-                      variant="primary"
-                      busy={busy() === "steer"}
-                      disabled={busy() !== null || !props.sessionID || !steerText().trim()}
-                      class="h-8 shrink-0 px-3"
-                      onClick={() => void steerGoal()}
-                    />
-                    <ActionButton
-                      label={language.t("session.goal.action.cancel")}
-                      variant="ghost"
-                      disabled={busy() !== null}
-                      class="h-8 shrink-0 px-3"
-                      onClick={() => {
-                        setSteerOpen(false)
-                        setSteerText("")
-                      }}
-                    />
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={liveGoal() && handoffOpen()}>
-                <div class="border-b px-3 py-2">
-                  <div
-                    data-component="goal-running-inline-panel"
-                    data-state="handoff"
-                    class="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
-                    style={runningInlinePanelStyle("handoff")}
-                  >
-                    <div class="basis-full text-11-regular font-semibold leading-5 text-indigo-100/72">
-                      {language.t("session.goal.handoff.explain")}
-                    </div>
-                    <TextField
-                      value={handoffText()}
-                      onChange={setHandoffText}
-                      label={language.t("session.goal.action.handoff")}
-                      hideLabel
-                      placeholder={language.t("session.goal.handoff.placeholder")}
-                      disabled={busy() !== null}
-                      class="min-w-48 flex-1"
-                    />
-                    <ActionButton
-                      label={language.t("session.goal.handoff.send")}
-                      variant="primary"
-                      busy={busy() === "handoff"}
-                      disabled={busy() !== null || !props.sessionID}
-                      class="h-8 shrink-0 px-3"
-                      onClick={() => void handoffGoal()}
-                    />
-                    <ActionButton
-                      label={language.t("session.goal.action.cancel")}
-                      variant="ghost"
-                      disabled={busy() !== null}
-                      class="h-8 shrink-0 px-3"
-                      onClick={() => {
-                        setHandoffOpen(false)
-                        setHandoffText("")
-                      }}
-                    />
-                  </div>
-                </div>
               </Show>
 
               <Show when={!liveGoal() && handoff().handoff}>
