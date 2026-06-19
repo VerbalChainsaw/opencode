@@ -449,6 +449,8 @@ export function validateChainDraft(
         } else if (trimmed.length > MAX_STEP_MODEL_FIELD_LEN) {
           errors.push({ stepIndex: i, message: `${label}: model must be ${MAX_STEP_MODEL_FIELD_LEN} chars or fewer.` })
         }
+      } else {
+        errors.push({ stepIndex: i, message: `${label}: model must be a {providerID, modelID} object or a string.` })
       }
     }
 

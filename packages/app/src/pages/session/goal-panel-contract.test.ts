@@ -459,4 +459,113 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       masterTimeIsCap: true,
     })
   })
+
+  describe("validateChainDraft", () => {
+    let steps: Array<{ id: string; actionID: string; label: string; condition: string; command: string; maxTurns: number; maxTimeMinutes: number; builtin: boolean }>
+    let validateChainDraft: typeof import("./goal-panel-pure").validateChainDraft
+
+    test("returns empty array for a valid single-step chain", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [
+          { id: "1", actionID: "plan", label: "Plan", condition: "make a plan", command: "", maxTurns: 3, maxTimeMinutes: 10, builtin: true },
+        ],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toEqual([])
+    })
+
+    test("reports error for empty chain", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft([], { maxTurns: 20, maxTimeMinutes: 60 })
+      expect(errors).toHaveLength(1)
+      expect(errors[0].message).toContain("Add at least one action")
+    })
+
+    test("reports error for empty condition", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [{ id: "1", actionID: "x", label: "X", condition: "", command: "", maxTurns: 5, maxTimeMinutes: 10, builtin: false }],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0].stepIndex).toBe(0)
+      expect(errors[0].message).toContain("condition cannot be empty")
+    })
+
+    test("reports error for zero turns", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 0, maxTimeMinutes: 5, builtin: false }],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0].message).toContain("turns must be at least 1")
+    })
+
+    test("reports error for zero time", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 5, maxTimeMinutes: 0, builtin: false }],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0].message).toContain("time must be at least 1 minute")
+    })
+
+    test("reports master time cap when steps exceed limit", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [
+          { id: "1", actionID: "a", label: "A", condition: "a", command: "", maxTurns: 5, maxTimeMinutes: 30, builtin: false },
+          { id: "2", actionID: "b", label: "B", condition: "b", command: "", maxTurns: 5, maxTimeMinutes: 30, builtin: false },
+        ],
+        { maxTurns: 20, maxTimeMinutes: 40 },
+      )
+      // ultimate time = 60m, master = 40m — should report cap
+      const capError = errors.find((e: { stepIndex: number }) => e.stepIndex === -1)
+      expect(capError).toBeTruthy()
+      expect(capError?.message).toContain("exceeds master time limit")
+    })
+
+    test("validates model format (malformed object)", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 5, maxTimeMinutes: 10, builtin: false, model: { providerID: "", modelID: "" } }],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0].message).toContain("model must be a")
+    })
+
+    test("accepts valid { providerID, modelID } object", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 5, maxTimeMinutes: 10, builtin: false, model: { providerID: "openai", modelID: "gpt-4" } }],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toEqual([])
+    })
+
+    test("validates duplicate skills", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 5, maxTimeMinutes: 10, builtin: false, skills: ["dup", "dup"] }],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0].message).toContain("duplicate skill")
+    })
+
+    test("reports max chain steps exceeded", async () => {
+      ;({ validateChainDraft } = await load())
+      const bigSteps = Array.from({ length: 25 }, (_, i) => ({
+        id: String(i), actionID: String(i), label: `S${i}`, condition: "x", command: "", maxTurns: 1, maxTimeMinutes: 1, builtin: false,
+      }))
+      const errors = validateChainDraft(bigSteps, { maxTurns: 50, maxTimeMinutes: 60 })
+      expect(errors).toHaveLength(1)
+      expect(errors[0].stepIndex).toBe(-1)
+      expect(errors[0].message).toContain("Chain cannot have more than")
+    })
+  })
 })
