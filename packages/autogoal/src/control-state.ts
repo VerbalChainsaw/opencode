@@ -16,6 +16,7 @@ type TemplateCategory =
 type TemplateGate = "required" | "pass" | "verify" | "review"
 type TemplateTone = "violet" | "blue" | "orange" | "emerald" | "fuchsia" | "sky"
 type TemplateElevation = "flat" | "raised"
+type GoalControlPinnedModel = { providerID: string; modelID: string }
 type GoalControlVerification =
   | { type: "shell"; command: string }
   | { type: "http"; url: string; expectStatus?: number; expectBody?: string; timeoutMs?: number }
@@ -32,6 +33,8 @@ interface GoalControlChainStep {
   gate?: TemplateGate
   tone?: TemplateTone
   elevation?: TemplateElevation
+  skills?: string[]
+  model?: GoalControlPinnedModel | string
 }
 
 interface GoalControlChain {
@@ -115,6 +118,9 @@ const TEMPLATE_CATEGORIES = [
 const TEMPLATE_GATES = ["required", "pass", "verify", "review"] as const
 const TEMPLATE_TONES = ["violet", "blue", "orange", "emerald", "fuchsia", "sky"] as const
 const TEMPLATE_ELEVATIONS = ["flat", "raised"] as const
+const MAX_STEP_SKILLS = 8
+const MAX_STEP_SKILL_LEN = 120
+const MAX_STEP_MODEL_FIELD_LEN = 160
 const TEMPLATE_IMPORT_PREFIX = ["template", "import", ""].join(" ")
 const TEMPLATE_DELETE_PREFIX = ["template", "delete", ""].join(" ")
 const CHAIN_START_JSON_PREFIX = ["chain", "start-json", ""].join(" ")
@@ -585,6 +591,8 @@ function sanitizeTemplatePayload(value: Record<string, unknown>): Record<string,
     ...(isTemplateGate(value.gate) ? { gate: value.gate } : {}),
     ...(isTemplateTone(value.tone) ? { tone: value.tone } : {}),
     ...(isTemplateElevation(value.elevation) ? { elevation: value.elevation } : {}),
+    ...(sanitizeSkills(value.skills) ? { skills: sanitizeSkills(value.skills) } : {}),
+    ...(sanitizePinnedModel(value.model) ? { model: sanitizePinnedModel(value.model) } : {}),
   }
 }
 
@@ -655,7 +663,38 @@ function sanitizeChainStep(value: unknown): GoalControlChainStep | undefined {
     ...(isTemplateGate(value.gate) ? { gate: value.gate } : {}),
     ...(isTemplateTone(value.tone) ? { tone: value.tone } : {}),
     ...(isTemplateElevation(value.elevation) ? { elevation: value.elevation } : {}),
+    ...(sanitizeSkills(value.skills) ? { skills: sanitizeSkills(value.skills) } : {}),
+    ...(sanitizePinnedModel(value.model) ? { model: sanitizePinnedModel(value.model) } : {}),
   }
+}
+
+function sanitizeSkills(value: unknown) {
+  if (!Array.isArray(value)) return undefined
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== "string") continue
+    const skill = sanitizePromptText(item).slice(0, MAX_STEP_SKILL_LEN)
+    if (!skill || seen.has(skill)) continue
+    seen.add(skill)
+    out.push(skill)
+    if (out.length >= MAX_STEP_SKILLS) break
+  }
+  return out.length > 0 ? out : undefined
+}
+
+function sanitizePinnedModel(value: unknown): GoalControlPinnedModel | string | undefined {
+  if (typeof value === "string") {
+    const model = sanitizePromptText(value).slice(0, MAX_STEP_MODEL_FIELD_LEN)
+    return model || undefined
+  }
+  if (!isRecord(value)) return undefined
+  const providerID =
+    typeof value.providerID === "string" ? sanitizePromptText(value.providerID).slice(0, MAX_STEP_MODEL_FIELD_LEN) : ""
+  const modelID =
+    typeof value.modelID === "string" ? sanitizePromptText(value.modelID).slice(0, MAX_STEP_MODEL_FIELD_LEN) : ""
+  if (!providerID || !modelID) return undefined
+  return { providerID, modelID }
 }
 
 function sanitizeGoalChain(value: unknown): GoalControlChain {

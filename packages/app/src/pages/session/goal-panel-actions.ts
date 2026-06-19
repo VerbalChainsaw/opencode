@@ -37,9 +37,22 @@ export interface GoalCommandClient {
     control?: (this: { client?: GoalTransport }, args: GoalControlArguments) => Promise<unknown>
   }
   session?: {
+    prompt?: (args: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      parts: Array<{ type: "text"; text: string }>
+    }) => Promise<unknown>
+    promptAsync?: (args: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      agent?: string
+      model?: { providerID: string; modelID: string }
+      variant?: string
+      parts: Array<{ type: "text"; text: string }>
+    }) => Promise<unknown>
     command?: (args: { sessionID: string; command: string; arguments: string }) => Promise<unknown>
-    promptAsync?: (args: GoalPromptAsyncInput & { parts: Array<{ type: "text"; text: string }> }) => Promise<unknown>
-    prompt?: (args: GoalPromptAsyncInput & { parts: Array<{ type: "text"; text: string }> }) => Promise<unknown>
   }
 }
 
@@ -135,19 +148,23 @@ export async function executeGoalCommand(
     workspace?: string
   },
 ) {
-  const tool = client.tool
+  const payload = {
+    ...(input.directory ? { directory: input.directory } : {}),
+    ...(input.workspace ? { workspace: input.workspace } : {}),
+    sessionID: input.sessionID,
+    arguments: { command: input.arguments },
+  }
+  const toolPayload: GoalControlArguments = {
+    ...payload,
+    toolID: "goal_control",
+  }
   const scope = {
     ...(input.directory ? { directory: input.directory } : {}),
     ...(input.workspace ? { workspace: input.workspace } : {}),
   }
-  const payload = {
-    ...scope,
-    sessionID: input.sessionID,
-    arguments: { command: input.arguments },
-  }
-  try {
-    const transport = client.client ?? tool?.client
-    if (transport?.post) {
+  const transport = client.client ?? client.tool?.client
+  if (transport?.post) {
+    try {
       await transport.post({
         url: "/experimental/goal/control/{toolID}",
         path: { toolID: "goal_control" },
@@ -155,16 +172,14 @@ export async function executeGoalCommand(
         body: payload,
       })
       return true
+    } catch {
+      // Fall through to generated SDK control method if present.
     }
-    if (tool?.control) {
-      // Fallback for SDK/client shapes that expose only the generated method.
-      // Keep the method call bound to the SDK Tool instance; the generated
-      // method reads `this.client` and fails before issuing a request if it is
-      // called as a detached function.
-      await tool.control({
-        toolID: "goal_control",
-        ...payload,
-      })
+  }
+
+  try {
+    if (client.tool?.control) {
+      await client.tool.control.call(client.tool, toolPayload)
       return true
     }
     return false

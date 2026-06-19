@@ -131,6 +131,8 @@ describe("runGoalControlStateFile", () => {
       gate: "verify",
       tone: "emerald",
       elevation: "raised",
+      skills: ["frontend-testing-debugging", "systematic-debugging"],
+      model: { providerID: "openai", modelID: "gpt-5" },
     }
     const result = await runGoalControlStateFile(tmp.path, `template import qa-action ${JSON.stringify(payload)}`, 4000)
     const saved = await readJson<typeof payload>(tmp.path, ".opencode/goals/qa-action.json")
@@ -177,6 +179,8 @@ describe("runGoalControlStateFile", () => {
           gate: "required",
           tone: "blue",
           elevation: "flat",
+          model: { providerID: "openai", modelID: "gpt-5" },
+          skills: ["frontend-testing-debugging", "systematic-debugging"],
         },
         {
           condition: "Verify the sidepanel",
@@ -187,6 +191,8 @@ describe("runGoalControlStateFile", () => {
           gate: "pass",
           tone: "emerald",
           elevation: "raised",
+          model: "anthropic/claude-sonnet-4",
+          skills: ["verification-before-completion"],
         },
       ],
     }

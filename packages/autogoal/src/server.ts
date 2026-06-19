@@ -330,10 +330,21 @@ export const server: Plugin = async ({ client, directory }) => {
   let lastEvaluationTime = 0;
   let isEvaluating = false;
   let skipNextEvaluation = false;
-  // v0.4.1 (B-5) — track consecutive nudge-delivery failures. After 3
-  // consecutive failures, transition the goal to paused so the user
-  // gets a notification instead of a silent dead loop.
-  let nudgeFailureCount = 0;
+  // v0.4.1 (B-5) — track consecutive nudge-delivery failures per session.
+  // After 3 consecutive failures for a session, transition that session's
+  // goal to paused so the user gets a notification instead of a silent dead
+  // loop. Using a per-session Map prevents one broken session from pausing
+  // every session sharing the workspace (the pre-v0.7.1 global-counter bug).
+  const MAX_NUDGE_FAILURES = 3;
+  const nudgeFailureCounts = new Map<string, number>();
+  const recordNudgeFailure = (sessionId: string): boolean => {
+    const count = (nudgeFailureCounts.get(sessionId) ?? 0) + 1;
+    nudgeFailureCounts.set(sessionId, count);
+    return count >= MAX_NUDGE_FAILURES;
+  };
+  const resetNudgeFailures = (sessionId: string): void => {
+    nudgeFailureCounts.delete(sessionId);
+  };
   // Tracks open tool-permission requests; the loop must not nudge while one is open.
   const pendingPermissions = new PendingPermissions();
 
@@ -674,6 +685,8 @@ export const server: Plugin = async ({ client, directory }) => {
         return {
           achieved: false as const,
           condition: f.condition,
+          turnsEvaluated: f.turnsEvaluated,
+          maxTurns: f.constraints.maxTurns,
           steering: Array.isArray(f.metadata.steering) ? [...f.metadata.steering] : [],
           // v0.7.x: preserve the agent name so the nudge passes it to
           // session.prompt (the session's own default may differ).
@@ -750,6 +763,14 @@ export const server: Plugin = async ({ client, directory }) => {
       }
       const pinnedModel = currentChainStepPinnedModel(directory);
       const pinnedSkills = currentChainStepPinnedSkills(directory);
+      // Include chain position so the agent knows which step it's on.
+      const chain = readGoalChain(directory);
+      const chainContext =
+        chain && chain.current >= 0 && chain.current < chain.steps.length
+          ? `\nChain step ${chain.current + 1}/${chain.steps.length}: "${sanitizeForPrompt(chain.steps[chain.current]!.condition).slice(0, 200)}"`
+          : "";
+      // Include turn count so the agent can self-pace against limits.
+      const turnContext = ` (turn ${snapshot.turnsEvaluated}/${snapshot.maxTurns})`;
       await client.session
         .prompt({
           path: { id: sessionId },
@@ -760,8 +781,10 @@ export const server: Plugin = async ({ client, directory }) => {
               {
                 type: "text",
                 text:
-                  `[GOAL] Not yet met (${safeReason}). Keep working toward: ${safeConditionForNudge}\n` +
-                  `When satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
+                  `[GOAL] Not yet met (${safeReason}).` +
+                  ` Keep working toward: ${safeConditionForNudge}${turnContext}.` +
+                  chainContext +
+                  `\nWhen satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
                   `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why.` +
                   pinnedSkillPromptSuffix(pinnedSkills) +
                   steerSuffix,
@@ -770,18 +793,20 @@ export const server: Plugin = async ({ client, directory }) => {
           },
         })
         .then(() => {
-          nudgeFailureCount = 0;
+          resetNudgeFailures(sessionId);
         })
         .catch((err) => {
-          nudgeFailureCount++;
-          log("error", "Failed to inject continue prompt", { error: String(err), consecutiveFailures: nudgeFailureCount });
-          // v0.4.1 (B-5) — after 3 consecutive nudge-delivery failures,
-          // transition the goal to paused so the user gets a notification
-          // instead of a silent dead loop (e.g. session was killed,
-          // transport is down, or the session model is in a fatal state).
+          const exceeded = recordNudgeFailure(sessionId);
+          const count = nudgeFailureCounts.get(sessionId) ?? 0;
+          log("error", "Failed to inject continue prompt", { sessionId, error: String(err), consecutiveFailures: count });
+          // v0.4.1 (B-5) — after MAX_NUDGE_FAILURES consecutive nudge-delivery
+          // failures in this session, transition the goal to paused so the user
+          // gets a notification instead of a silent dead loop (e.g. session was
+          // killed, transport is down, or the session model is in a fatal state).
           // v0.7.0 (audit fix): wrap in withStateLock so this auto-loop
           // write doesn't race with a concurrent tool handler.
-          if (nudgeFailureCount >= 3) {
+          // v0.7.1: per-session tracking (was global, could pause all sessions).
+          if (exceeded) {
             withStateLock(directory, () => {
               const res = transitionGoal(directory, "pause");
               if (res.ok) {
@@ -790,7 +815,7 @@ export const server: Plugin = async ({ client, directory }) => {
                   fresh.lastEvaluation = {
                     met: false,
                     blocked: true,
-                    reason: `Nudge delivery failed ${nudgeFailureCount} times consecutively.`,
+                    reason: `Nudge delivery failed ${count} times consecutively in session ${sessionId}.`,
                     confidence: 1.0,
                     timestamp: Date.now(),
                     evaluatorType: "deterministic",
@@ -838,33 +863,26 @@ export const server: Plugin = async ({ client, directory }) => {
             .describe("v0.4.0+ — how to verify the goal. Prefer over 'command'. Shape: {type:'shell'|'http'|'file'|'marker', ...}."),
         },
         async execute(args, ctx) {
-          const res = setGoalFields(ctx.directory, {
-            condition: args.condition,
-            command: args.command ?? null,
-            verification: (args.verification ?? null) as Verification | null,
-            maxTurns: args.maxTurns,
-            maxMinutes: args.maxMinutes,
-            // v0.7.x: capture the session agent so the auto-loop passes
-            // the correct agent to session.prompt nudges instead of
-            // falling back to the session's default (which may be a
-            // different agent with missing provider keys).
-            agentName: ctx.agent,
+          // v0.7.1 (audit fix R1b): wrap in withStateLock so a concurrent
+          // auto-loop evaluate() IIFE cannot read stale state and clobber
+          // the freshly-set goal. Matches the pattern already applied to
+          // clear_goal and pause_goal in v0.7.0.
+          return await withStateLock(ctx.directory, () => {
+            const res = setGoalFields(ctx.directory, {
+              condition: args.condition,
+              command: args.command ?? null,
+              verification: (args.verification ?? null) as Verification | null,
+              maxTurns: args.maxTurns,
+              maxMinutes: args.maxMinutes,
+              agentName: ctx.agent,
+            });
+            if (!res.ok) {
+              return `Could not set the goal (${res.reason}): ${res.error}`;
+            }
+            const fresh = readGoalState(ctx.directory);
+            if (fresh) fireWebhook(fresh, null);
+            return goalInstructions(res.state, res.replaced);
           });
-          // C-1 fix: the failure branch's `error` is preserved. The
-          // message prefixes the typed `reason` for the agent's surface
-          // — the agent sees "invalid-value: ..." vs "write-failed: ..."
-          // and can pick the right user-facing wording.
-          if (!res.ok) {
-            return `Could not set the goal (${res.reason}): ${res.error}`;
-          }
-          // v0.4.0+ webhook: fire on the null → active transition.
-          // (Spec call site: "Goal set".) We read the state again
-          // because the freshly-set one is the one with status="active".
-          const fresh = readGoalState(ctx.directory);
-          if (fresh) fireWebhook(fresh, null);
-          // OK branch: `state` and `replaced` are always present (no
-          // non-null assertion needed; discriminated union narrows it).
-          return goalInstructions(res.state, res.replaced);
         },
       }),
 
@@ -1265,15 +1283,21 @@ export const server: Plugin = async ({ client, directory }) => {
     "command.execute.before": async (input, output) => {
       if (input.command !== "goal") return;
       const args = input.arguments ?? "";
+      // v0.7.1 (audit fix): call structured dispatch ONCE. The legacy
+      // dispatchGoalCommand() also calls dispatchGoalCommandStructured()
+      // internally and then wraps the result — calling both means the
+      // structured dispatcher runs twice, mutating state on the first call
+      // and reading it back on the second. A concurrent mutation (e.g., a
+      // tool handler) between those two reads would produce stale text.
+      // Single dispatch + inline formatting avoids the double state read.
       const result = dispatchGoalCommandStructured(directory, args);
-      const text = dispatchGoalCommand(directory, args);
-      // Budget dial commands (turns, time, tokens) are manual state
-      // adjustments that should NOT trigger the auto-loop. The next
-      // session.idle after one of these is the command's own idle event;
-      // we skip it so the agent doesn't take an unwanted turn.
-      // Only set the flag on a real success — if the user typed an invalid
-      // value (e.g. "turns -1") the validation error is already shown to
-      // them; consuming the next evaluation silently would be a footgun.
+      const text =
+        result.kind === "set"
+          ? `${result.message}\n\n${result.agentExtras ?? ""}`.trim()
+          : result.kind === "success" &&
+              result.message.startsWith("Goal resumed — continue working toward it now:")
+            ? result.message
+            : `Tell the user this, then stop and await further instruction:\n\n${result.message}`;
       const action = args.split(/\s+/)[0] ?? "";
       if (
         (action === "turns" || action === "time" || action === "tokens") &&
@@ -1281,16 +1305,9 @@ export const server: Plugin = async ({ client, directory }) => {
       ) {
         skipNextEvaluation = true;
       }
-      // Keep the dock's template buttons fresh after a command that may have
-      // changed the available templates (import/export/use/template).
       if (action === "template" || action === "use" || action === "import" || action === "export") {
         writeTemplatesSnapshot(directory);
       }
-      // We hand the host an input-shaped text part; OpenCode fills id/sessionID/
-      // messageID. The cast is deliberate (the hook's output.parts is typed as
-      // the fully-resolved Part, but the host treats command.execute.before as
-      // a rewrite hook that supplies just the content.
-      //
       // Important host detail: SessionPrompt.command keeps a reference to the
       // original parts array after plugin.trigger(...). Reassigning
       // output.parts leaves the command template in the live array, so the LLM

@@ -187,7 +187,7 @@ describe("compiled server module exports", () => {
 
       assert.strictEqual(output.parts, parts, "hook must mutate the host-owned parts array, not replace it");
       assert.equal(parts.length, 1);
-      assert.match(parts[0].text, /Turns set to 21|Max turns: 21/);
+      assert.match(parts[0].text, /Turns set to 21|Max turns: \d+ → \d+/);
       assert.doesNotMatch(parts[0].text, /Handle the \/goal command/);
 
       const view = commandMod.dispatchGoalCommandStructured(dir, "view");

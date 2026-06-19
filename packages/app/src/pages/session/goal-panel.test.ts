@@ -117,6 +117,15 @@ describe("goal panel mission-control contracts", () => {
     expect(sendGoalCommand![0]).not.toContain("startGoalRun")
   })
 
+  test("native bridge controls are not disabled by slash-command registry drift", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const goalCommandMissing = createMemo")
+    expect(src).toContain("native bridge directly")
+    expect(src).not.toContain("goalCommandUnavailable")
+    const disabledLines = src.split("\n").filter((line) => line.includes("disabled="))
+    expect(disabledLines.join("\n")).not.toContain("goalCommandMissing")
+  })
+
   test("confirmed stop clears goal state without using the permission-bound abort endpoint", async () => {
     const src = await goalPanelSource()
     const stopGoal = src.match(/const stopGoal = async \(\) => \{[\s\S]*?\n  \}/)
@@ -414,16 +423,17 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('zone="action-library"')
     expect(src).toContain('zone="action-editor"')
     expect(src).toContain('data-component="goal-console-section-title"')
+    expect(src).toContain('data-component="goal-console-section-title-text"')
     expect(src).toContain('data-component="goal-console-section-subtitle"')
     expect(src).toContain('data-component="goal-action-editor-footer"')
     expect(src).toContain('data-component="goal-action-editor-active-state"')
     expect(src).toContain("border-rose-400/70")
     expect(src).toContain("border-blue-400/70")
-    expect(src).toContain("border-violet-500/30")
+    expect(src).toContain("border-violet-500/22")
     expect(src).toContain("border-emerald-400/70")
     expect(src).toContain("border-amber-400/62")
     expect(src).toContain('title="Chain Builder"')
-    expect(src).toContain("text-[13px] font-bold uppercase tracking-[0.06em] text-white")
+    expect(src).toContain("text-[14px] font-black uppercase leading-4 tracking-[0.12em] text-white")
     expect(src).toContain('"border-bottom-color": "rgba(167, 139, 250, 0.10)"')
     expect(src).toContain('"border-color": "rgba(167, 139, 250, 0.10)"')
     expect(src).not.toContain("border-violet-500/45")
@@ -487,13 +497,16 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("rgba(251, 191, 36, 0.46)")
     expect(src).toContain('"background-color": "rgba(239, 68, 68, 0.12)"')
     expect(src).toContain("border bg-background-panel/80")
-    expect(src).toContain("border-b border-border-base/60 px-3 py-1.5")
-    expect(src).toContain("h-4 w-1.5 shrink-0 rounded-sm")
+    expect(src).toContain('data-component="goal-console-section-header"')
+    expect(src).toContain("border-b border-border-base/60 px-3 py-2")
+    expect(src).toContain("mt-0.5 h-6 w-1.5 shrink-0 rounded-sm")
     expect(src).toContain("linear-gradient(90deg")
     expect(src).toContain("Most recent run outcome and evidence.")
     expect(src).toContain("Create one standalone goal outside the chain.")
     expect(src).toContain("session.goal.chainBuilder.planChainHint")
     expect(src).toContain("Progress, controls, and step status stay in this workspace.")
+    expect(src).toContain('data-component="goal-running-deck-header"')
+    expect(src).toContain('data-component="goal-running-execution-contract"')
     expect(src).toContain('data-component="goal-running-clock"')
     expect(src).toContain('data-component="goal-running-turns"')
     expect(src).toContain('data-component="goal-running-step"')
@@ -1248,6 +1261,29 @@ describe("executeGoalCommand", () => {
         arguments: { command: 'set "pass tests"' },
       },
     })
+  })
+
+  test("does not create a chat turn for deterministic control commands", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const prompt = mock(async () => {
+      throw new Error("session.prompt must not be used for GUI controls")
+    })
+    const promptAsync = mock(async () => {
+      throw new Error("session.promptAsync must not be used for GUI controls")
+    })
+
+    const ok = await executeGoalCommand(
+      {
+        client: { post },
+        session: { prompt, promptAsync },
+      },
+      { sessionID: "session-1", arguments: "pause", directory: "C:\\repo\\project" },
+    )
+
+    expect(ok).toBe(true)
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(prompt).not.toHaveBeenCalled()
+    expect(promptAsync).not.toHaveBeenCalled()
   })
 
   test("keeps the generated SDK tool method bound to its client when raw POST is unavailable", async () => {
