@@ -2841,7 +2841,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
                             style={runningMetricTileStyle("time")}
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-100/64">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-100/78">
                               {language.t("session.goal.metric.time")}
                             </div>
                             <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("time")}`}>
@@ -2854,7 +2854,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
                             style={runningMetricTileStyle("turns")}
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-100/64">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-100/78">
                               {language.t("session.goal.metric.turns")}
                             </div>
                             <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("turns")}`}>
@@ -2867,7 +2867,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
                             style={runningMetricTileStyle("step")}
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/64">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/78">
                               {language.t("session.goal.metric.chain")}
                             </div>
                             <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("step")}`}>
@@ -2884,7 +2884,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           style={runningMetricTileStyle("progress")}
                         >
                           <div class="flex items-center justify-between gap-2">
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/64">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/78">
                               {language.t("session.goal.progress")}
                             </div>
                             <div class="shrink-0 text-[22px] font-black leading-none tracking-normal text-emerald-50 tabular-nums">
@@ -2963,7 +2963,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           <ActionButton
                             label={language.t("session.goal.action.steer")}
                             variant="secondary"
-                            disabled={busy() !== null}
+                            disabled={busy() !== null || !props.sessionID}
                             class="h-7 px-2 text-11-medium"
                             title={language.t("session.goal.steer.hint")}
                             onClick={() => setSteerOpen((v) => !v)}
