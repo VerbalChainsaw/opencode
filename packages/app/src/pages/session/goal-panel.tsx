@@ -3242,19 +3242,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               {actionCategoryShortLabel(actionDraft.category)}
                             </span>
                           </div>
-                          <div data-component="goal-action-editor-footer" class="mt-3 grid grid-cols-6 gap-1.5">
+                          <div data-component="goal-action-editor-footer" class="mt-3 flex flex-wrap gap-1">
                             <ActionButton
-                              label={language.t("session.goal.template.new")}
-                              variant="secondary"
-                              class="col-span-2"
-                              disabled={busy() !== null || goalCommandUnavailable()}
-                              onClick={() => openActionEditor()}
+                              label={editingChainStepID() ? "Update Step" : "+ Chain"}
+                              variant={editingChainStepID() ? "primary" : "secondary"}
+                              class="flex-1"
+                              disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
+                              onClick={() => (editingChainStepID() ? updateEditingChainStep() : addActionDraftToChain())}
                             />
                             <ActionButton
                               label={language.t("session.goal.template.save")}
                               variant="primary"
                               tone="success"
-                              class="col-span-2"
+                              class="flex-1"
                               busy={busy() === "template"}
                               disabled={
                                 busy() !== null ||
@@ -3264,22 +3264,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               }
                               onClick={() => void saveTemplateDraft()}
                             />
-                            <Show when={saveError()}>
-                              <div class="col-span-6 text-center text-[10px] text-orange-300/90">{saveError()}</div>
-                            </Show>
-                            <Show when={editingChainStepID()}>
-                              <ActionButton
-                                label={language.t("session.goal.template.updateRunStep")}
-                                variant="primary"
-                                class="col-span-2"
-                                disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
-                                onClick={() => updateEditingChainStep()}
-                              />
-                            </Show>
                             <ActionButton
                               label={language.t("session.goal.template.duplicate")}
                               variant="secondary"
-                              class="col-span-3"
+                              class="flex-1"
                               busy={busy() === "template"}
                               disabled={
                                 busy() !== null || !props.sessionID || goalCommandUnavailable() || !actionDraft.prompt.trim()
@@ -3288,9 +3276,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             />
                             <ActionButton
                               label={language.t("session.goal.template.delete")}
-                              variant="primary"
+                              variant="secondary"
                               tone="danger"
-                              class="col-span-3"
+                              class="flex-1"
                               busy={busy() === "template"}
                               disabled={busy() !== null || !props.sessionID || goalCommandUnavailable() || !selectedTemplate() || !!selectedTemplate()?.builtin}
                               onClick={() => {
@@ -3299,14 +3287,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               }}
                             />
                           </div>
+                          <Show when={saveError()}>
+                            <div class="mt-1 text-center text-[10px] text-orange-300/90">{saveError()}</div>
+                          </Show>
                         </div>
 
                         <div
                           data-component="goal-action-editor-fields"
-                          class="grid grid-cols-1 gap-2 p-2"
+                          class="flex flex-col gap-1.5 p-1.5"
                         >
-                          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
-                            Action details
+                          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-weaker">
+                            Details
                           </div>
                           <TextField
                             value={actionDraft.label}
@@ -3336,16 +3327,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                         <div
                           data-component="goal-action-editor-limits"
-                          class="grid grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-2"
-                          style={actionEditorPanelStyle()}
+                          class="flex items-center gap-2 p-1.5"
                         >
-                          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
-                            Limits
-                          </div>
-                            <label class="grid h-6 grid-cols-[minmax(0,1fr)_42px] items-center gap-1 px-2">
-                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-text-weaker">
-                                Turns
-                              </span>
+                          <span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-weaker shrink-0">Limits</span>
+                            <label class="flex items-center gap-1">
+                              <span class="text-[10px] text-text-weaker">Turns</span>
                               <input
                                 type="number"
                                 min="1"
@@ -3357,13 +3343,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
                                   )
                                 }
-                                class="h-5 w-full rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
+                                class="h-5 w-10 rounded px-1 text-center text-11-medium tabular-nums text-text-base bg-transparent outline-none"
                               />
                             </label>
-                            <label class="grid h-6 grid-cols-[minmax(0,1fr)_42px] items-center gap-1 px-2">
-                              <span class="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-text-weaker">
-                                Minutes
-                              </span>
+                            <label class="flex items-center gap-1">
+                              <span class="text-[10px] text-text-weaker">Min</span>
                               <input
                                 type="number"
                                 min="1"
@@ -3375,7 +3359,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
                                   )
                                 }
-                                class="h-5 w-full rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
+                                class="h-5 w-10 rounded px-1 text-center text-11-medium tabular-nums text-text-base bg-transparent outline-none"
                               />
                             </label>
                         </div>
