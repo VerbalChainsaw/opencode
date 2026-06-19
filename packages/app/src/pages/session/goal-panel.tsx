@@ -71,7 +71,7 @@ import {
   type GoalTemplateModel,
   type GoalTemplateTone,
 } from "./goal-panel-pure"
-import { executeGoalCommand, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
+import { executeGoalCommand, pauseGoalRun, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
 // them as locals is unnecessary because we only need them as type
 // annotations, which the imported type re-exports satisfy directly.
@@ -1601,6 +1601,30 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return true
   }
 
+  /** Hard pause: pause the goal AND abort the in-flight turn so the chat stops
+   *  immediately, while leaving the goal resumable. */
+  const pauseGoal = async () => {
+    const sessionID = props.sessionID
+    if (!sessionID || busy()) return false
+    setBusy("pause")
+    const result = await pauseGoalRun(sdk.client, {
+      sessionID,
+      directory: sdk.directory,
+      abortActiveTurn: sync.data.session_working(sessionID),
+    })
+    if (result.ok) {
+      setControlError("warning" in result ? result.warning : null)
+    } else {
+      setControlError(result.error)
+    }
+    try {
+      await refreshGoalSurfaces()
+    } finally {
+      setBusy(null)
+    }
+    return result.ok
+  }
+
   const stopGoal = async () => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
@@ -2911,7 +2935,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 onClick={() => {
                                   const next = action()
                                   setOptimisticStatus(next === "pause" ? "paused" : "active")
-                                  void runAction(next)
+                                  // Pause is a HARD pause: it aborts the in-flight turn so the
+                                  // chat stops immediately (resume re-nudges via runAction).
+                                  void (next === "pause" ? pauseGoal() : runAction("resume"))
                                     .then((ok) => {
                                       if (!ok) setOptimisticStatus(null)
                                     })

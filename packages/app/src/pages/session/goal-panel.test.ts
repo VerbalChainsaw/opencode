@@ -16,6 +16,7 @@ import {
 import {
   executeGoalCommand,
   goalSteerPrompt,
+  pauseGoalRun,
   startGoalRun,
   steerGoalRun,
   stopGoalRun,
@@ -1912,6 +1913,66 @@ describe("stopGoalRun", () => {
     expect(result).toEqual({
       ok: true,
       warning: "Goal cleared, but this OpenCode client cannot abort the active turn.",
+    })
+  })
+})
+
+describe("pauseGoalRun", () => {
+  test("pauses the goal and aborts the in-flight turn (hard pause, still resumable)", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const abort = mock(async () => undefined)
+
+    const result = await pauseGoalRun(
+      {
+        client: { post },
+        session: { abort },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(post).toHaveBeenCalledWith({
+      url: "/experimental/goal/control/{toolID}",
+      path: { toolID: "goal_control" },
+      query: { directory: "C:\\repo\\project" },
+      body: {
+        directory: "C:\\repo\\project",
+        sessionID: "session-1",
+        arguments: { command: "pause" },
+      },
+    })
+    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1" })
+  })
+
+  test("does not abort when the session is already idle (plain soft pause)", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const abort = mock(async () => undefined)
+
+    const result = await pauseGoalRun(
+      {
+        client: { post },
+        session: { abort },
+      },
+      { sessionID: "session-1", abortActiveTurn: false },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(abort).not.toHaveBeenCalled()
+  })
+
+  test("surfaces a warning when pause works but abort is unavailable", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+
+    const result = await pauseGoalRun(
+      {
+        client: { post },
+      },
+      { sessionID: "session-1", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      warning: "Goal paused, but this OpenCode client cannot abort the active turn.",
     })
   })
 })

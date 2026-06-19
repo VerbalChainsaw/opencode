@@ -230,6 +230,38 @@ export async function stopGoalRun(
   }
 }
 
+/** Hard pause: set the goal to `paused` AND abort the in-flight assistant
+ *  turn so the chat stops immediately. Unlike `stopGoalRun` the goal is left
+ *  resumable (status `paused`, not `cleared`). Without `abortActiveTurn` it is
+ *  a plain soft pause (state only, current turn keeps running). */
+export async function pauseGoalRun(
+  client: GoalCommandClient,
+  input: {
+    sessionID: string
+    directory?: string
+    workspace?: string
+    abortActiveTurn?: boolean
+  },
+) {
+  const result = await executeGoalCommand(client, {
+    sessionID: input.sessionID,
+    arguments: "pause",
+    directory: input.directory,
+    workspace: input.workspace,
+  })
+  if (!result.ok) return result
+  if (!input.abortActiveTurn) return result
+  if (!client.session?.abort) {
+    return { ok: true, warning: "Goal paused, but this OpenCode client cannot abort the active turn." } as const
+  }
+  try {
+    await client.session.abort({ sessionID: input.sessionID })
+    return result
+  } catch (error) {
+    return { ok: true, warning: `Goal paused, but the active turn did not abort: ${errorText(error)}` } as const
+  }
+}
+
 export async function steerGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput, note: string) {
   const clean = note.trim()
   if (!clean) return false
