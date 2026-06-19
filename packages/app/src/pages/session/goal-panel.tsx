@@ -494,7 +494,7 @@ function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
   const base =
     "goal-inline-command-button flex h-[22px] items-center justify-center rounded-md border px-1 text-center text-11-medium font-semibold leading-none transition-all focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
   if (tone === "add") {
-    return `${base} goal-inline-command-add w-full border-emerald-300/70 bg-emerald-500/75 text-white shadow-[0_6px_14px_rgba(16,185,129,0.18)] hover:bg-emerald-400 hover:ring-emerald-200/45 focus-visible:ring-emerald-200/70`
+    return `${base} goal-inline-command-add w-6 border-emerald-300/32 bg-emerald-500/10 text-emerald-100 hover:border-emerald-200/58 hover:bg-emerald-500/18 focus-visible:ring-emerald-200/60`
   }
   if (tone === "remove") {
     return `${base} goal-inline-command-remove border-orange-300/75 bg-orange-500/55 text-white shadow-[0_6px_14px_rgba(249,115,22,0.18)] hover:bg-orange-400 hover:ring-orange-300/45 focus-visible:ring-orange-300/65`
@@ -502,16 +502,15 @@ function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
   if (tone === "move") {
     return `${base} goal-inline-command-move w-[22px] border-border-base bg-background-panel text-text-weak hover:border-border-strong hover:bg-white/[0.06] hover:text-text-base focus-visible:ring-border-strong`
   }
-  return `${base} goal-inline-command-edit w-full border-sky-300/45 bg-sky-500/14 text-sky-100 hover:border-sky-200/65 hover:bg-sky-500/22 focus-visible:ring-sky-300/55`
+  return `${base} goal-inline-command-edit w-6 border-sky-300/30 bg-sky-500/8 text-sky-100 hover:border-sky-200/55 hover:bg-sky-500/16 focus-visible:ring-sky-300/55`
 }
 
 function inlineCommandButtonStyle(tone: "add" | "edit" | "move" | "remove") {
   if (tone === "add") {
     return {
-      "background-color": "rgba(16, 185, 129, 0.78)",
-      "border-color": "rgba(110, 231, 183, 0.78)",
-      color: "rgb(255, 255, 255)",
-      "box-shadow": "0 6px 14px rgba(16, 185, 129, 0.18)",
+      "background-color": "rgba(16, 185, 129, 0.10)",
+      "border-color": "rgba(110, 231, 183, 0.32)",
+      color: "rgb(209, 250, 229)",
     } satisfies JSX.CSSProperties
   }
   if (tone === "remove") {
@@ -524,8 +523,8 @@ function inlineCommandButtonStyle(tone: "add" | "edit" | "move" | "remove") {
   }
   if (tone === "edit") {
     return {
-      "background-color": "rgba(14, 165, 233, 0.18)",
-      "border-color": "rgba(125, 211, 252, 0.56)",
+      "background-color": "rgba(14, 165, 233, 0.08)",
+      "border-color": "rgba(125, 211, 252, 0.30)",
       color: "rgb(224, 242, 254)",
     } satisfies JSX.CSSProperties
   }
@@ -667,14 +666,14 @@ function GoalConsoleSection(props: {
       marker: "bg-indigo-200",
     },
     "chain-builder": {
-      class: "border-violet-500/45",
+      class: "border-violet-500/30",
       style: {
-        "border-color": "rgba(139, 92, 246, 0.48)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(139, 92, 246, 0.08)",
+        "border-color": "rgba(139, 92, 246, 0.30)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(139, 92, 246, 0.035)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.72), rgba(24, 24, 27, 0.92))",
-        "border-color": "rgba(167, 139, 250, 0.44)",
+        "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.64), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(167, 139, 250, 0.26)",
       },
       marker: "bg-violet-300/80",
     },
@@ -691,16 +690,16 @@ function GoalConsoleSection(props: {
       marker: "bg-emerald-200",
     },
     "action-editor": {
-      class: "border-emerald-400/70",
+      class: "border-amber-400/62",
       style: {
-        "border-color": "rgba(52, 211, 153, 0.58)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
+        "border-color": "rgba(251, 191, 36, 0.50)",
+        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(251, 191, 36, 0.06)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(5, 150, 105, 0.82), rgba(30, 30, 30, 0.92))",
-        "border-color": "rgba(52, 211, 153, 0.72)",
+        "background": "linear-gradient(90deg, rgba(146, 64, 14, 0.84), rgba(30, 30, 30, 0.92))",
+        "border-color": "rgba(251, 191, 36, 0.58)",
       },
-      marker: "bg-emerald-200",
+      marker: "bg-amber-200",
     },
     activity: {
       class: "border-cyan-400/55",
@@ -723,18 +722,18 @@ function GoalConsoleSection(props: {
       class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-panel/80 ${accent.class} ${props.class ?? ""}`}
       style={accent.style}
     >
-      <div class="shrink-0 border-b border-border-base/80 px-3 py-2.5" style={accent.headerStyle}>
+      <div class="shrink-0 border-b border-border-base/70 px-3 py-3" style={accent.headerStyle}>
         <div
           data-component="goal-console-section-title"
-          class="flex min-w-0 items-center gap-2 text-13-medium font-bold uppercase tracking-[0.12em] text-white"
+          class="flex min-w-0 items-center gap-2.5 text-[15px] font-extrabold uppercase leading-5 text-white [letter-spacing:0]"
         >
-          <span class={`h-5 w-1.5 shrink-0 rounded-full ${accent.marker}`} aria-hidden />
+          <span class={`h-6 w-2 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
           <span class="truncate">{props.title}</span>
         </div>
         <Show when={props.subtitle}>
           <div
             data-component="goal-console-section-subtitle"
-            class="mt-1 truncate text-12-regular leading-4 text-white/70"
+            class="mt-1 truncate text-[11px] font-semibold leading-4 text-white/68"
             title={props.subtitle}
           >
             {props.subtitle}
@@ -967,6 +966,18 @@ function actionLibraryPanelStyle(input: ActionDescriptor = { category: "Custom" 
     "background": `linear-gradient(135deg, ${from}, rgba(18, 18, 18, 0.82) 48%, ${to})`,
     "border-color": border,
     "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.035)",
+  }
+}
+
+function actionEditorPanelStyle(active = false): JSX.CSSProperties {
+  return {
+    "background": active
+      ? "linear-gradient(135deg, rgba(146, 64, 14, 0.30), rgba(18, 18, 18, 0.82) 52%, rgba(251, 191, 36, 0.09))"
+      : "linear-gradient(135deg, rgba(120, 53, 15, 0.20), rgba(18, 18, 18, 0.82) 52%, rgba(251, 191, 36, 0.06))",
+    "border-color": active ? "rgba(251, 191, 36, 0.46)" : "rgba(251, 191, 36, 0.28)",
+    "box-shadow": active
+      ? "inset 3px 0 0 rgba(251, 191, 36, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 14px 30px rgba(0, 0, 0, 0.16)"
+      : "inset 0 1px 0 rgba(255, 255, 255, 0.026)",
   }
 }
 
@@ -1798,13 +1809,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       return next
     })
   }
-  const addActionDraftToChain = () => {
-    const template = actionDraftTemplate()
-    if (!template.condition.trim()) return
-    const step = chainStepFromTemplate(template, templateVars(), `${template.id}-${Date.now()}-${chainDraft.steps.length}`)
-    if (!step.condition.trim()) return
-    setChainDraft("steps", chainDraft.steps.length, step)
-  }
   const updateEditingChainStep = () => {
     const editingID = editingChainStepID()
     if (!editingID || liveGoal()) return
@@ -1880,6 +1884,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       setSelectedTemplateID(id)
     }
   }
+  const editorActiveLabel = createMemo(() => {
+    if (editingChainStepID()) return language.t("session.goal.template.activeRunStep")
+    if (selectedTemplateID()) return language.t("session.goal.template.activeLibrary")
+    return language.t("session.goal.template.newDraft")
+  })
+  const editorActiveHint = createMemo(() => {
+    if (editingChainStepID()) return language.t("session.goal.template.activeRunStepHint")
+    if (selectedTemplateID()) return language.t("session.goal.template.activeLibraryHint")
+    return language.t("session.goal.template.newDraftHint")
+  })
   const deleteActionTemplate = async (template: GoalTemplateButton) => {
     if (template.builtin) return
     const sent = await sendGoalCommand("template", `template delete ${template.id}`)
@@ -2288,7 +2302,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               </section>
               <GoalConsoleSection
                 zone="chain-builder"
-                title={chainRunStateTitle()}
+                title="Chain Builder"
                 subtitle={chainRunStateSubtitle()}
                 class="min-h-0"
               >
@@ -2299,7 +2313,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               >
               <div
                 data-component="goal-chain-builder-header-strip"
-                class="relative z-10 shrink-0 border-b border-violet-400/18 bg-[linear-gradient(90deg,rgba(76,29,149,0.20),rgba(15,23,42,0.48))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.028)]"
+                class="relative z-10 shrink-0 border-b px-3 py-2.5"
+                style={{
+                  "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.16), rgba(15, 23, 42, 0.42))",
+                  "border-bottom-color": "rgba(167, 139, 250, 0.10)",
+                  "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.014)",
+                }}
               >
                 <div class="grid min-w-0 gap-2 lg:grid-cols-[minmax(260px,1fr)_auto] lg:items-start">
                   <div
@@ -2325,55 +2344,59 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       {liveGoal() ? cleanText(liveGoal()!.condition) : language.t("session.goal.chainBuilder.planChainHint")}
                     </div>
                   </div>
-                  <Show when={!liveGoal()}>
-                    <div data-component="goal-target-toolbar" class="flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end">
-                      <ActionButton
-                        label={language.t("session.goal.chainBuilder.validate")}
-                        variant="secondary"
-                        class="h-7 shrink-0 px-3 text-12-medium"
-                        disabled={busy() !== null || !props.sessionID}
-                        onClick={() => {
-                          const errors = validateChainDraft(runnableChainSteps(), {
-                            maxTurns: chainDraft.master.maxTurns,
-                            maxTimeMinutes: chainDraft.master.maxTimeMinutes,
-                          })
-                          setChainErrors(errors)
-                          if (errors.length === 0) {
-                            refreshChain()
-                            void props.goal.refresh().catch(ignoreRefreshError)
-                          }
-                        }}
-                      />
-                      <ActionButton
-                        label={language.t("session.goal.chainBuilder.saveDraft")}
-                        variant="secondary"
-                        class="h-7 shrink-0 px-3 text-12-medium"
-                        disabled={busy() !== null}
-                        onClick={() => {
-                          writeStoredChainDraft(props.sessionID, {
-                            steps: chainDraft.steps.map((step) => ({ ...step })),
-                            master: {
+                  <div data-component="goal-target-toolbar" class="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
+                    <ActionButton
+                      label={liveGoal() ? "Running…" : "Start Chain"}
+                      variant={liveGoal() ? "secondary" : "primary"}
+                      class="h-7 shrink-0 px-3 text-12-medium"
+                      busy={busy() === "chain"}
+                      disabled={
+                        !!liveGoal() ||
+                        busy() !== null ||
+                        !props.sessionID ||
+                        goalCommandUnavailable() ||
+                        runnableChainSteps().length === 0
+                      }
+                      onClick={() => void startGoalChain()}
+                    />
+                    <Show when={!liveGoal()}>
+                      <div class="flex items-center gap-1">
+                        <ActionButton
+                          label="Check"
+                          variant="secondary"
+                          class="h-7 shrink-0 px-3 text-12-medium"
+                          disabled={busy() !== null || !props.sessionID}
+                          onClick={() => {
+                            const errors = validateChainDraft(runnableChainSteps(), {
                               maxTurns: chainDraft.master.maxTurns,
                               maxTimeMinutes: chainDraft.master.maxTimeMinutes,
-                            },
-                          })
-                          refreshChain()
-                        }}
-                      />
-                      <ActionButton
-                        label={language.t("session.goal.chainBuilder.start")}
-                        variant="primary"
-                        class="h-7 shrink-0 px-3 text-12-medium"
-                        busy={busy() === "chain"}
-                        disabled={
-                          busy() !== null ||
-                          !props.sessionID ||
-                          goalCommandUnavailable() ||
-                          runnableChainSteps().length === 0
-                        }
-                        onClick={() => void startGoalChain()}
-                      />
-                    </div>
+                            })
+                            setChainErrors(errors)
+                            if (errors.length === 0) {
+                              refreshChain()
+                              void props.goal.refresh().catch(ignoreRefreshError)
+                            }
+                          }}
+                        />
+                        <ActionButton
+                          label="Save"
+                          variant="secondary"
+                          class="h-7 shrink-0 px-3 text-12-medium"
+                          disabled={busy() !== null}
+                          onClick={() => {
+                            writeStoredChainDraft(props.sessionID, {
+                              steps: chainDraft.steps.map((step) => ({ ...step })),
+                              master: {
+                                maxTurns: chainDraft.master.maxTurns,
+                                maxTimeMinutes: chainDraft.master.maxTimeMinutes,
+                              },
+                            })
+                            refreshChain()
+                          }}
+                        />
+                      </div>
+                    </Show>
+                  </div>
                     <Show when={chainErrors().length > 0}>
                       <div
                         data-component="goal-chain-validation-errors"
@@ -2389,7 +2412,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </For>
                       </div>
                     </Show>
-                  </Show>
                 </div>
                 <Show when={!liveGoal()}>
                   <div
@@ -2400,7 +2422,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   >
                     <div
                       data-component="goal-target-stat-strip"
-                      class="rounded-lg border border-violet-400/18 bg-slate-950/32 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
+                      class="rounded-lg border p-1.5"
+                      style={{
+                        "background-color": "rgba(2, 6, 23, 0.28)",
+                        "border-color": "rgba(167, 139, 250, 0.10)",
+                        "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.012)",
+                      }}
                     >
                     <div
                       data-component="goal-chain-compact-stats"
@@ -2409,7 +2436,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <label
                       data-component="goal-chain-compact-stat"
                       data-kind="turns"
-                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border border-blue-400/24 bg-blue-500/[0.07] px-2.5"
+                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border px-2.5"
+                      style={{
+                        "background-color": "rgba(59, 130, 246, 0.055)",
+                        "border-color": "rgba(96, 165, 250, 0.14)",
+                      }}
                       title={chainLimitSummary()}
                     >
                       <span class="min-w-[54px] text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-100/78">
@@ -2431,7 +2462,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <label
                       data-component="goal-chain-compact-stat"
                       data-kind="time"
-                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border border-violet-400/24 bg-violet-500/[0.07] px-2.5"
+                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border px-2.5"
+                      style={{
+                        "background-color": "rgba(139, 92, 246, 0.055)",
+                        "border-color": "rgba(167, 139, 250, 0.14)",
+                      }}
                       title={chainLimitSummary()}
                     >
                       <span class="min-w-[54px] text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-100/78">
@@ -2453,7 +2488,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <span
                       data-component="goal-chain-summary-line"
                       data-kind="actions"
-                      class="flex h-10 min-w-0 items-center gap-2 overflow-hidden rounded-md border border-emerald-400/24 bg-emerald-500/[0.07] px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-100/78"
+                      class="flex h-10 min-w-0 items-center gap-2 overflow-hidden rounded-md border px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-100/78"
+                      style={{
+                        "background-color": "rgba(16, 185, 129, 0.055)",
+                        "border-color": "rgba(52, 211, 153, 0.14)",
+                      }}
                       title={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
                       aria-label={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
                     >
@@ -2694,7 +2733,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(180deg,rgba(46,16,101,0.06),rgba(10,10,10,0.42))]"
                 >
                   <div data-component="goal-plan-chain" class="flex h-full min-h-0 min-w-0 flex-col p-2.5">
-                    <div class="flex items-center justify-between gap-3 rounded-md border border-violet-400/18 bg-violet-500/[0.055] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                    <div
+                      class="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2"
+                      style={{
+                        "background-color": "rgba(139, 92, 246, 0.045)",
+                        "border-color": "rgba(167, 139, 250, 0.10)",
+                        "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.012)",
+                      }}
+                    >
                       <div class="min-w-0 flex items-center gap-2">
                         <span class="h-4 w-1.5 shrink-0 rounded-full bg-violet-300/75" aria-hidden />
                         <div class="text-12-medium font-bold uppercase tracking-[0.12em] text-violet-50">
@@ -2703,7 +2749,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             : language.t("session.goal.chainBuilder.planChain")}
                         </div>
                       </div>
-                      <div class="shrink-0 rounded-md border border-violet-400/22 bg-violet-500/[0.08] px-2 py-1 text-11-regular font-semibold text-violet-100/80">
+                      <div
+                        class="shrink-0 rounded-md border px-2 py-1 text-11-regular font-semibold text-violet-100/80"
+                        style={{ "background-color": "rgba(139, 92, 246, 0.06)", "border-color": "rgba(167, 139, 250, 0.14)" }}
+                      >
                         <strong class={numericHighlightClass("mr-1")} style={numericHighlightStyle("violet")}>
                           {visibleStepCount()}
                         </strong>
@@ -2711,14 +2760,21 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       </div>
                     </div>
 
-                    <div class="mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-violet-400/18 bg-background-panel/76 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                    <div
+                      class="mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border bg-background-panel/76 p-1.5"
+                      style={{ "border-color": "rgba(167, 139, 250, 0.10)", "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.012)" }}
+                    >
                       <Show
                         when={visibleStepCount() > 0}
                         fallback={
-                          <div
-                            data-component="goal-chain-empty-state"
-                            class="grid min-h-40 place-items-center rounded-md border border-violet-400/24 bg-[radial-gradient(circle_at_50%_0%,rgba(139,92,246,0.16),transparent_45%),linear-gradient(180deg,rgba(46,16,101,0.14),rgba(18,18,18,0.72))] px-4 py-6 text-center"
-                          >
+                            <div
+                              data-component="goal-chain-empty-state"
+                              class="grid min-h-40 place-items-center rounded-md border px-4 py-6 text-center"
+                              style={{
+                                "background": "radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.12), transparent 45%), linear-gradient(180deg, rgba(46, 16, 101, 0.10), rgba(18, 18, 18, 0.72))",
+                                "border-color": "rgba(167, 139, 250, 0.14)",
+                              }}
+                            >
                             <div class="max-w-sm">
                               <div class="text-13-medium font-bold text-violet-50">
                                 {language.t("session.goal.chainBuilder.emptyChain")}
@@ -2728,7 +2784,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               </div>
                               <div
                                 data-component="goal-chain-execution-note"
-                                class="mt-3 rounded-md border border-violet-400/22 bg-violet-500/[0.08] px-2.5 py-2 text-left text-11-regular leading-5 text-violet-100/72"
+                                class="mt-3 rounded-md border px-2.5 py-2 text-left text-11-regular leading-5 text-violet-100/72"
+                                style={{
+                                  "background-color": "rgba(139, 92, 246, 0.06)",
+                                  "border-color": "rgba(167, 139, 250, 0.14)",
+                                }}
                               >
                                 Draft edits stay local. Reorder, remove, turns, minutes, prompt, and command edits do not start a turn until Start Chain.
                               </div>
@@ -3000,32 +3060,30 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     subtitle="Reusable actions. Add inserts into Run Order."
                     class="min-h-0"
                   >
-                  <section data-testid="action-library" data-component="goal-method-library" class="flex h-full min-h-0 min-w-0 flex-col bg-background-base/70 p-2.5">
+                  <section data-testid="action-library" data-component="goal-method-library" class="flex h-full min-h-0 min-w-0 flex-col p-2">
                     <div
                       data-component="goal-method-library-header"
-                      class="flex items-start justify-between gap-3 rounded-lg border px-2.5 py-2"
-                      style={actionLibraryPanelStyle({ category: "Custom" })}
+                      class="flex items-start justify-between gap-3 px-1 py-1"
                     >
                       <div class="min-w-0">
                         <div class="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-text-base">
                           Actions
                         </div>
-                        <div class="mt-0.5 text-12-regular leading-4 text-text-weaker">
-                          Add inserts locally. Edit loads the selected draft.
+                        <div class="mt-0.5 text-11-regular leading-4 text-text-weaker">
+                          Plus adds to Run Order. Edit opens the editor.
                         </div>
                       </div>
                     </div>
 
                     <div
                       data-component="goal-method-category-tabs"
-                      class="mt-2 grid min-w-0 grid-cols-8 gap-1 rounded-lg border p-1"
-                      style={actionLibraryPanelStyle({ category: concreteActionCategory(templateCategory()) })}
+                      class="mt-1.5 grid min-w-0 grid-cols-8 gap-0.5"
                     >
                       <For each={ACTION_CATEGORIES}>
                         {(category) => (
                           <button
                             type="button"
-                            class="h-6 min-w-0 rounded-md border px-1 text-center text-[10px] font-semibold leading-none transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/45"
+                            class="h-5 min-w-0 rounded px-1 text-center text-[10px] font-semibold leading-none hover:brightness-110"
                             style={actionCategoryPillStyle(category, templateCategory() === category)}
                             onClick={() => setTemplateCategory(category)}
                           >
@@ -3037,8 +3095,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                     <div
                       data-component="goal-method-rail-filters"
-                      class="mt-2 rounded-lg border p-1.5"
-                      style={actionLibraryPanelStyle({ category: concreteActionCategory(templateCategory()) })}
+                      class="mt-1.5 p-1"
                     >
                       <TextField
                         value={templateSearch()}
@@ -3054,8 +3111,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       role="listbox"
                       aria-label={language.t("session.goal.create.templates")}
                       tabindex={0}
-                      class="mt-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain rounded-lg border p-1.5"
-                      style={actionLibraryPanelStyle({ category: concreteActionCategory(templateCategory()) })}
+                      class="mt-1.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain p-1"
                       onKeyDown={handleTemplateListboxKeyDown}
                     >
                       <Show
@@ -3073,7 +3129,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               role="option"
                               aria-selected={selectedTemplateID() === t.id}
                               title={t.description || t.condition || t.label}
-                              class="group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_48px_48px] items-center gap-1.5 rounded-md border px-1.5 py-1 transition-all hover:brightness-110"
+                              class="group grid min-h-0 grid-cols-[minmax(0,1fr)_26px_26px] items-center gap-1 rounded px-1 py-0.5 hover:brightness-110"
                               style={actionLibraryRowStyle(t)}
                               classList={{
                                 "outline outline-1 outline-offset-1 outline-emerald-200/65 brightness-110":
@@ -3105,12 +3161,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 class={inlineCommandButtonClass("add")}
                                 style={inlineCommandButtonStyle("add")}
                                 disabled={busy() !== null || !t.condition}
+                                aria-label={language.t("session.goal.template.addToChain")}
+                                title={language.t("session.goal.template.addToChain")}
                                 onClick={() => {
                                   selectActionForView(t)
                                   addActionToChain(t, varsForAction(t))
                                 }}
                               >
-                                Add
+                                <IconV2 name="plus" size="small" />
                               </button>
                               <button
                                 type="button"
@@ -3118,12 +3176,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 class={inlineCommandButtonClass("edit")}
                                 style={inlineCommandButtonStyle("edit")}
                                 disabled={busy() !== null || goalCommandUnavailable()}
+                                aria-label={language.t("session.goal.template.edit")}
+                                title={language.t("session.goal.template.edit")}
                                 onClick={() => {
                                   selectActionForView(t)
                                   editTemplateDraft(t)
                                 }}
                               >
-                                Edit
+                                <IconV2 name="edit" size="small" />
                               </button>
                             </div>
                           )}
@@ -3136,7 +3196,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <GoalConsoleSection
                     zone="action-editor"
                     title="Action Editor"
-                    subtitle="Save changes or add the draft locally."
+                    subtitle="Save changes. Add from Action Library inserts into Run Order."
                     class="min-h-0"
                   >
                     <section
@@ -3148,8 +3208,24 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <div
                           data-component="goal-action-editor-current"
                           class="rounded-lg border px-2.5 py-2"
-                          style={actionLibraryRowStyle(actionDraft)}
+                          style={actionEditorPanelStyle(true)}
                         >
+                          <div
+                            data-component="goal-action-editor-active-state"
+                            class="mb-2 flex min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 text-amber-100"
+                            style={{
+                              "background-color": "rgba(245, 158, 11, 0.12)",
+                              "border-color": "rgba(252, 211, 77, 0.34)",
+                            }}
+                          >
+                            <span class="h-2 w-2 shrink-0 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.55)]" aria-hidden />
+                            <span class="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                              {editorActiveLabel()}
+                            </span>
+                            <span class="min-w-0 truncate text-[11px] text-amber-100/68">
+                              {editorActiveHint()}
+                            </span>
+                          </div>
                           <div class="flex min-w-0 items-center gap-2">
                             <div class="min-w-0">
                               <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
@@ -3191,17 +3267,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             <Show when={saveError()}>
                               <div class="col-span-6 text-center text-[10px] text-orange-300/90">{saveError()}</div>
                             </Show>
-                            <ActionButton
-                              label={
-                                editingChainStepID()
-                                  ? language.t("session.goal.template.updateRunStep")
-                                  : language.t("session.goal.template.addToChain")
-                              }
-                              variant="primary"
-                              class="col-span-2"
-                              disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
-                              onClick={() => (editingChainStepID() ? updateEditingChainStep() : addActionDraftToChain())}
-                            />
+                            <Show when={editingChainStepID()}>
+                              <ActionButton
+                                label={language.t("session.goal.template.updateRunStep")}
+                                variant="primary"
+                                class="col-span-2"
+                                disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
+                                onClick={() => updateEditingChainStep()}
+                              />
+                            </Show>
                             <ActionButton
                               label={language.t("session.goal.template.duplicate")}
                               variant="secondary"
@@ -3229,8 +3303,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                         <div
                           data-component="goal-action-editor-fields"
-                          class="grid grid-cols-1 gap-2 rounded-lg border p-2.5"
-                          style={actionLibraryRowStyle(actionDraft)}
+                          class="grid grid-cols-1 gap-2 p-2"
                         >
                           <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
                             Action details
@@ -3264,7 +3337,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <div
                           data-component="goal-action-editor-limits"
                           class="grid grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-2"
-                          style={actionLibraryRowStyle(actionDraft)}
+                          style={actionEditorPanelStyle()}
                         >
                           <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
                             Limits
@@ -3310,7 +3383,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <div
                           data-component="goal-action-editor-runtime-pins"
                           class="grid grid-cols-1 gap-2 rounded-lg border p-2.5"
-                          style={actionLibraryRowStyle(actionDraft)}
+                          style={actionEditorPanelStyle()}
                         >
                           <div class="flex min-w-0 items-center justify-between gap-2">
                             <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
