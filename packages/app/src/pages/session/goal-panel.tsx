@@ -2273,10 +2273,37 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const liveGoal = createMemo(() => liveGoalOf(state()))
   const terminalGoal = createMemo(() => terminalGoalOf(state()))
   const visibleChainSteps = createMemo<GoalChainDraftStep[]>(() => {
-    if (!liveGoal() && chainDraft.steps.length > 0) return chainDraft.steps
+    const live = liveGoal()
+    if (!live && chainDraft.steps.length > 0) return chainDraft.steps
     const runningChain = chain()
-    if (!runningChain) return chainDraft.steps
-    return chainSnapshotSteps()
+    if (runningChain) return chainSnapshotSteps()
+    // A single live goal has no chain file. Render the one running goal as a
+    // single step rather than the leftover sessionStorage chain draft — which
+    // would otherwise show up as a fake "1/N" executing chain on the running
+    // screen, highlighting an unrelated draft step as "running".
+    if (live) {
+      const descriptor: ActionDescriptor = {
+        condition: cleanText(live.condition),
+        label: cleanText(live.condition).slice(0, 52),
+      }
+      return [
+        {
+          id: "running-single",
+          actionID: "running-single",
+          label: descriptor.label || "Goal",
+          condition: descriptor.condition ?? "",
+          command: "",
+          maxTurns: live.constraints?.maxTurns ?? chainDraft.master.maxTurns,
+          maxTimeMinutes: live.constraints?.maxTimeMinutes ?? chainDraft.master.maxTimeMinutes,
+          category: inferActionCategory(descriptor),
+          tone: inferredActionTone(descriptor),
+          elevation: "flat",
+          builtin: false,
+          skills: [],
+        },
+      ]
+    }
+    return chainDraft.steps
   })
   const visibleStepCount = createMemo(() => visibleChainSteps().length)
   const runningStepIndex = createMemo(() => {

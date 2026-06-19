@@ -419,6 +419,10 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("chainRunStateTitle")
     expect(src).toContain("chainRunStateSubtitle")
     expect(src).toContain("visibleChainSteps")
+    // A single live goal (no chain file) must render as ONE synthetic running
+    // step, never the leftover sessionStorage chain draft (which would show a
+    // fake "1/N" executing chain on the running screen).
+    expect(src).toContain('id: "running-single"')
     expect(src).toContain("stepRunState")
     expect(src).toContain("<For each={visibleChainSteps()}>")
     expect(src).toContain('data-run-state={stepRunState(i())}')
