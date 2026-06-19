@@ -722,18 +722,18 @@ function GoalConsoleSection(props: {
       class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-panel/80 ${accent.class} ${props.class ?? ""}`}
       style={accent.style}
     >
-      <div class="shrink-0 border-b border-border-base/70 px-3 py-3" style={accent.headerStyle}>
+      <div class="shrink-0 border-b border-border-base/60 px-3 py-1.5" style={accent.headerStyle}>
         <div
           data-component="goal-console-section-title"
-          class="flex min-w-0 items-center gap-2.5 text-[15px] font-extrabold uppercase leading-5 text-white [letter-spacing:0]"
+          class="flex min-w-0 items-center gap-2 text-[13px] font-bold uppercase tracking-[0.04em] text-white"
         >
-          <span class={`h-6 w-2 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
+          <span class={`h-4 w-1.5 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
           <span class="truncate">{props.title}</span>
         </div>
         <Show when={props.subtitle}>
           <div
             data-component="goal-console-section-subtitle"
-            class="mt-1 truncate text-[11px] font-semibold leading-4 text-white/68"
+            class="mt-0.5 truncate text-[10px] font-medium leading-4 text-white/60"
             title={props.subtitle}
           >
             {props.subtitle}
