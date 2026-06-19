@@ -347,10 +347,12 @@ export const server: Plugin = async ({ client, directory }) => {
   };
   // Periodically evict stale entries so paused/done sessions don't leak memory.
   // Successful nudges already call resetNudgeFailures; this catches sessions
-  // that were paused by failures and never resumed.
-  setInterval(() => {
+  // that were paused by failures and never resumed. Unref'd so it doesn't
+  // keep the event loop alive in test runners or short-lived processes.
+  const _cleanupTimer = setInterval(() => {
     if (nudgeFailureCounts.size > 50) nudgeFailureCounts.clear();
   }, 3600_000);
+  _cleanupTimer.unref();
   // Tracks open tool-permission requests; the loop must not nudge while one is open.
   const pendingPermissions = new PendingPermissions();
 

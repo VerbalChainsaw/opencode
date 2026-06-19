@@ -26,8 +26,11 @@ import {
 
 export {
   STATE_PATH,
+  HANDOFF_PATH,
   MAX_RENDERER_STATE_BYTES,
+  MAX_RENDERER_HANDOFF_BYTES,
   isGoalStateShape,
+  readHandoffFromSdk,
   readGoalFromSdk,
   type GoalSdkClient,
 } from "./goal-panel-pure"
@@ -45,6 +48,7 @@ import {
   chainBudgetSummary,
   chainStepFromTemplate,
   cleanText,
+  readHandoffFromSdk,
   readGoalFromSdk,
   selectRunnableChainSteps,
   templateButtonsFromSnapshot,
@@ -58,6 +62,7 @@ import {
   templateModelFromSnapshot,
   type ChainValidationError,
   type GoalSdkClient,
+  type GoalHandoffStore,
   type GoalChainDraftStep,
   type GoalPinnedModel,
   type GoalTemplateButton,
@@ -66,7 +71,7 @@ import {
   type GoalTemplateModel,
   type GoalTemplateTone,
 } from "./goal-panel-pure"
-import { executeGoalCommand, startGoalRun, steerGoalRun } from "./goal-panel-actions"
+import { executeGoalCommand, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
 // them as locals is unnecessary because we only need them as type
 // annotations, which the imported type re-exports satisfy directly.
@@ -176,6 +181,7 @@ interface GoalActionClient {
       }) => Promise<unknown>
     }
     session?: {
+      abort?: (args: { sessionID: string }) => Promise<unknown>
       command?: (args: { sessionID: string; command: string; arguments: string }) => Promise<unknown>
     }
     file: {
@@ -184,7 +190,7 @@ interface GoalActionClient {
   }
 }
 
-type GoalAction = "pause" | "resume" | "restart" | "clear"
+type GoalAction = "pause" | "resume" | "restart" | "clear" | "handoff" | "claim"
 
 /** One line of the engine's `.opencode/.session-events.jsonl` activity log —
  *  the live "what is the agent doing" feed (session-events.ts in the plugin). */
@@ -1158,7 +1164,7 @@ function runningMetricValueClass(tone: "time" | "turns" | "step") {
   return "text-emerald-50"
 }
 
-function runningInlinePanelStyle(tone: "stop" | "steer" | "activity"): JSX.CSSProperties {
+function runningInlinePanelStyle(tone: "stop" | "steer" | "handoff" | "activity"): JSX.CSSProperties {
   if (tone === "stop") {
     return {
       "background-color": "rgba(124, 45, 18, 0.18)",
@@ -1171,6 +1177,13 @@ function runningInlinePanelStyle(tone: "stop" | "steer" | "activity"): JSX.CSSPr
       "background-color": "rgba(12, 74, 110, 0.16)",
       "border-color": "rgba(56, 189, 248, 0.22)",
       "box-shadow": "inset 3px 0 0 rgba(56, 189, 248, 0.50), inset 0 1px 0 rgba(255,255,255,0.03)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "handoff") {
+    return {
+      "background-color": "rgba(67, 56, 202, 0.16)",
+      "border-color": "rgba(129, 140, 248, 0.24)",
+      "box-shadow": "inset 3px 0 0 rgba(129, 140, 248, 0.52), inset 0 1px 0 rgba(255,255,255,0.03)",
     } satisfies JSX.CSSProperties
   }
   return {
@@ -1367,9 +1380,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const sync = useSync()
   const state = () => props.goal.store.state
 
-  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | "template" | "chain" | null>(
-    null,
-  )
+  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | "template" | "chain" | null>(null)
   // Optimistic pause/resume: the instant the user clicks, we record the status
   // they drove the goal toward so the single toggle flips immediately, instead
   // of lagging the 2s poll (and risking a stale command). Cleared once the
@@ -1381,6 +1392,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [newCommand, setNewCommand] = createSignal("")
   const [steerOpen, setSteerOpen] = createSignal(false)
   const [steerText, setSteerText] = createSignal("")
+  const [handoff, setHandoff] = createSignal<GoalHandoffStore>({ handoff: null, corrupt: false, loaded: false })
+  const [handoffOpen, setHandoffOpen] = createSignal(false)
+  const [handoffText, setHandoffText] = createSignal("")
   // When true, show the create form even though a goal exists (the "New goal"
   // affordance), so the panel is never a dead end — including on achieved goals.
   const [showCreate, setShowCreate] = createSignal(false)
@@ -1478,12 +1492,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         setAvailableSkills(next)
       })
       .catch(ignoreRefreshError)
+  const refreshHandoff = () => void readHandoffFromSdk(sdk as unknown as GoalSdkClient).then(setHandoff).catch(ignoreRefreshError)
 
   onMount(() => {
     refreshSkills()
     const tick = () => {
       void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)
       void readChain(sdk).then(setChain).catch(ignoreRefreshError)
+      refreshHandoff()
       void refreshTemplates()
       refreshArchive()
       void props.goal.refresh().catch(ignoreRefreshError)
@@ -1498,6 +1514,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const refreshGoalSurfaces = async (options: { templates?: boolean } = {}) => {
     await props.goal.refresh().catch(ignoreRefreshError)
     refreshChain()
+    refreshHandoff()
     refreshArchive()
     if (options.templates) await refreshTemplates()
   }
@@ -1548,9 +1565,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy("clear")
-    const result = await executeGoalCommand(sdk.client, { sessionID, arguments: "clear", directory: sdk.directory })
+    const result = await stopGoalRun(sdk.client, {
+      sessionID,
+      directory: sdk.directory,
+      abortActiveTurn: sync.data.session_working(sessionID),
+    })
     if (result.ok) {
-      setControlError(null)
+      setControlError("warning" in result ? result.warning : null)
     } else {
       setControlError(result.error)
     }
@@ -1604,6 +1625,27 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       }
       setSteerText("")
       setSteerOpen(false)
+    }
+  }
+
+  const handoffGoal = async () => {
+    const note = handoffText().trim().replace(/"/g, "")
+    const sent = await sendGoalCommand("handoff", note ? `handoff ${note}` : "handoff")
+    if (sent) {
+      setHandoffText("")
+      setHandoffOpen(false)
+    }
+  }
+
+  const claimGoalHandoff = async () => {
+    const sent = await sendGoalCommand("claim", "claim")
+    if (!sent) return
+    if (props.sessionID) {
+      const prompted = await startGoalRun(sdk.client, {
+        sessionID: props.sessionID,
+        directory: sdk.directory,
+      })
+      if (!prompted) await sendGoalCommand("pause", "pause")
     }
   }
 
@@ -2025,7 +2067,32 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (event.key === "End") return selectTemplateAt(list.length - 1)
     selectTemplateAt(event.key === "ArrowDown" ? current + 1 : current <= 0 ? 0 : current - 1)
   }
-  const runnableChainSteps = () => chainDraft.steps
+  const chainSnapshotSteps = (): GoalChainDraftStep[] => {
+    const runningChain = chain()
+    if (!runningChain) return []
+    const s = state()
+    return runningChain.steps.map((step, index) => ({
+      id: `running-${index}`,
+      actionID: `running-${index}`,
+      label: cleanText(step.condition).slice(0, 52) || `Step ${index + 1}`,
+      condition: cleanText(step.condition),
+      command: cleanText(step.command ?? ""),
+      maxTurns: step.maxTurns ?? s?.constraints.maxTurns ?? chainDraft.master.maxTurns,
+      maxTimeMinutes: step.maxTimeMinutes ?? s?.constraints.maxTimeMinutes ?? chainDraft.master.maxTimeMinutes,
+      category: step.category ?? inferActionCategory(step),
+      tone: step.tone ?? inferredActionTone(step),
+      elevation: step.elevation ?? "flat",
+      builtin: false,
+      skills: Array.isArray(step.skills)
+        ? [...new Set(step.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean))].slice(0, 8)
+        : [],
+      model: templateModelFromSnapshot(step.model) ?? "",
+    }))
+  }
+  const runnableChainSteps = () => {
+    if (liveGoal()) return []
+    return selectRunnableChainSteps(chainDraft.steps, chainSnapshotSteps())
+  }
   const startGoalChain = async () => {
     const steps = runnableChainSteps()
     if (steps.length === 0) return
@@ -2136,27 +2203,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const liveGoal = createMemo(() => liveGoalOf(state()))
   const terminalGoal = createMemo(() => terminalGoalOf(state()))
   const visibleChainSteps = createMemo<GoalChainDraftStep[]>(() => {
-    const runningChain = chain()
     if (!liveGoal() && chainDraft.steps.length > 0) return chainDraft.steps
+    const runningChain = chain()
     if (!runningChain) return chainDraft.steps
-    const s = state()
-    return runningChain.steps.map((step, index) => ({
-      id: `running-${index}`,
-      actionID: `running-${index}`,
-      label: cleanText(step.condition).slice(0, 52) || `Step ${index + 1}`,
-      condition: cleanText(step.condition),
-      command: cleanText(step.command ?? ""),
-      maxTurns: step.maxTurns ?? s?.constraints.maxTurns ?? chainDraft.master.maxTurns,
-      maxTimeMinutes: step.maxTimeMinutes ?? s?.constraints.maxTimeMinutes ?? chainDraft.master.maxTimeMinutes,
-      category: step.category ?? inferActionCategory(step),
-      tone: step.tone ?? inferredActionTone(step),
-      elevation: step.elevation ?? "flat",
-      builtin: false,
-      skills: Array.isArray(step.skills)
-        ? [...new Set(step.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean))].slice(0, 8)
-        : [],
-      model: templateModelFromSnapshot(step.model) ?? "",
-    }))
+    return chainSnapshotSteps()
   })
   const visibleStepCount = createMemo(() => visibleChainSteps().length)
   const runningStepIndex = createMemo(() => {
@@ -2737,7 +2787,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </div>
                         <div
                           data-component="goal-running-command-strip"
-                          class="mt-1.5 grid grid-cols-4 gap-1 rounded-md border p-1"
+                          class="mt-1.5 grid grid-cols-5 gap-1 rounded-md border p-1"
                           style={{
                             "background-color": "rgba(2, 6, 23, 0.30)",
                             "border-color": "rgba(148, 163, 184, 0.14)",
@@ -2776,21 +2826,37 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             onClick={() => void runAction("restart")}
                           />
                           <ActionButton
-                            label={language.t("session.goal.action.stop")}
+                            label={
+                              confirmingClear()
+                                ? language.t("session.goal.action.confirmStop")
+                                : language.t("session.goal.action.stop")
+                            }
                             variant={confirmingClear() ? "primary" : "secondary"}
                             tone="danger"
                             busy={busy() === "clear" && confirmingClear()}
                             disabled={busy() !== null || !props.sessionID}
                             class="h-7 px-2 text-11-medium"
-                            onClick={() => setConfirmingClear(true)}
+                            onClick={() => {
+                              if (confirmingClear()) void stopGoal()
+                              else setConfirmingClear(true)
+                            }}
                           />
                           <ActionButton
                             label={language.t("session.goal.action.steer")}
                             variant="secondary"
                             disabled={busy() !== null}
                             class="h-7 px-2 text-11-medium"
-                            title="Inject guidance into this run without clearing or restarting the chain."
+                            title={language.t("session.goal.steer.hint")}
                             onClick={() => setSteerOpen((v) => !v)}
+                          />
+                          <ActionButton
+                            label={language.t("session.goal.action.handoff")}
+                            variant={handoff().handoff ? "primary" : "secondary"}
+                            busy={busy() === "handoff"}
+                            disabled={busy() !== null || !props.sessionID || !!handoff().handoff}
+                            class="h-7 px-2 text-11-medium"
+                            title={language.t("session.goal.handoff.hint")}
+                            onClick={() => setHandoffOpen((v) => !v)}
                           />
                         </div>
                       </div>
@@ -2869,6 +2935,89 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         setSteerText("")
                       }}
                     />
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={liveGoal() && handoffOpen()}>
+                <div class="border-b px-3 py-2">
+                  <div
+                    data-component="goal-running-inline-panel"
+                    data-state="handoff"
+                    class="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
+                    style={runningInlinePanelStyle("handoff")}
+                  >
+                    <TextField
+                      value={handoffText()}
+                      onChange={setHandoffText}
+                      label={language.t("session.goal.action.handoff")}
+                      hideLabel
+                      placeholder={language.t("session.goal.handoff.placeholder")}
+                      disabled={busy() !== null}
+                      class="min-w-48 flex-1"
+                    />
+                    <ActionButton
+                      label={language.t("session.goal.handoff.send")}
+                      variant="primary"
+                      busy={busy() === "handoff"}
+                      disabled={busy() !== null || !props.sessionID}
+                      class="h-8 shrink-0 px-3"
+                      onClick={() => void handoffGoal()}
+                    />
+                    <ActionButton
+                      label={language.t("session.goal.action.cancel")}
+                      variant="ghost"
+                      disabled={busy() !== null}
+                      class="h-8 shrink-0 px-3"
+                      onClick={() => {
+                        setHandoffOpen(false)
+                        setHandoffText("")
+                      }}
+                    />
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={!liveGoal() && handoff().handoff}>
+                {(pending) => (
+                  <div class="border-b px-3 py-2">
+                    <div
+                      data-component="goal-handoff-claim-panel"
+                      class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                      style={runningInlinePanelStyle("handoff")}
+                    >
+                      <div class="min-w-0 flex-1">
+                        <div class="text-11-regular font-bold uppercase tracking-[0.08em] text-indigo-50">
+                          {language.t("session.goal.handoff.pending")}
+                        </div>
+                        <div class="mt-1 truncate text-12-regular text-indigo-100/78">
+                          {cleanText(pending().state.condition)}
+                        </div>
+                        <Show when={pending().note}>
+                          {(note) => <div class="mt-1 truncate text-11-regular text-indigo-100/62">{note()}</div>}
+                        </Show>
+                      </div>
+                      <ActionButton
+                        label={language.t("session.goal.action.claim")}
+                        variant="primary"
+                        busy={busy() === "claim"}
+                        disabled={busy() !== null || !props.sessionID}
+                        class="h-8 shrink-0 px-3"
+                        onClick={() => void claimGoalHandoff()}
+                      />
+                    </div>
+                  </div>
+                )}
+              </Show>
+
+              <Show when={handoff().corrupt}>
+                <div class="border-b px-3 py-2">
+                  <div
+                    data-component="goal-handoff-corrupt-panel"
+                    class="rounded-lg border px-3 py-2 text-12-regular text-orange-100/82"
+                    style={runningInlinePanelStyle("stop")}
+                  >
+                    {language.t("session.goal.handoff.corrupt")}
                   </div>
                 </div>
               </Show>

@@ -109,6 +109,31 @@ describe("runGoalControlStateFile", () => {
     expect(next.metadata.previousId).toBe("goal-1")
   })
 
+  test("creates and claims a handoff through the native bridge", async () => {
+    await using tmp = await tmpdir()
+    await seedGoal(tmp.path)
+
+    const handoffResult = await runGoalControlStateFile(tmp.path, "handoff Desktop note", 2000)
+    const handoff = await readJson<{ note?: string; state: GoalControlState }>(
+      tmp.path,
+      ".opencode/.goal-handoff.json",
+    )
+
+    expect(handoffResult.output).toContain("Handoff written")
+    expect(handoff.note).toBe("Desktop note")
+    expect(handoff.state.id).toBe("goal-1")
+
+    await runGoalControlStateFile(tmp.path, "clear", 3000)
+    const claimResult = await runGoalControlStateFile(tmp.path, "claim", 4000)
+    const claimed = await readGoal(tmp.path)
+
+    expect(claimResult.output).toContain("Handoff claimed")
+    expect(claimed.id).toBe("goal-1")
+    expect(claimed.status).toBe("active")
+    expect(claimed.startedAt).toBe(4000)
+    expect(await Bun.file(join(tmp.path, ".opencode", ".goal-handoff.json")).exists()).toBe(false)
+  })
+
   test("rejects controls that are not available in the native bridge", async () => {
     await using tmp = await tmpdir()
     await seedGoal(tmp.path)

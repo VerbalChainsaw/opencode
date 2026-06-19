@@ -6,6 +6,7 @@ import {
   type GoalState,
   cleanText,
   isGoalStateShape,
+  readHandoffFromSdk,
   readGoalFromSdk,
   selectRunnableChainSteps,
 } from "./goal-panel-pure"
@@ -14,6 +15,7 @@ import {
   goalSteerPrompt,
   startGoalRun,
   steerGoalRun,
+  stopGoalRun,
   type GoalCommandClient,
 } from "./goal-panel-actions"
 import { goalIdleMinutes, isGoalStalled } from "./goal-panel-lifecycle"
@@ -101,7 +103,8 @@ describe("goal panel mission-control contracts", () => {
 
   test("stop confirmation renders in a separate callout instead of reordering the main action row", async () => {
     const src = await goalPanelSource()
-    expect(src).toMatch(/label=\{language\.t\("session\.goal\.action\.stop"\)\}[\s\S]*setConfirmingClear\(true\)/)
+    expect(src).toMatch(/confirmingClear\(\)[\s\S]*session\.goal\.action\.confirmStop[\s\S]*session\.goal\.action\.stop/)
+    expect(src).toMatch(/if \(confirmingClear\(\)\) void stopGoal\(\)[\s\S]*else setConfirmingClear\(true\)/)
     expect(src).toMatch(/<Show when=\{liveGoal\(\) && confirmingClear\(\)\}>[\s\S]*session\.goal\.action\.confirmStop/)
   })
 
@@ -134,14 +137,12 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("setControlError(null)")
   })
 
-  test("confirmed stop clears goal state without using the permission-bound abort endpoint", async () => {
+  test("confirmed stop clears goal state and aborts the active session turn", async () => {
     const src = await goalPanelSource()
     const stopGoal = src.match(/const stopGoal = async \(\) => \{[\s\S]*?\n  \}/)
     expect(stopGoal).toBeTruthy()
-    expect(stopGoal![0]).toContain("executeGoalCommand")
-    expect(stopGoal![0]).toContain('arguments: "clear"')
-    expect(stopGoal![0]).not.toContain("stopGoalRun")
-    expect(stopGoal![0]).not.toContain("abort")
+    expect(stopGoal![0]).toContain("stopGoalRun")
+    expect(stopGoal![0]).toContain("abortActiveTurn: sync.data.session_working(sessionID)")
     expect(src).toMatch(/onClick=\{\(\) => void stopGoal\(\)\}/)
     expect(src).not.toContain('onClick={() => void runAction("clear")}')
   })
@@ -520,7 +521,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-running-step"')
     expect(src).toContain("runningMetricTileStyle")
     expect(src).toContain('data-component="goal-running-command-strip"')
-    expect(src).toContain("grid grid-cols-4 gap-1 rounded-md border p-1")
+    expect(src).toContain("grid grid-cols-5 gap-1 rounded-md border p-1")
     expect(src).toContain("flex h-9 min-w-0 items-center justify-between")
     expect(src).toContain('data-component="goal-running-inline-panel"')
     expect(src).toContain("runningInlinePanelStyle")
@@ -814,6 +815,22 @@ describe("goal panel mission-control contracts", () => {
     expect(steerGoal).toContain("if (shouldWakeRun && props.sessionID)")
     expect(steerGoal).toContain('setSteerText("")')
     expect(steerGoal).toContain("setSteerOpen(false)")
+
+    const handoffStart = src.indexOf("const handoffGoal = async () => {")
+    const handoffEnd = src.indexOf("const claimGoalHandoff =", handoffStart)
+    expect(handoffStart).toBeGreaterThan(-1)
+    expect(handoffEnd).toBeGreaterThan(handoffStart)
+    const handoffGoal = src.slice(handoffStart, handoffEnd)
+    expect(handoffGoal).toContain('sendGoalCommand("handoff"')
+    expect(handoffGoal).not.toContain("startGoalRun")
+
+    const claimStart = src.indexOf("const claimGoalHandoff = async () => {")
+    const claimEnd = src.indexOf("const filteredTemplates =", claimStart)
+    expect(claimStart).toBeGreaterThan(-1)
+    expect(claimEnd).toBeGreaterThan(claimStart)
+    const claimGoal = src.slice(claimStart, claimEnd)
+    expect(claimGoal).toContain('sendGoalCommand("claim", "claim")')
+    expect(claimGoal).toContain("startGoalRun")
   })
 
   test("live run-order delete removes only pending steps through the chain command", async () => {
@@ -1241,6 +1258,68 @@ describe("readGoalFromSdk", () => {
     const { state, corrupt } = await readGoalFromSdk(sdk)
     expect(corrupt).toBe(false)
     expect(state?.status).toBe("cleared")
+  })
+})
+
+describe("readHandoffFromSdk", () => {
+  test("returns absent handoff when SDK read throws", async () => {
+    const sdk = mockSdk({
+      read: async () => {
+        throw new Error("ENOENT")
+      },
+    })
+    await expect(readHandoffFromSdk(sdk)).resolves.toEqual({
+      handoff: null,
+      corrupt: false,
+      loaded: true,
+    })
+  })
+
+  test("accepts valid handoff payloads and sanitizes note text", async () => {
+    const payload = {
+      createdAt: "2026-06-19T01:02:03.000Z",
+      state: validState,
+      note: "next\u202e operator",
+    }
+    const sdk = mockSdk({ read: async () => ({ data: { type: "text", content: JSON.stringify(payload) } }) })
+    await expect(readHandoffFromSdk(sdk)).resolves.toEqual({
+      handoff: {
+        createdAt: payload.createdAt,
+        state: validState,
+        note: "next operator",
+      },
+      corrupt: false,
+      loaded: true,
+    })
+  })
+
+  test("marks malformed handoff JSON as corrupt", async () => {
+    const sdk = mockSdk({ read: async () => ({ data: "{not json" }) })
+    await expect(readHandoffFromSdk(sdk)).resolves.toEqual({
+      handoff: null,
+      corrupt: true,
+      loaded: true,
+    })
+  })
+
+  test("marks handoff with invalid embedded state as corrupt", async () => {
+    const sdk = mockSdk({
+      read: async () => ({ data: JSON.stringify({ createdAt: "2026-06-19T01:02:03.000Z", state: { id: "x" } }) }),
+    })
+    await expect(readHandoffFromSdk(sdk)).resolves.toEqual({
+      handoff: null,
+      corrupt: true,
+      loaded: true,
+    })
+  })
+
+  test("rejects over-size handoff content before parsing", async () => {
+    const sdk = mockSdk({ read: async () => ({ data: "x".repeat(300_000) }) })
+    await expect(readHandoffFromSdk(sdk)).resolves.toEqual({
+      handoff: null,
+      corrupt: true,
+      loaded: true,
+    })
   })
 })
 
@@ -1674,6 +1753,66 @@ describe("startGoalRun", () => {
     )
 
     expect(ok).toBe(false)
+  })
+})
+
+describe("stopGoalRun", () => {
+  test("clears the goal and aborts an active session turn", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const abort = mock(async () => undefined)
+
+    const result = await stopGoalRun(
+      {
+        client: { post },
+        session: { abort },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(post).toHaveBeenCalledWith({
+      url: "/experimental/goal/control/{toolID}",
+      path: { toolID: "goal_control" },
+      query: { directory: "C:\\repo\\project" },
+      body: {
+        directory: "C:\\repo\\project",
+        sessionID: "session-1",
+        arguments: { command: "clear" },
+      },
+    })
+    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1" })
+  })
+
+  test("does not abort when the session is already idle", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const abort = mock(async () => undefined)
+
+    const result = await stopGoalRun(
+      {
+        client: { post },
+        session: { abort },
+      },
+      { sessionID: "session-1", abortActiveTurn: false },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(abort).not.toHaveBeenCalled()
+  })
+
+  test("surfaces a warning when goal clear works but abort is unavailable", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+
+    const result = await stopGoalRun(
+      {
+        client: { post },
+      },
+      { sessionID: "session-1", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      warning: "Goal cleared, but this OpenCode client cannot abort the active turn.",
+    })
   })
 })
 

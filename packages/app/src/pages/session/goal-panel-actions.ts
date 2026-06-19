@@ -37,6 +37,7 @@ export interface GoalCommandClient {
     control?: (this: { client?: GoalTransport }, args: GoalControlArguments) => Promise<unknown>
   }
   session?: {
+    abort?: (args: { sessionID: string }) => Promise<unknown>
     prompt?: (args: {
       sessionID: string
       directory?: string
@@ -56,7 +57,7 @@ export interface GoalCommandClient {
   }
 }
 
-export type GoalControlResult = { ok: true } | { ok: false; error: string }
+export type GoalControlResult = { ok: true; warning?: string } | { ok: false; error: string }
 
 const START_GOAL_PROMPT =
   "Begin working toward the current OpenGoal goal now. Read .opencode/.goal-state.json for the condition, constraints, steering, and verification command. Continue until the goal is achieved, blocked, or the constraints require stopping."
@@ -199,6 +200,34 @@ export async function executeGoalCommand(
 
 export async function startGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput) {
   return sendGoalPrompt(client, input, START_GOAL_PROMPT)
+}
+
+export async function stopGoalRun(
+  client: GoalCommandClient,
+  input: {
+    sessionID: string
+    directory?: string
+    workspace?: string
+    abortActiveTurn?: boolean
+  },
+) {
+  const result = await executeGoalCommand(client, {
+    sessionID: input.sessionID,
+    arguments: "clear",
+    directory: input.directory,
+    workspace: input.workspace,
+  })
+  if (!result.ok) return result
+  if (!input.abortActiveTurn) return result
+  if (!client.session?.abort) {
+    return { ok: true, warning: "Goal cleared, but this OpenCode client cannot abort the active turn." } as const
+  }
+  try {
+    await client.session.abort({ sessionID: input.sessionID })
+    return result
+  } catch (error) {
+    return { ok: true, warning: `Goal cleared, but the active turn did not abort: ${errorText(error)}` } as const
+  }
 }
 
 export async function steerGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput, note: string) {

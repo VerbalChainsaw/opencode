@@ -30,6 +30,7 @@ target
 opencode-dev
 UPCOMING_CHANGELOG.md
 logs/
+.hermes/runtime-logs/
 *.bun-build
 tsconfig.tsbuildinfo
 .aider*

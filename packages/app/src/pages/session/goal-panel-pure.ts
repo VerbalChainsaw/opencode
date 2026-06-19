@@ -10,6 +10,8 @@
 
 /** File path inside the project where the plugin writes its state. */
 export const STATE_PATH = ".opencode/.goal-state.json"
+/** File path for a pending goal handoff created by `/goal handoff`. */
+export const HANDOFF_PATH = ".opencode/.goal-handoff.json"
 /** Hard cap on the state-file body we are willing to JSON.parse.
  *  The opencode-autogoal plugin caps writes at 256KB, but the renderer
  *  can't import that constant across repos. A 1MB cap gives a generous
@@ -17,6 +19,9 @@ export const STATE_PATH = ".opencode/.goal-state.json"
  *  malicious state file from OOM-ing the SolidJS renderer's reactivity
  *  layer. */
 export const MAX_RENDERER_STATE_BYTES = 1 * 1024 * 1024
+/** The plugin caps handoff files at 256KB. Keep the renderer cap aligned
+ *  so a planted handoff cannot force JSON.parse on an unbounded payload. */
+export const MAX_RENDERER_HANDOFF_BYTES = 256 * 1024
 
 /** Minimal mirror of the plugin's GoalState — only the fields this
  *  panel renders. The plugin's own validateGoalState is not importable
@@ -498,6 +503,26 @@ export interface GoalStore {
   loaded: boolean
 }
 
+export interface GoalHandoff {
+  createdAt: string
+  state: GoalState
+  note?: string
+}
+
+export interface GoalHandoffStore {
+  handoff: GoalHandoff | null
+  corrupt: boolean
+  loaded: boolean
+}
+
+function workspaceFileContent(raw: unknown): string | null {
+  return typeof raw === "string"
+    ? raw
+    : raw && typeof raw === "object" && typeof (raw as { content?: unknown }).content === "string"
+      ? (raw as { content: string }).content
+      : null
+}
+
 /** Pure fetch + parse. Pulled out of the hook so it can be unit-tested
  *  with a mock SDK and so the hook itself stays a thin lifecycle
  *  wrapper. Returns the next store snapshot the caller should apply. */
@@ -507,13 +532,7 @@ export async function readGoalFromSdk(sdk: GoalSdkClient): Promise<GoalStore> {
     // The SDK's FileContent is `{ type, content }` (object), but accept a
     // plain string too so an SDK shape change degrades to "still works"
     // rather than a silently-hidden tab.
-    const raw: unknown = res.data
-    const content =
-      typeof raw === "string"
-        ? raw
-        : raw && typeof raw === "object" && typeof (raw as { content?: unknown }).content === "string"
-          ? (raw as { content: string }).content
-          : null
+    const content = workspaceFileContent(res.data)
     if (!content || content.trim().length === 0) {
       return { state: null, corrupt: false, loaded: true }
     }
@@ -538,5 +557,44 @@ export async function readGoalFromSdk(sdk: GoalSdkClient): Promise<GoalStore> {
     // Read error: file missing or unreadable. A missing file is the
     // normal "no goal" case — never alarm on it.
     return { state: null, corrupt: false, loaded: true }
+  }
+}
+
+export async function readHandoffFromSdk(sdk: GoalSdkClient): Promise<GoalHandoffStore> {
+  try {
+    const res = await sdk.client.file.read({ path: HANDOFF_PATH })
+    const content = workspaceFileContent(res.data)
+    if (!content || content.trim().length === 0) {
+      return { handoff: null, corrupt: false, loaded: true }
+    }
+    if (content.length > MAX_RENDERER_HANDOFF_BYTES) {
+      return { handoff: null, corrupt: true, loaded: true }
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      return { handoff: null, corrupt: true, loaded: true }
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { handoff: null, corrupt: true, loaded: true }
+    }
+    const record = parsed as Record<string, unknown>
+    if (typeof record.createdAt !== "string" || !isGoalStateShape(record.state)) {
+      return { handoff: null, corrupt: true, loaded: true }
+    }
+    return {
+      handoff: {
+        createdAt: cleanText(record.createdAt),
+        state: record.state,
+        ...(typeof record.note === "string" && cleanText(record.note).trim()
+          ? { note: cleanText(record.note).trim() }
+          : {}),
+      },
+      corrupt: false,
+      loaded: true,
+    }
+  } catch {
+    return { handoff: null, corrupt: false, loaded: true }
   }
 }

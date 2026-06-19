@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
@@ -53,6 +53,12 @@ interface GoalControlChain {
     createdAt: number
     setBy: "chain"
   }
+}
+
+interface GoalControlHandoff {
+  createdAt: string
+  state: GoalControlState
+  note?: string
 }
 
 export interface GoalControlState {
@@ -146,6 +152,8 @@ export async function runGoalControlStateFile(
   if (action === "steer") return appendSteering(directory, tokens.slice(1).join(" "), now)
   if (action === "unsteer") return clearSteering(directory, now)
   if (action === "condition") return editCondition(directory, tokens.slice(1).join(" "), now)
+  if (action === "handoff") return createHandoff(directory, tokens.slice(1).join(" "), now)
+  if (action === "claim") return claimHandoff(directory, now)
   if (action === "template") return editTemplate(directory, command, now)
   if (action === "chain") return editChain(directory, command, tokens, now)
 
@@ -304,6 +312,56 @@ async function editCondition(directory: string, condition: string, now: number) 
   return result(`Condition updated (${oldValue.length} -> ${cleaned.length} chars).`, "condition", now)
 }
 
+async function createHandoff(directory: string, note: string, now: number) {
+  const state = await requireGoal(directory)
+  if (state.status === "cleared" || state.status === "achieved") {
+    throw new Error(`Cannot handoff a ${state.status} goal.`)
+  }
+  if (await fileExists(goalHandoffPath(directory))) {
+    throw new Error("A handoff is already pending. Claim it first or delete the file.")
+  }
+  const cleanNote = sanitizePromptText(note).slice(0, 500).trim()
+  const payload: GoalControlHandoff = {
+    createdAt: new Date(now).toISOString(),
+    state: {
+      ...state,
+      condition: sanitizePromptText(state.condition),
+      command: typeof state.command === "string" ? sanitizePromptText(state.command) : state.command,
+      evaluationHistory: state.evaluationHistory.slice(-10),
+    },
+    ...(cleanNote ? { note: cleanNote } : {}),
+  }
+  await writeJsonAtomic(goalHandoffPath(directory), payload)
+  return result("Handoff written. A future session can claim it with `/goal claim`.", "handoff", now)
+}
+
+async function claimHandoff(directory: string, now: number) {
+  const current = await readGoalStateOptional(directory)
+  if (current && (current.status === "active" || current.status === "paused")) {
+    throw new Error("A goal is already active. Clear it before claiming the handoff.")
+  }
+  const handoff = await readHandoffOptional(directory)
+  if (!handoff) throw new Error("No handoff to claim.")
+  const resumed: GoalControlState = {
+    ...handoff.state,
+    condition: sanitizePromptText(handoff.state.condition),
+    command:
+      typeof handoff.state.command === "string" ? sanitizePromptText(handoff.state.command) : handoff.state.command,
+    status: "active",
+    startedAt: now,
+    resumedAt: now,
+    completedAt: null,
+    pausedAt: null,
+    evaluationHistory: handoff.state.evaluationHistory.slice(-10),
+    metadata: sanitizeControlMetadata(handoff.state.metadata),
+  }
+  await writeGoalState(directory, resumed)
+  await unlink(goalHandoffPath(directory)).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+  })
+  return result("Handoff claimed. Goal resumed.", "claim", now)
+}
+
 async function editTemplate(directory: string, command: string, now: number) {
   const trimmed = command.trim()
   if (trimmed.startsWith(TEMPLATE_IMPORT_PREFIX)) {
@@ -456,6 +514,30 @@ async function readGoalChainOptional(directory: string): Promise<GoalControlChai
   return sanitizeGoalChain(JSON.parse(content))
 }
 
+async function readHandoffOptional(directory: string): Promise<GoalControlHandoff | null> {
+  let content: string
+  try {
+    content = await readFile(goalHandoffPath(directory), "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+    throw error
+  }
+  if (content.length > 256 * 1024) throw new Error("Handoff file is too large.")
+  const parsed = JSON.parse(content)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Handoff file is invalid.")
+  const handoff = parsed as { createdAt?: unknown; state?: unknown; note?: unknown }
+  if (typeof handoff.createdAt !== "string" || !isGoalControlState(handoff.state)) {
+    throw new Error("Handoff file is invalid.")
+  }
+  return {
+    createdAt: sanitizePromptText(handoff.createdAt),
+    state: handoff.state,
+    ...(typeof handoff.note === "string" && sanitizePromptText(handoff.note).trim()
+      ? { note: sanitizePromptText(handoff.note).trim().slice(0, 500) }
+      : {}),
+  }
+}
+
 async function requireGoalChain(directory: string) {
   const chain = await readGoalChainOptional(directory)
   if (!chain) throw new Error("No goal chain.")
@@ -559,12 +641,26 @@ function goalChainPath(directory: string) {
   return join(directory, ".opencode", ".goal-chain.json")
 }
 
+function goalHandoffPath(directory: string) {
+  return join(directory, ".opencode", ".goal-handoff.json")
+}
+
 function templatePath(directory: string, id: string) {
   return join(directory, ".opencode", "goals", `${id}.json`)
 }
 
 function templateSnapshotPath(directory: string) {
   return join(directory, ".opencode", "goal-templates.json")
+}
+
+async function fileExists(path: string) {
+  try {
+    await access(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
+    throw error
+  }
 }
 
 async function upsertTemplateSnapshot(directory: string, id: string, payload: Record<string, unknown>) {
@@ -803,6 +899,37 @@ function sanitizeVariables(value: unknown) {
     }
   }
   return Object.keys(out).length > 0 ? out : undefined
+}
+
+function sanitizeControlMetadata(value: unknown): GoalControlState["metadata"] {
+  const metadata = isRecord(value) ? value : {}
+  const out: GoalControlState["metadata"] = {
+    setBy: isSetBy(metadata.setBy) ? metadata.setBy : "user",
+  }
+  if (typeof metadata.previousId === "string") out.previousId = sanitizePromptText(metadata.previousId).slice(0, 160)
+  if (isNumber(metadata.restartedAt)) out.restartedAt = metadata.restartedAt
+  if (typeof metadata.chainId === "string") out.chainId = sanitizePromptText(metadata.chainId).slice(0, 160)
+  if (isNumber(metadata.chainStep)) out.chainStep = metadata.chainStep
+  if (isNumber(metadata.chainTotal)) out.chainTotal = metadata.chainTotal
+  if (Array.isArray(metadata.steering)) {
+    const steering = metadata.steering
+      .filter((item): item is { at: number; note: string } => isRecord(item) && isNumber(item.at) && typeof item.note === "string")
+      .map((item) => ({ at: item.at, note: sanitizePromptText(item.note).slice(0, 500) }))
+      .filter((item) => item.note.length > 0)
+      .slice(-20)
+    if (steering.length > 0) out.steering = steering
+  }
+  if (isRecord(metadata.webhook) && typeof metadata.webhook.url === "string" && Array.isArray(metadata.webhook.on)) {
+    const on = metadata.webhook.on.filter(isStatus)
+    if (on.length > 0) {
+      out.webhook = {
+        url: sanitizePromptText(metadata.webhook.url).slice(0, 2048),
+        on,
+        ...(metadata.webhook.allowLocal === true ? { allowLocal: true } : {}),
+      }
+    }
+  }
+  return out
 }
 
 function parseIndex(value: string | undefined, label: string) {
