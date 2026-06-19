@@ -3,7 +3,19 @@ import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/prom
 import { dirname, join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
-type GoalControlStatus = "active" | "paused" | "achieved" | "cleared"
+// Canonical types from the plugin's state layer — single source of truth.
+// control-state.ts is the EXPERIMENTAL API backend; it delegates type
+// authority to goal-state.ts so the two implementations cannot drift.
+import type { GoalStatus, Verification } from "./goal-state.js"
+import type { GoalPinnedModel } from "./goal-chain.js"
+
+// Type aliases for backward compat with existing control-state callers.
+// These are the SAME types, re-exported under the control-state naming
+// convention so the experimental API surface is unchanged.
+type GoalControlStatus = GoalStatus
+type GoalControlVerification = Verification
+type GoalControlPinnedModel = GoalPinnedModel
+
 type GoalControlSetBy = "user" | "template" | "chain"
 type TemplateCategory =
   | "Planning"
@@ -17,12 +29,6 @@ type TemplateCategory =
 type TemplateGate = "required" | "pass" | "verify" | "review"
 type TemplateTone = "violet" | "blue" | "orange" | "emerald" | "fuchsia" | "sky"
 type TemplateElevation = "flat" | "raised"
-type GoalControlPinnedModel = { providerID: string; modelID: string }
-type GoalControlVerification =
-  | { type: "shell"; command: string }
-  | { type: "http"; url: string; expectStatus?: number; expectBody?: string; timeoutMs?: number }
-  | { type: "file"; path: string; exists?: boolean; contains?: string }
-  | { type: "marker" }
 
 interface GoalControlChainStep {
   condition: string
