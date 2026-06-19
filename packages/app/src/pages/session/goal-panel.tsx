@@ -2621,7 +2621,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 variant="primary"
                                 busy={busy() === "pause" || busy() === "resume"}
                                 disabled={busy() !== null || goalCommandUnavailable()}
-                                class="h-8 px-3 text-12-medium"
+                                class="h-7 px-3 text-12-medium"
                                 onClick={() => {
                                   const next = action()
                                   setOptimisticStatus(next === "pause" ? "paused" : "active")
@@ -2915,15 +2915,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
                                       }
-                                      class="h-6 w-full rounded border border-border-base bg-background-base/65 px-0.5 text-center text-12-medium font-semibold tabular-nums text-text-base outline-none"
+                                      class="h-5 w-full rounded px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base bg-transparent outline-none"
                                     />
                                   </label>
                                 </span>
                                 <span data-component="goal-chain-step-actions" class="flex min-w-0 shrink-0 items-center justify-end gap-1 opacity-100">
                                   <span
                                     data-component="goal-chain-step-runtime"
-                                    class="mr-0.5 grid h-9 min-w-0 flex-1 grid-rows-2 justify-items-start rounded-md border px-1.5 py-0.5 text-left"
-                                    style={chainStepSoftStyle(step)}
+                                    class="mr-0.5 grid min-w-0 flex-1 grid-rows-2 justify-items-start rounded px-1 py-0.5 text-left"
                                     title={stepRuntimeTitle(step)}
                                   >
                                     <span class="max-w-full truncate text-[10px] font-semibold leading-4 text-text-base">
@@ -3243,13 +3242,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             </span>
                           </div>
                           <div data-component="goal-action-editor-footer" class="mt-3 flex flex-wrap gap-1">
-                            <ActionButton
-                              label={editingChainStepID() ? "Update Step" : "+ Chain"}
-                              variant={editingChainStepID() ? "primary" : "secondary"}
-                              class="flex-1"
-                              disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
-                              onClick={() => (editingChainStepID() ? updateEditingChainStep() : addActionDraftToChain())}
-                            />
+                            <Show when={editingChainStepID()}>
+                              <ActionButton
+                                label={language.t("session.goal.template.updateRunStep")}
+                                variant="primary"
+                                class="flex-1"
+                                disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
+                                onClick={() => updateEditingChainStep()}
+                              />
+                            </Show>
                             <ActionButton
                               label={language.t("session.goal.template.save")}
                               variant="primary"
