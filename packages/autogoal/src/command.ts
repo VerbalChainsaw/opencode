@@ -54,11 +54,30 @@ function parseInlineChainStartPayload(raw: string):
   if (Buffer.byteLength(raw, "utf-8") > MAX_CHAIN_SIZE) {
     return { ok: false, error: `Chain payload too large (max ${MAX_CHAIN_SIZE} bytes / 256KB).` };
   }
+  // Reject deeply-nested payloads before JSON.parse to prevent CPU DoS.
+  // Count opening braces/brackets outside of JSON strings. A chain definition
+  // is shallow by nature, so anything beyond this threshold is suspect.
+  const MAX_JSON_DEPTH = 256;
+  let depth = 0;
+  let maxDepth = 0;
+  let inString = false;
+  let escape = false;
+  for (const ch of raw) {
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{" || ch === "[") { depth++; if (depth > maxDepth) maxDepth = depth; }
+    else if (ch === "}" || ch === "]") { depth--; }
+  }
+  if (maxDepth > MAX_JSON_DEPTH) {
+    return { ok: false, error: `Chain payload exceeds maximum nesting depth of ${MAX_JSON_DEPTH} levels.` };
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch (err: any) {
-    return { ok: false, error: `Failed to parse chain JSON: ${err?.message ?? err}` };
+  } catch (err: unknown) {
+    return { ok: false, error: `Failed to parse chain JSON: ${err instanceof Error ? err.message : String(err)}` };
   }
   const record = parsed && typeof parsed === "object" && !Array.isArray(parsed)
     ? parsed as Record<string, unknown>
@@ -724,20 +743,31 @@ function dialResultToEnvelope(
   return { kind: "write-failed", message: res.error ?? `${defaultMsg} failed.` };
 }
 
+/** Format a structured result into the agent-facing text the OpenCode
+ *  agent sees in the conversation. Pure — no side effects, no state reads.
+ *  Used by both the legacy dispatchGoalCommand (CLI backward compat) and
+ *  the command.execute.before hook (which formerly called dispatchGoalCommand
+ *  as a second dispatch, causing double state mutation — v0.7.1 fix). */
+export function formatGoalCommandResult(result: GoalCommandResult): string {
+  // Two non-relayed paths: set (full briefing with agent instructions)
+  // and resume (bare "continue working toward it" string).
+  if (result.kind === "set") return `${result.message}\n\n${result.agentExtras ?? ""}`.trim();
+  if (result.kind === "success" && result.message.startsWith("Goal resumed — continue working toward it now:")) {
+    return result.message;
+  }
+  // Everything else: relay to user so the agent reports the result
+  // without trying to act on it.
+  return relayToUser(result.message);
+}
+
+export const presentGoalCommandResult = formatGoalCommandResult;
+
 /** The prose presenter. Reproduces the byte-identical reply strings the
  *  pre-refactor dispatcher produced, so the OpenCode agent path keeps
  *  working without any behavioral change. The CLI uses the structured
  *  function directly and bypasses this. */
 export function dispatchGoalCommand(directory: string, rawArguments: string): string {
-  const res = dispatchGoalCommandStructured(directory, rawArguments);
-  // Two non-relayed success paths: set (returns full briefing) and
-  // resume with state (returns the "continue working toward it now"
-  // bare string). Everything else is relay-wrapped.
-  if (res.kind === "set") return `${res.message}\n\n${res.agentExtras}`;
-  if (res.kind === "success" && res.message.startsWith("Goal resumed — continue working toward it now:")) {
-    return res.message;
-  }
-  return relayToUser(res.message);
+  return formatGoalCommandResult(dispatchGoalCommandStructured(directory, rawArguments));
 }
 
 // parsePositiveInt is imported from goal-state.ts — single source of truth.

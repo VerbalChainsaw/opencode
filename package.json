@@ -19,7 +19,9 @@
     "prepare": "husky",
     "random": "echo 'Random script'",
     "sso": "aws sso login --sso-session=opencode --no-browser",
-    "test": "echo 'do not run tests from root' && exit 1"
+    "test:autogoal": "cd packages/autogoal && npm test",
+    "test:opencode-bridge": "cd packages/opencode && bun test test/goal-control-state.test.ts",
+    "test": "bun run test:autogoal && bun run test:opencode-bridge"
   },
   "workspaces": {
     "packages": [

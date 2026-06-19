@@ -126,6 +126,14 @@ describe("goal panel mission-control contracts", () => {
     expect(disabledLines.join("\n")).not.toContain("goalCommandMissing")
   })
 
+  test("native bridge failures are surfaced in the panel instead of failing silently", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("controlError")
+    expect(src).toContain('data-component="goal-control-error"')
+    expect(src).toContain("setControlError(result.error)")
+    expect(src).toContain("setControlError(null)")
+  })
+
   test("confirmed stop clears goal state without using the permission-bound abort endpoint", async () => {
     const src = await goalPanelSource()
     const stopGoal = src.match(/const stopGoal = async \(\) => \{[\s\S]*?\n  \}/)
@@ -643,7 +651,7 @@ describe("goal panel mission-control contracts", () => {
     expect(sendGoalCommandStart).toBeGreaterThan(-1)
     expect(sendGoalCommandEnd).toBeGreaterThan(sendGoalCommandStart)
     const sendGoalCommand = src.slice(sendGoalCommandStart, sendGoalCommandEnd)
-    expect(sendGoalCommand).toContain('await refreshGoalSurfaces({ templates: ok && label === "template" })')
+    expect(sendGoalCommand).toContain('await refreshGoalSurfaces({ templates: result.ok && label === "template" })')
     expect(src).toContain("if (options.templates) await refreshTemplates()")
     expect(sendGoalCommand).not.toContain('if (ok && label === "template") refreshTemplates()')
 
@@ -1237,19 +1245,19 @@ describe("readGoalFromSdk", () => {
 })
 
 describe("executeGoalCommand", () => {
-  test("returns true when the deterministic goal control POST endpoint resolves", async () => {
+  test("returns ok when the deterministic goal control POST endpoint resolves", async () => {
     const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
     const sessionCommand = mock(async () => {
       throw new Error("session.command must not be used for GUI controls")
     })
-    const ok = await executeGoalCommand(
+    const result = await executeGoalCommand(
       {
         session: { command: sessionCommand },
         tool: { client: { post } },
       },
       { sessionID: "session-1", arguments: 'set "pass tests"', directory: "C:\\repo\\project" },
     )
-    expect(ok).toBe(true)
+    expect(result).toEqual({ ok: true })
     expect(sessionCommand).not.toHaveBeenCalled()
     expect(post).toHaveBeenCalledWith({
       url: "/experimental/goal/control/{toolID}",
@@ -1272,7 +1280,7 @@ describe("executeGoalCommand", () => {
       throw new Error("session.promptAsync must not be used for GUI controls")
     })
 
-    const ok = await executeGoalCommand(
+    const result = await executeGoalCommand(
       {
         client: { post },
         session: { prompt, promptAsync },
@@ -1280,7 +1288,7 @@ describe("executeGoalCommand", () => {
       { sessionID: "session-1", arguments: "pause", directory: "C:\\repo\\project" },
     )
 
-    expect(ok).toBe(true)
+    expect(result).toEqual({ ok: true })
     expect(post).toHaveBeenCalledTimes(1)
     expect(prompt).not.toHaveBeenCalled()
     expect(promptAsync).not.toHaveBeenCalled()
@@ -1294,13 +1302,13 @@ describe("executeGoalCommand", () => {
         calls.push(args)
       },
     }
-    const ok = await executeGoalCommand(
+    const result = await executeGoalCommand(
       {
         tool,
       },
       { sessionID: "session-1", arguments: "turns 25", directory: "C:\\repo\\project" },
     )
-    expect(ok).toBe(true)
+    expect(result).toEqual({ ok: true })
     expect(calls).toEqual([
       {
         directory: "C:\\repo\\project",
@@ -1316,7 +1324,7 @@ describe("executeGoalCommand", () => {
     const control = mock(async () => {
       throw new Error("generated control method should not be used when raw POST exists")
     })
-    const ok = await executeGoalCommand(
+    const result = await executeGoalCommand(
       {
         tool: {
           client: { post },
@@ -1325,7 +1333,7 @@ describe("executeGoalCommand", () => {
       },
       { sessionID: "session-1", arguments: "template import x {}", directory: "C:\\repo\\project" },
     )
-    expect(ok).toBe(true)
+    expect(result).toEqual({ ok: true })
     expect(post).toHaveBeenCalled()
     expect(control).not.toHaveBeenCalled()
   })
@@ -1335,14 +1343,14 @@ describe("executeGoalCommand", () => {
     const control = mock(async () => {
       throw new Error("generated control method should not be used when root POST exists")
     })
-    const ok = await executeGoalCommand(
+    const result = await executeGoalCommand(
       {
         client: { post },
         tool: { control },
       },
       { sessionID: "session-1", arguments: "template import x {}", directory: "C:\\repo\\project" },
     )
-    expect(ok).toBe(true)
+    expect(result).toEqual({ ok: true })
     expect(post).toHaveBeenCalledWith({
       url: "/experimental/goal/control/{toolID}",
       path: { toolID: "goal_control" },
@@ -1356,8 +1364,8 @@ describe("executeGoalCommand", () => {
     expect(control).not.toHaveBeenCalled()
   })
 
-  test("returns false when the deterministic goal control endpoint rejects", async () => {
-    const ok = await executeGoalCommand(
+  test("returns failure details when every deterministic goal control transport rejects", async () => {
+    const result = await executeGoalCommand(
       {
         tool: {
           client: {
@@ -1372,7 +1380,10 @@ describe("executeGoalCommand", () => {
       },
       { sessionID: "session-1", arguments: "pause" },
     )
-    expect(ok).toBe(false)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain("boom")
+    }
   })
 
   test("uses the raw SDK transport when the generated control method is unavailable", async () => {
@@ -1380,14 +1391,14 @@ describe("executeGoalCommand", () => {
     const sessionCommand = mock(async () => {
       throw new Error("session.command must not be used for GUI controls")
     })
-    const ok = await executeGoalCommand(
+    const result = await executeGoalCommand(
       {
         session: { command: sessionCommand },
         tool: { client: { post } },
       },
       { sessionID: "session-1", arguments: "turns 25", directory: "C:\\repo\\project" },
     )
-    expect(ok).toBe(true)
+    expect(result).toEqual({ ok: true })
     expect(sessionCommand).not.toHaveBeenCalled()
     expect(post).toHaveBeenCalledWith({
       url: "/experimental/goal/control/{toolID}",
@@ -1399,7 +1410,7 @@ describe("executeGoalCommand", () => {
 
   test("does not fall back to session.command when the control endpoint is missing", async () => {
     const calls: Array<{ sessionID: string; command: string; arguments: string }> = []
-    const ok = await executeGoalCommand(
+    const result = await executeGoalCommand(
       {
         session: {
           command: async (args) => {
@@ -1409,7 +1420,10 @@ describe("executeGoalCommand", () => {
       },
       { sessionID: "session-1", arguments: "turns 25" },
     )
-    expect(ok).toBe(false)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain("native goal control bridge is unavailable")
+    }
     expect(calls).toEqual([])
   })
 })

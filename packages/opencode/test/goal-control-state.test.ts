@@ -222,6 +222,26 @@ describe("runGoalControlStateFile", () => {
     expect(goal.metadata).toMatchObject({ setBy: "chain", chainStep: 0, chainTotal: 2 })
   })
 
+  test("does not leave an orphan chain when activating the first step fails", async () => {
+    await using tmp = await tmpdir()
+    await mkdir(join(tmp.path, ".opencode"), { recursive: true })
+    await Bun.write(join(tmp.path, ".opencode", ".goal-state.json"), JSON.stringify({ id: 123, status: "bad" }))
+
+    const payload = {
+      steps: [
+        {
+          condition: "This chain must not be orphaned",
+          verification: { type: "marker" },
+        },
+      ],
+    }
+
+    await expect(runGoalControlStateFile(tmp.path, `chain start-json ${JSON.stringify(payload)}`, 6200)).rejects.toThrow(
+      "Goal state file is invalid.",
+    )
+    expect(await Bun.file(join(tmp.path, ".opencode", ".goal-chain.json")).exists()).toBe(false)
+  })
+
   test("starts a no-command chain step as a marker-verified runtime check", async () => {
     await using tmp = await tmpdir()
     const payload = {

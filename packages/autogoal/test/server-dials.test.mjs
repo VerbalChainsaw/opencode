@@ -179,6 +179,9 @@ describe("compiled server module exports", () => {
 
       const parts = [{ type: "text", text: "Handle the /goal command. Arguments: turns 21" }];
       const output = { parts };
+      const presented = commandMod.presentGoalCommandResult(
+        { kind: "success", message: "Max turns: 20 → 21" },
+      );
 
       await plugin["command.execute.before"](
         { command: "goal", sessionID: "session-1", arguments: "turns 21" },
@@ -187,6 +190,7 @@ describe("compiled server module exports", () => {
 
       assert.strictEqual(output.parts, parts, "hook must mutate the host-owned parts array, not replace it");
       assert.equal(parts.length, 1);
+      assert.equal(parts[0].text, presented);
       assert.match(parts[0].text, /Turns set to 21|Max turns: \d+ → \d+/);
       assert.doesNotMatch(parts[0].text, /Handle the \/goal command/);
 

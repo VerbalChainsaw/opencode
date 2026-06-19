@@ -56,8 +56,14 @@ export interface GoalCommandClient {
   }
 }
 
+export type GoalControlResult = { ok: true } | { ok: false; error: string }
+
 const START_GOAL_PROMPT =
   "Begin working toward the current OpenGoal goal now. Read .opencode/.goal-state.json for the condition, constraints, steering, and verification command. Continue until the goal is achieved, blocked, or the constraints require stopping."
+
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
 
 function cleanPinnedSkills(skills: string[] | undefined) {
   if (!skills) return []
@@ -163,6 +169,7 @@ export async function executeGoalCommand(
     ...(input.workspace ? { workspace: input.workspace } : {}),
   }
   const transport = client.client ?? client.tool?.client
+  const failures: string[] = []
   if (transport?.post) {
     try {
       await transport.post({
@@ -171,8 +178,9 @@ export async function executeGoalCommand(
         query: scope,
         body: payload,
       })
-      return true
-    } catch {
+      return { ok: true } as const
+    } catch (error) {
+      failures.push(`POST /experimental/goal/control failed: ${errorText(error)}`)
       // Fall through to generated SDK control method if present.
     }
   }
@@ -180,12 +188,13 @@ export async function executeGoalCommand(
   try {
     if (client.tool?.control) {
       await client.tool.control.call(client.tool, toolPayload)
-      return true
+      return { ok: true } as const
     }
-    return false
-  } catch {
-    return false
+    failures.push("native goal control bridge is unavailable")
+  } catch (error) {
+    failures.push(`generated goal control failed: ${errorText(error)}`)
   }
+  return { ok: false, error: failures.join("; ") || "native goal control bridge is unavailable" } as const
 }
 
 export async function startGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput) {

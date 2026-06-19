@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { setTimeout as sleep } from "node:timers/promises"
 
 type GoalControlStatus = "active" | "paused" | "achieved" | "cleared"
 type GoalControlSetBy = "user" | "template" | "chain"
@@ -340,6 +341,8 @@ async function editChain(directory: string, command: string, tokens: string[], n
 
 async function startGoalChain(directory: string, payload: string, now: number) {
   const chainPayload = sanitizeChainPayload(parseJsonObject(payload, "chain payload"))
+  const path = goalChainPath(directory)
+  const previousChain = await readFile(path, "utf8").catch(() => null)
   const chain: GoalControlChain = {
     version: 1,
     id: randomUUID(),
@@ -353,8 +356,13 @@ async function startGoalChain(directory: string, payload: string, now: number) {
       setBy: "chain",
     },
   }
-  await writeJsonAtomic(goalChainPath(directory), chain)
-  await setActiveChainGoal(directory, chain, now)
+  await writeJsonAtomic(path, chain)
+  try {
+    await setActiveChainGoal(directory, chain, now)
+  } catch (error) {
+    await restoreChainAfterFailedStart(path, previousChain)
+    throw error
+  }
   return result(`Chain started: step 1/${chain.steps.length} - ${chain.steps[0]!.condition}`, "chain", now)
 }
 
@@ -502,14 +510,45 @@ async function writeGoalState(directory: string, state: GoalControlState) {
   await writeJsonAtomic(goalStatePath(directory), state)
 }
 
+async function restoreChainAfterFailedStart(path: string, previousChain: string | null) {
+  if (previousChain === null) {
+    await unlink(path).catch(() => undefined)
+    return
+  }
+  await writeTextAtomic(path, previousChain).catch(() => undefined)
+}
+
 async function writeJsonAtomic(path: string, value: unknown) {
+  await writeTextAtomic(path, JSON.stringify(value, null, 2) + "\n")
+}
+
+async function writeTextAtomic(path: string, value: string) {
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   await mkdir(dirname(path), { recursive: true })
-  await writeFile(tmp, JSON.stringify(value, null, 2) + "\n", "utf8")
-  await rename(tmp, path).catch(async (error: unknown) => {
+  await writeFile(tmp, value, "utf8")
+  await renameWithRetry(tmp, path).catch(async (error: unknown) => {
     await unlink(tmp).catch(() => undefined)
     throw error
   })
+}
+
+async function renameWithRetry(from: string, to: string) {
+  const delays = [25, 50, 100, 200]
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(from, to)
+      return
+    } catch (error) {
+      if (!isTransientRenameError(error) || attempt >= delays.length) throw error
+      await sleep(delays[attempt]!)
+    }
+  }
+}
+
+function isTransientRenameError(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const code = (error as { code?: unknown }).code
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY"
 }
 
 function goalStatePath(directory: string) {
@@ -578,6 +617,10 @@ function parseJsonObject(value: string | undefined, label: string) {
 function sanitizeTemplatePayload(value: Record<string, unknown>): Record<string, unknown> {
   const condition = typeof value.condition === "string" ? sanitizePromptText(value.condition).slice(0, 4000) : ""
   if (!condition) throw new Error("Template condition cannot be empty.")
+  const constraints = sanitizeConstraints(value.constraints)
+  const variables = sanitizeVariables(value.variables)
+  const skills = sanitizeSkills(value.skills)
+  const model = sanitizePinnedModel(value.model)
   return {
     ...(typeof value.label === "string" ? { label: sanitizePromptText(value.label).slice(0, 120) } : {}),
     ...(typeof value.description === "string"
@@ -585,14 +628,14 @@ function sanitizeTemplatePayload(value: Record<string, unknown>): Record<string,
       : {}),
     condition,
     ...(typeof value.command === "string" ? { command: sanitizePromptText(value.command).slice(0, 1000) } : {}),
-    ...(sanitizeConstraints(value.constraints) ? { constraints: sanitizeConstraints(value.constraints) } : {}),
-    ...(sanitizeVariables(value.variables) ? { variables: sanitizeVariables(value.variables) } : {}),
+    ...(constraints ? { constraints } : {}),
+    ...(variables ? { variables } : {}),
     ...(isTemplateCategory(value.category) ? { category: value.category } : {}),
     ...(isTemplateGate(value.gate) ? { gate: value.gate } : {}),
     ...(isTemplateTone(value.tone) ? { tone: value.tone } : {}),
     ...(isTemplateElevation(value.elevation) ? { elevation: value.elevation } : {}),
-    ...(sanitizeSkills(value.skills) ? { skills: sanitizeSkills(value.skills) } : {}),
-    ...(sanitizePinnedModel(value.model) ? { model: sanitizePinnedModel(value.model) } : {}),
+    ...(skills ? { skills } : {}),
+    ...(model ? { model } : {}),
   }
 }
 
@@ -653,6 +696,8 @@ function sanitizeChainStep(value: unknown): GoalControlChainStep | undefined {
   const condition = typeof value.condition === "string" ? sanitizePromptText(value.condition).slice(0, 4000) : ""
   if (!condition) return undefined
   const verification = sanitizeVerification(value.verification)
+  const skills = sanitizeSkills(value.skills)
+  const model = sanitizePinnedModel(value.model)
   return {
     condition,
     ...(typeof value.command === "string" ? { command: sanitizePromptText(value.command).slice(0, 1000) } : {}),
@@ -663,8 +708,8 @@ function sanitizeChainStep(value: unknown): GoalControlChainStep | undefined {
     ...(isTemplateGate(value.gate) ? { gate: value.gate } : {}),
     ...(isTemplateTone(value.tone) ? { tone: value.tone } : {}),
     ...(isTemplateElevation(value.elevation) ? { elevation: value.elevation } : {}),
-    ...(sanitizeSkills(value.skills) ? { skills: sanitizeSkills(value.skills) } : {}),
-    ...(sanitizePinnedModel(value.model) ? { model: sanitizePinnedModel(value.model) } : {}),
+    ...(skills ? { skills } : {}),
+    ...(model ? { model } : {}),
   }
 }
 

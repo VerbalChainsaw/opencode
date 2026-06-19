@@ -1375,6 +1375,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   // of lagging the 2s poll (and risking a stale command). Cleared once the
   // polled status catches up — or reverted if the command failed.
   const [optimisticStatus, setOptimisticStatus] = createSignal<"active" | "paused" | null>(null)
+  const [controlError, setControlError] = createSignal<string | null>(null)
   const [confirmingClear, setConfirmingClear] = createSignal(false)
   const [newCondition, setNewCondition] = createSignal("")
   const [newCommand, setNewCommand] = createSignal("")
@@ -1510,15 +1511,20 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy(label)
-    const ok = await executeGoalCommand(sdk.client, { sessionID, arguments: args, directory: sdk.directory })
+    const result = await executeGoalCommand(sdk.client, { sessionID, arguments: args, directory: sdk.directory })
+    if (result.ok) {
+      setControlError(null)
+    } else {
+      setControlError(result.error)
+    }
     try {
-      await refreshGoalSurfaces({ templates: ok && label === "template" })
+      await refreshGoalSurfaces({ templates: result.ok && label === "template" })
     } finally {
       setBusy(null)
-      if (ok) setConfirmingClear(false)
-      if (ok && label === "set") setShowCreate(false)
+      if (result.ok) setConfirmingClear(false)
+      if (result.ok && label === "set") setShowCreate(false)
     }
-    return ok
+    return result.ok
   }
 
   const runAction = async (action: GoalAction) => {
@@ -1542,17 +1548,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy("clear")
-    const cleared = await executeGoalCommand(sdk.client, { sessionID, arguments: "clear", directory: sdk.directory })
+    const result = await executeGoalCommand(sdk.client, { sessionID, arguments: "clear", directory: sdk.directory })
+    if (result.ok) {
+      setControlError(null)
+    } else {
+      setControlError(result.error)
+    }
     try {
       await refreshGoalSurfaces()
     } finally {
       setBusy(null)
-      if (cleared) {
+      if (result.ok) {
         setConfirmingClear(false)
         setOptimisticStatus(null)
       }
     }
-    return cleared
+    return result.ok
   }
 
   /** Create a goal from the panel's form. Quotes are stripped so they can't
@@ -2326,6 +2337,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     This session does not expose the <code>/goal</code> slash command. GoalPanel controls will use the
                     native bridge directly.
                   </div>
+                </Show>
+                <Show when={controlError()}>
+                  {(message) => (
+                    <div
+                      data-component="goal-control-error"
+                      class="mt-3 rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2 text-11-regular leading-5 text-red-100"
+                    >
+                      Goal control failed: {message()}
+                    </div>
+                  )}
                 </Show>
                 <div class="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-border-base bg-background-base/60 p-2">
                   <TextField

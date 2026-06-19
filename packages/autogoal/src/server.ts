@@ -20,7 +20,7 @@ import { tool } from "./plugin-api.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve, relative, isAbsolute } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import {
   readGoalState,
   readGoalStateResult,
@@ -50,7 +50,7 @@ import {
   type Verification,
 } from "./goal-state.js";
 import { advanceGoalChain, readGoalChain, setChainWebhook, type GoalPinnedModel } from "./goal-chain.js";
-import { dispatchGoalCommand, dispatchGoalCommandStructured, goalInstructions, plainStatus } from "./command.js";
+import { dispatchGoalCommandStructured, goalInstructions, plainStatus, presentGoalCommandResult } from "./command.js";
 import { appendGoalArchive } from "./goal-archive.js";
 import { writeTemplatesSnapshot } from "./goal-templates-snapshot.js";
 import { appendSessionEvent, type SessionEvent } from "./session-events.js";
@@ -345,6 +345,12 @@ export const server: Plugin = async ({ client, directory }) => {
   const resetNudgeFailures = (sessionId: string): void => {
     nudgeFailureCounts.delete(sessionId);
   };
+  // Periodically evict stale entries so paused/done sessions don't leak memory.
+  // Successful nudges already call resetNudgeFailures; this catches sessions
+  // that were paused by failures and never resumed.
+  setInterval(() => {
+    if (nudgeFailureCounts.size > 50) nudgeFailureCounts.clear();
+  }, 3600_000);
   // Tracks open tool-permission requests; the loop must not nudge while one is open.
   const pendingPermissions = new PendingPermissions();
 
@@ -372,12 +378,21 @@ export const server: Plugin = async ({ client, directory }) => {
   writeTemplatesSnapshot(directory);
 
   // ── Auto-loop evaluation ──────────────────────────────────────────────────
+  // Max command length to prevent trivial abuse (shell commands are
+  // inherently powerful — this is a guardrail, not a sandbox).
+  const MAX_VERIFICATION_COMMAND_LEN = 2000;
+
   async function evaluateDeterministic(command: string): Promise<GoalEvaluation> {
     const now = Date.now();
-    // Debug-only: log the portable argv view of the command. The execution
-    // path still uses `exec` (the user expects shell semantics — `2>&1`,
-    // pipes, `&&`). The argv view is for diagnostics; it's the same on every
-    // platform and lets users verify their command parses as they expect.
+    if (command.length > MAX_VERIFICATION_COMMAND_LEN) {
+      return {
+        met: false,
+        reason: `Verification command exceeds maximum length of ${MAX_VERIFICATION_COMMAND_LEN} characters.`,
+        confidence: 1.0,
+        timestamp: now,
+        evaluatorType: "deterministic",
+      };
+    }
     if (CONFIG.debug) {
       log("debug", "verification command argv", { argv: parseShellWords(command) });
     }
@@ -396,13 +411,18 @@ export const server: Plugin = async ({ client, directory }) => {
         evaluatorType: "deterministic",
         rawOutput: stdout.slice(0, 1000),
       };
-    } catch (err: any) {
-      const timedOut = err?.killed && (err?.signal === "SIGTERM" || err?.signal === "SIGKILL");
-      const stderr = String(err?.stderr ?? "").trim();
-      const stdout = String(err?.stdout ?? "").trim();
+    } catch (err: unknown) {
+      const timedOut =
+        typeof err === "object" && err !== null && "killed" in err
+          ? (err as { killed?: boolean; signal?: string }).killed &&
+            ((err as { signal?: string }).signal === "SIGTERM" ||
+             (err as { signal?: string }).signal === "SIGKILL")
+          : false;
+      const stderr = String((err as { stderr?: unknown }).stderr ?? "").trim();
+      const stdout = String((err as { stdout?: unknown }).stdout ?? "").trim();
       const reason = timedOut
         ? `Command timed out after ${CONFIG.commandTimeoutMs}ms`
-        : sanitizeForPrompt(`Not met (exit ${err?.code ?? "?"}): ${(stderr || stdout || String(err?.message ?? err)).slice(0, 200)}`);
+        : sanitizeForPrompt(`Not met (exit ${(err as { code?: unknown }).code ?? "?"}): ${(stderr || stdout || String((err as { message?: unknown }).message ?? err)).slice(0, 200)}`);
       return { met: false, reason, confidence: 1.0, timestamp: now, evaluatorType: "deterministic", rawOutput: `${stdout}\n${stderr}`.slice(0, 1000) };
     }
   }
@@ -472,21 +492,30 @@ export const server: Plugin = async ({ client, directory }) => {
     }
   }
 
+  // Max file size for verification reads — prevents OOM on large files.
+  const MAX_VERIFICATION_FILE_SIZE = 1024 * 1024; // 1 MB
+
   async function evaluateFile(v: { path: string; exists?: boolean; contains?: string }): Promise<GoalEvaluation> {
     const now = Date.now();
     const resolved = resolve(directory, v.path);
-    // Path traversal guard. On POSIX, `relative(/a, /etc/passwd)` returns
-    // `../../etc/passwd` and `startsWith("..")` catches it. On Windows,
-    // cross-drive `relative(C:/..., D:/x)` returns the absolute D:/x path
-    // verbatim — does NOT start with `..` — so we ALSO check `isAbsolute`.
-    // Without this, a user-supplied `D:\sensitive\file.txt` from a C:
-    // directory would bypass the guard. (v0.4.0 hardening, Phase 2 audit.)
     const rel = relative(directory, resolved);
     if (rel.startsWith("..") || isAbsolute(rel)) {
       return { met: false, reason: "Path traversal blocked", confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
     }
     try {
-      const fileExists = existsSync(resolved);
+      // Stat before reading to enforce size cap. Non-existent files are caught
+      // by the stat-then-exists check below — the size cap only applies to files
+      // that actually exist, so a missing file is not a size-cap rejection.
+      let fileExists = false;
+      let fileSize = 0;
+      try {
+        const s = statSync(resolved);
+        fileExists = true;
+        fileSize = s.size;
+      } catch { /* missing — handled by exists check below */ }
+      if (fileExists && fileSize > MAX_VERIFICATION_FILE_SIZE) {
+        return { met: false, reason: `File too large (${fileSize} bytes; max ${MAX_VERIFICATION_FILE_SIZE})`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
+      }
       if (v.exists === false) {
         return { met: !fileExists, reason: fileExists ? "File exists (expected absent)" : "File absent (as expected)", confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
       }
@@ -500,8 +529,8 @@ export const server: Plugin = async ({ client, directory }) => {
         }
       }
       return { met: true, reason: "File check passed", confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
-    } catch (err: any) {
-      return { met: false, reason: `File check failed: ${err?.message ?? err}`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
+    } catch (err: unknown) {
+      return { met: false, reason: `File check failed: ${err instanceof Error ? err.message : String(err)}`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
     }
   }
 
@@ -576,11 +605,52 @@ export const server: Plugin = async ({ client, directory }) => {
     });
   }
 
+  // Checks constraint limits (turns, time) against fresh disk state. Returns
+  // { cleared: true, reason } if a limit was exceeded and the goal was cleared,
+  // or { cleared: false } to continue. Handles state write + timeline recording
+  // internally because it holds the evaluation lock.
+  function checkConstraints(
+    state: GoalState,
+    now: number,
+  ): { cleared: true; reason: string } | { cleared: false } | null {
+    const f = readGoalState(directory);
+    if (!f || f.status !== "active" || f.id !== state.id) return null;
+    const constraint = detectConstraintStop(f);
+    if (!constraint.exceeded) return { cleared: false };
+    f.status = "cleared";
+    f.completedAt = now;
+    f.lastEvaluation = { met: false, reason: constraint.reason, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
+    recordEvaluation(f, f.lastEvaluation);
+    recordTimelineFor(f, f.lastEvaluation, "constraint-clear");
+    writeGoalStateAtomic(directory, f);
+    return { cleared: true, reason: constraint.reason };
+  }
+
+  // Checks the latest assistant transcript for a GOAL_BLOCKED marker. If found,
+  // pauses the goal and returns the paused state. If not found, returns the
+  // transcript so the caller can reuse it for evaluateGoal (avoiding a second
+  // SDK fetch). Returns null if state is stale.
+  async function checkBlockedMarker(
+    state: GoalState,
+    sessionId: string,
+    now: number,
+  ): Promise<{ paused: true; state: GoalState } | { paused: false; transcript: string } | null> {
+    const f = readGoalState(directory);
+    if (!f || f.status !== "active" || f.id !== state.id) return null;
+    const latest = await getLatestAssistantText(sessionId);
+    const blockedText = detectMarker(latest, BLOCKED_RE);
+    if (blockedText === null) return { paused: false, transcript: latest };
+    recordEvaluation(f, { met: false, blocked: true, reason: `Agent reported blocked: ${sanitizeForPrompt(blockedText).slice(0, 200) || "(no detail)"}`, confidence: 0.8, timestamp: now, evaluatorType: "heuristic" });
+    recordTimelineFor(f, f.lastEvaluation!, "blocked-marker");
+    f.status = "paused";
+    f.pausedAt = now;
+    writeGoalStateAtomic(directory, f);
+    return { paused: true, state: f };
+  }
+
   async function evaluate(state: GoalState, sessionId: string): Promise<void> {
     if (isEvaluating) return;
     const now = Date.now();
-    // Debounce rapid idle bursts. Fails SAFE: if an injected turn finishes within
-    // the window the loop stalls rather than spins; turns normally exceed it.
     if (now - lastEvaluationTime < CONFIG.evaluationDebounceSec * 1000) return;
     isEvaluating = true;
     lastEvaluationTime = now;
@@ -590,71 +660,27 @@ export const server: Plugin = async ({ client, directory }) => {
       return;
     }
     try {
-      // Run the constraint check inside the lock so it operates on fresh state
-      // (the `state` parameter is a snapshot from the idle handler, read without
-      // the lock — a user could edit constraints upward between that read and
-      // here, causing a false-positive "limit exceeded" clearing).
-      const constraintResult = (() => {
-        const f = readGoalState(directory);
-        if (!f || f.status !== "active" || f.id !== state.id) return null;
-        const constraint = detectConstraintStop(f);
-        if (constraint.exceeded) {
-          f.status = "cleared";
-          f.completedAt = now;
-          f.lastEvaluation = { met: false, reason: constraint.reason, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
-          recordEvaluation(f, f.lastEvaluation);
-          // v0.7.0 (A4) — record a timeline event for the constraint
-          // clear so the Live Session pane shows the user "turn N: goal
-          // cleared (constraint tripped)" in the timeline.
-          recordTimelineFor(f, f.lastEvaluation, "constraint-clear");
-          writeGoalStateAtomic(directory, f);
-          return { cleared: true as const, reason: constraint.reason };
-        }
-        return { cleared: false as const };
-      })();
+      // v0.4.1 — constraint check on fresh disk state (not the idle snapshot).
+      const constraintResult = checkConstraints(state, now);
       if (!constraintResult) return;
       if (constraintResult.cleared) {
-        // v0.4.0+ webhook: fire on the active → cleared transition
-        // (spec call site: "Goal timed out"). The fresh state is
-        // read back so the payload reflects the cleared state (and
-        // the webhook's `on` filter can match `"cleared"`). We pass
-        // previousStatus="active" explicitly because the in-place
-        // mutation in the IIFE above has already moved the state to
-        // "cleared" by the time we read it.
         const cleared = readGoalState(directory);
         if (cleared) fireWebhook(cleared, "active");
         await notify(sessionId, "Goal stopped", constraintResult.reason, "warning");
         return;
       }
-
-      const latest = await getLatestAssistantText(sessionId);
-      const blockedText = detectMarker(latest, BLOCKED_RE);
-      if (blockedText !== null) {
-        const fresh = (() => {
-          const f = readGoalState(directory);
-          if (!f || f.status !== "active" || f.id !== state.id) return null;
-          recordEvaluation(f, { met: false, blocked: true, reason: `Agent reported blocked: ${sanitizeForPrompt(blockedText).slice(0, 200) || "(no detail)"}`, confidence: 0.8, timestamp: now, evaluatorType: "heuristic" });
-          // v0.7.0 (A4) — record a timeline event for the blocked-by-marker
-          // path so the Live Session pane shows the user "turn N: blocked".
-          recordTimelineFor(f, f.lastEvaluation!, "blocked-marker");
-          f.status = "paused";
-          f.pausedAt = now;
-          writeGoalStateAtomic(directory, f);
-          return f;
-        })();
-        if (!fresh) return;
-        // v0.4.0+ webhook: fire on the active → paused transition
-        // (spec call site: "Goal blocked"). The state file is
-        // already at "paused" by the time we read it (the IIBE above
-        // persisted it), so the webhook's `on` filter looks for
-        // "paused" and `previousStatus` is "active" — the spec
-        // interpretation of the blocked transition.
-        fireWebhook(fresh, "active");
-        await notify(sessionId, "Goal paused (blocked)", fresh.lastEvaluation!.reason, "warning");
+      // v0.7.1 — blocked-marker detection on latest assistant transcript.
+      // Uses checkBlockedMarker which returns the transcript on no-match
+      // so evaluateGoal below doesn't need a second SDK fetch.
+      const blocked = await checkBlockedMarker(state, sessionId, now);
+      if (!blocked) return;
+      if (blocked.paused) {
+        fireWebhook(blocked.state, "active");
+        await notify(sessionId, "Goal paused (blocked)", blocked.state.lastEvaluation!.reason, "warning");
         return;
       }
 
-      const evaluation = await evaluateGoal(state, latest);
+      const evaluation = await evaluateGoal(state, blocked.transcript);
 
       const snapshot = (() => {
         const f = readGoalState(directory);
@@ -1283,21 +1309,13 @@ export const server: Plugin = async ({ client, directory }) => {
     "command.execute.before": async (input, output) => {
       if (input.command !== "goal") return;
       const args = input.arguments ?? "";
-      // v0.7.1 (audit fix): call structured dispatch ONCE. The legacy
-      // dispatchGoalCommand() also calls dispatchGoalCommandStructured()
-      // internally and then wraps the result — calling both means the
-      // structured dispatcher runs twice, mutating state on the first call
-      // and reading it back on the second. A concurrent mutation (e.g., a
-      // tool handler) between those two reads would produce stale text.
-      // Single dispatch + inline formatting avoids the double state read.
+      // v0.7.1 (audit fix): call structured dispatch ONCE and format the
+      // result with the shared formatter. The legacy dispatchGoalCommand()
+      // also calls structured internally and wraps — calling both meant
+      // state was mutated twice. Single dispatch + presentGoalCommandResult
+      // eliminates the double state read entirely.
       const result = dispatchGoalCommandStructured(directory, args);
-      const text =
-        result.kind === "set"
-          ? `${result.message}\n\n${result.agentExtras ?? ""}`.trim()
-          : result.kind === "success" &&
-              result.message.startsWith("Goal resumed — continue working toward it now:")
-            ? result.message
-            : `Tell the user this, then stop and await further instruction:\n\n${result.message}`;
+      const text = presentGoalCommandResult(result);
       const action = args.split(/\s+/)[0] ?? "";
       if (
         (action === "turns" || action === "time" || action === "tokens") &&
