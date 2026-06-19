@@ -1081,31 +1081,98 @@ function chainStepRunBadgeStyle(runState: ChainStepRunState, input: ActionDescri
 function runningStatusPanelStyle(status: GoalState["status"] | "stalled"): JSX.CSSProperties {
   if (status === "stalled") {
     return {
-      "background": "linear-gradient(90deg, rgba(154, 52, 18, 0.30), rgba(15, 23, 42, 0.46))",
-      "border-color": "rgba(251, 146, 60, 0.38)",
+      background:
+        "radial-gradient(circle at 0% 0%, rgba(251, 146, 60, 0.16), transparent 34%), linear-gradient(180deg, rgba(154, 52, 18, 0.24), rgba(15, 23, 42, 0.52))",
+      "border-color": "rgba(251, 146, 60, 0.30)",
+      "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.035)",
     } satisfies JSX.CSSProperties
   }
   if (status === "active") {
     return {
-      "background": "linear-gradient(90deg, rgba(6, 78, 59, 0.28), rgba(15, 23, 42, 0.46))",
-      "border-color": "rgba(52, 211, 153, 0.34)",
+      background:
+        "radial-gradient(circle at 0% 0%, rgba(52, 211, 153, 0.14), transparent 34%), linear-gradient(180deg, rgba(6, 78, 59, 0.22), rgba(15, 23, 42, 0.52))",
+      "border-color": "rgba(52, 211, 153, 0.28)",
+      "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.035)",
     } satisfies JSX.CSSProperties
   }
   if (status === "paused") {
     return {
-      "background": "linear-gradient(90deg, rgba(146, 64, 14, 0.28), rgba(15, 23, 42, 0.46))",
-      "border-color": "rgba(251, 191, 36, 0.34)",
+      background:
+        "radial-gradient(circle at 0% 0%, rgba(251, 191, 36, 0.14), transparent 34%), linear-gradient(180deg, rgba(146, 64, 14, 0.22), rgba(15, 23, 42, 0.52))",
+      "border-color": "rgba(251, 191, 36, 0.28)",
+      "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.035)",
     } satisfies JSX.CSSProperties
   }
   if (status === "achieved") {
     return {
-      "background": "linear-gradient(90deg, rgba(6, 95, 70, 0.34), rgba(15, 23, 42, 0.48))",
-      "border-color": "rgba(110, 231, 183, 0.42)",
+      background:
+        "radial-gradient(circle at 0% 0%, rgba(110, 231, 183, 0.16), transparent 34%), linear-gradient(180deg, rgba(6, 95, 70, 0.28), rgba(15, 23, 42, 0.54))",
+      "border-color": "rgba(110, 231, 183, 0.34)",
+      "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.035)",
     } satisfies JSX.CSSProperties
   }
   return {
-    "background": "linear-gradient(90deg, rgba(124, 45, 18, 0.30), rgba(15, 23, 42, 0.48))",
-    "border-color": "rgba(251, 146, 60, 0.36)",
+    background:
+      "radial-gradient(circle at 0% 0%, rgba(251, 146, 60, 0.15), transparent 34%), linear-gradient(180deg, rgba(124, 45, 18, 0.24), rgba(15, 23, 42, 0.54))",
+    "border-color": "rgba(251, 146, 60, 0.30)",
+    "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.035)",
+  } satisfies JSX.CSSProperties
+}
+
+function runningMetricTileStyle(tone: "time" | "turns" | "step" | "progress"): JSX.CSSProperties {
+  if (tone === "time") {
+    return {
+      "background-color": "rgba(15, 23, 42, 0.46)",
+      "border-color": "rgba(96, 165, 250, 0.22)",
+      "box-shadow": "inset 3px 0 0 rgba(96, 165, 250, 0.48), inset 0 1px 0 rgba(255,255,255,0.035)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "turns") {
+    return {
+      "background-color": "rgba(15, 23, 42, 0.46)",
+      "border-color": "rgba(167, 139, 250, 0.22)",
+      "box-shadow": "inset 3px 0 0 rgba(167, 139, 250, 0.48), inset 0 1px 0 rgba(255,255,255,0.035)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "step") {
+    return {
+      "background-color": "rgba(15, 23, 42, 0.46)",
+      "border-color": "rgba(52, 211, 153, 0.22)",
+      "box-shadow": "inset 3px 0 0 rgba(52, 211, 153, 0.48), inset 0 1px 0 rgba(255,255,255,0.035)",
+    } satisfies JSX.CSSProperties
+  }
+  return {
+    "background-color": "rgba(2, 6, 23, 0.38)",
+    "border-color": "rgba(52, 211, 153, 0.24)",
+    "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.04)",
+  } satisfies JSX.CSSProperties
+}
+
+function runningMetricValueClass(tone: "time" | "turns" | "step") {
+  if (tone === "time") return "text-blue-50"
+  if (tone === "turns") return "text-violet-50"
+  return "text-emerald-50"
+}
+
+function runningInlinePanelStyle(tone: "stop" | "steer" | "activity"): JSX.CSSProperties {
+  if (tone === "stop") {
+    return {
+      "background-color": "rgba(124, 45, 18, 0.18)",
+      "border-color": "rgba(251, 146, 60, 0.24)",
+      "box-shadow": "inset 3px 0 0 rgba(251, 146, 60, 0.54), inset 0 1px 0 rgba(255,255,255,0.03)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "steer") {
+    return {
+      "background-color": "rgba(12, 74, 110, 0.16)",
+      "border-color": "rgba(56, 189, 248, 0.22)",
+      "box-shadow": "inset 3px 0 0 rgba(56, 189, 248, 0.50), inset 0 1px 0 rgba(255,255,255,0.03)",
+    } satisfies JSX.CSSProperties
+  }
+  return {
+    "background-color": "rgba(15, 23, 42, 0.40)",
+    "border-color": "rgba(34, 211, 238, 0.18)",
+    "box-shadow": "inset 3px 0 0 rgba(34, 211, 238, 0.42), inset 0 1px 0 rgba(255,255,255,0.03)",
   } satisfies JSX.CSSProperties
 }
 
@@ -2525,10 +2592,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 {(running) => (
                   <div
                     data-component="goal-chain-running-status"
-                    class="border-b px-3 py-2.5"
+                    class="border-b px-3 py-3"
                     style={runningStatusPanelStyle(liveRunStalled() ? "stalled" : running.status)}
                   >
-                    <div class="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_240px] xl:items-start">
+                    <div class="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_224px] xl:items-start">
                       <div class="min-w-0">
                         <div class="flex min-w-0 items-center gap-2">
                           <span
@@ -2555,57 +2622,90 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </Show>
                         <div
                           data-component="goal-running-metric-strip"
-                          class="mt-2 grid min-w-0 grid-cols-3 gap-2"
+                          class="mt-2 grid min-w-0 grid-cols-3 gap-1.5"
                         >
                           <div
                             data-component="goal-running-clock"
-                            class="rounded-xl border border-blue-300/38 bg-[linear-gradient(135deg,rgba(37,99,235,0.26),rgba(14,165,233,0.10)_48%,rgba(15,23,42,0.42))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_24px_rgba(37,99,235,0.10)]"
+                            class="min-w-0 rounded-lg border px-2.5 py-2"
+                            style={runningMetricTileStyle("time")}
                           >
-                            <div class="bg-gradient-to-r from-blue-100 to-cyan-200 bg-clip-text text-[12px] font-black uppercase text-transparent">Clock</div>
-                            <div class="mt-1 text-[30px] font-black leading-none tabular-nums text-blue-50">
+                            <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-blue-100/70">
+                              {language.t("session.goal.metric.time")}
+                            </div>
+                            <div class={`mt-1 text-[22px] font-black leading-none tabular-nums ${runningMetricValueClass("time")}`}>
                               {elapsedMinutes()}m
                             </div>
-                            <div class="mt-1 truncate text-[12px] font-bold text-blue-100/72">
-                              of {running.constraints.maxTimeMinutes}m
+                            <div class="mt-1 truncate text-[10px] font-semibold text-blue-100/58">
+                              {language.t("session.goal.metric.of")} {running.constraints.maxTimeMinutes}m
                             </div>
                           </div>
                           <div
                             data-component="goal-running-turns"
-                            class="rounded-xl border border-violet-300/38 bg-[linear-gradient(135deg,rgba(109,40,217,0.28),rgba(168,85,247,0.12)_48%,rgba(15,23,42,0.42))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_24px_rgba(109,40,217,0.12)]"
+                            class="min-w-0 rounded-lg border px-2.5 py-2"
+                            style={runningMetricTileStyle("turns")}
                           >
-                            <div class="bg-gradient-to-r from-violet-100 to-fuchsia-200 bg-clip-text text-[12px] font-black uppercase text-transparent">Turns</div>
-                            <div class="mt-1 text-[30px] font-black leading-none tabular-nums text-violet-50">
-                              {running.turnsEvaluated}
-                              <span class="text-[15px] font-black text-violet-100/65">/{running.constraints.maxTurns}</span>
+                            <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-violet-100/70">
+                              {language.t("session.goal.metric.turns")}
                             </div>
-                            <div class="mt-1 truncate text-[12px] font-bold text-violet-100/72">ticks used</div>
+                            <div class={`mt-1 text-[22px] font-black leading-none tabular-nums ${runningMetricValueClass("turns")}`}>
+                              {running.turnsEvaluated}
+                              <span class="text-[12px] font-bold text-violet-100/58">/{running.constraints.maxTurns}</span>
+                            </div>
+                            <div class="mt-1 truncate text-[10px] font-semibold text-violet-100/58">
+                              {language.t("session.goal.metric.used")}
+                            </div>
                           </div>
                           <div
                             data-component="goal-running-step"
-                            class="rounded-xl border border-emerald-300/38 bg-[linear-gradient(135deg,rgba(5,150,105,0.26),rgba(45,212,191,0.10)_48%,rgba(15,23,42,0.42))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_24px_rgba(5,150,105,0.12)]"
+                            class="min-w-0 rounded-lg border px-2.5 py-2"
+                            style={runningMetricTileStyle("step")}
                           >
-                            <div class="bg-gradient-to-r from-emerald-100 to-teal-200 bg-clip-text text-[12px] font-black uppercase text-transparent">Step</div>
-                            <div class="mt-1 text-[30px] font-black leading-none tabular-nums text-emerald-50">
-                              {runningStepIndex() + 1}
-                              <span class="text-[15px] font-black text-emerald-100/65">/{Math.max(visibleStepCount(), 1)}</span>
+                            <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-emerald-100/70">
+                              {language.t("session.goal.metric.chain")}
                             </div>
-                            <div class="mt-1 truncate text-[12px] font-bold text-emerald-100/72">current item</div>
+                            <div class={`mt-1 text-[22px] font-black leading-none tabular-nums ${runningMetricValueClass("step")}`}>
+                              {runningStepIndex() + 1}
+                              <span class="text-[12px] font-bold text-emerald-100/58">/{Math.max(visibleStepCount(), 1)}</span>
+                            </div>
+                            <div class="mt-1 truncate text-[10px] font-semibold text-emerald-100/58">
+                              {language.t("session.goal.metric.current")}
+                            </div>
                           </div>
                         </div>
                       </div>
                       <div class="min-w-0">
                         <div
                           data-component="goal-running-progress-hero"
-                          class="rounded-xl border border-emerald-300/44 bg-[radial-gradient(circle_at_90%_10%,rgba(167,243,208,0.22),transparent_30%),linear-gradient(135deg,rgba(6,95,70,0.42),rgba(15,23,42,0.52))] px-3 py-3 text-right shadow-[inset_0_1px_0_rgba(255,255,255,0.065),0_14px_28px_rgba(5,150,105,0.16)]"
+                          class="rounded-lg border px-3 py-2.5 text-right"
+                          style={runningMetricTileStyle("progress")}
                         >
-                          <div class="bg-gradient-to-r from-emerald-100 via-teal-100 to-cyan-200 bg-clip-text text-[13px] font-black uppercase text-transparent">
+                          <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-emerald-100/72">
                             {language.t("session.goal.progress")}
                           </div>
-                          <div class="text-[52px] font-black leading-none tracking-normal text-emerald-50 tabular-nums">
+                          <div class="mt-1 text-[38px] font-black leading-none tracking-normal text-emerald-50 tabular-nums">
                             {running.status === "achieved" ? 100 : progressPct()}%
                           </div>
+                          <div
+                            class="mt-2 h-1.5 overflow-hidden rounded-full bg-background-base/70"
+                            role="progressbar"
+                            aria-valuenow={running.status === "achieved" ? 100 : progressPct()}
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                          >
+                            <div
+                              class="h-full rounded-full bg-emerald-300 transition-[width] motion-reduce:transition-none"
+                              style={{ width: `${running.status === "achieved" ? 100 : progressPct()}%` }}
+                            />
+                          </div>
                         </div>
-                        <div class="mt-2 grid grid-cols-2 gap-1.5">
+                        <div
+                          data-component="goal-running-command-strip"
+                          class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg border p-1.5"
+                          style={{
+                            "background-color": "rgba(2, 6, 23, 0.30)",
+                            "border-color": "rgba(148, 163, 184, 0.14)",
+                          }}
+                        >
                           <Show when={pauseResume()}>
                             {(action) => (
                               <ActionButton
@@ -2663,36 +2763,48 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               </Show>
 
               <Show when={liveGoal() && confirmingClear()}>
-                <div class="border-b border-orange-400/20 bg-orange-500/[0.08] px-3 py-2">
+                <div class="border-b px-3 py-2">
                   <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="text-11-regular text-orange-50/82">
-                      {language.t("session.goal.action.confirmStop")}
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <ActionButton
-                        label={language.t("session.goal.action.confirmStop")}
-                        variant="primary"
-                        tone="danger"
-                        busy={busy() === "clear"}
-                        disabled={busy() !== null || goalCommandUnavailable()}
-                        class="h-7 shrink-0 px-3 text-12-medium"
-                        onClick={() => void stopGoal()}
-                      />
-                      <ActionButton
-                        label={language.t("session.goal.action.cancel")}
-                        variant="ghost"
-                        disabled={busy() !== null || goalCommandUnavailable()}
-                        class="h-7 shrink-0 px-3 text-12-medium"
-                        onClick={() => setConfirmingClear(false)}
-                      />
+                    <div
+                      data-component="goal-running-inline-panel"
+                      data-state="stop-confirm"
+                      class="flex flex-1 flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+                      style={runningInlinePanelStyle("stop")}
+                    >
+                      <div class="text-11-regular font-semibold text-orange-50/82">
+                        {language.t("session.goal.action.confirmStop")}
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <ActionButton
+                          label={language.t("session.goal.action.confirmStop")}
+                          variant="primary"
+                          tone="danger"
+                          busy={busy() === "clear"}
+                          disabled={busy() !== null || goalCommandUnavailable()}
+                          class="h-7 shrink-0 px-3 text-12-medium"
+                          onClick={() => void stopGoal()}
+                        />
+                        <ActionButton
+                          label={language.t("session.goal.action.cancel")}
+                          variant="ghost"
+                          disabled={busy() !== null || goalCommandUnavailable()}
+                          class="h-7 shrink-0 px-3 text-12-medium"
+                          onClick={() => setConfirmingClear(false)}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
               </Show>
 
               <Show when={liveGoal() && steerOpen()}>
-                <div class="border-b border-sky-400/20 bg-sky-500/[0.07] px-3 py-2">
-                  <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <div class="border-b px-3 py-2">
+                  <div
+                    data-component="goal-running-inline-panel"
+                    data-state="steer"
+                    class="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
+                    style={runningInlinePanelStyle("steer")}
+                  >
                     <TextField
                       value={steerText()}
                       onChange={setSteerText}
@@ -2980,7 +3092,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <Show when={liveGoal()}>
                       <div
                         data-component="goal-chain-running-activity"
-                        class="mt-2 rounded-lg border border-cyan-400/20 bg-[linear-gradient(90deg,rgba(8,145,178,0.12),rgba(15,23,42,0.34))] p-2"
+                        class="mt-2 rounded-lg border p-2"
+                        style={runningInlinePanelStyle("activity")}
                       >
                         <div class="mb-1.5 flex items-center justify-between gap-2">
                           <span class="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100/78">
@@ -3003,7 +3116,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               {(event) => (
                                 <div
                                   role="listitem"
-                                  class="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md border border-cyan-300/14 bg-background-base/54 px-2 py-1 text-[11px]"
+                                  class="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md border border-cyan-300/12 bg-background-base/54 px-2 py-1 text-[11px]"
                                 >
                                   <span
                                     class="text-center"
