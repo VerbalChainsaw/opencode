@@ -554,6 +554,12 @@ export function validateChainDraft(
 
   // Master budget checks
   const budget = chainBudgetSummary(steps, master)
+  if (budget.masterTurnsIsCap) {
+    errors.push({
+      stepIndex: -1,
+      message: `Total step turns (${budget.ultimateTurns}) exceeds master turn limit (${budget.masterTurns}).`,
+    })
+  }
   if (budget.masterTimeIsCap) {
     errors.push({
       stepIndex: -1,

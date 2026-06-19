@@ -696,16 +696,16 @@ function GoalConsoleSection(props: {
       marker: "bg-emerald-200",
     },
     "action-editor": {
-      class: "border-amber-400/62",
+      class: "border-slate-400/28",
       style: {
-        "border-color": "rgba(251, 191, 36, 0.50)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(251, 191, 36, 0.06)",
+        "border-color": "rgba(148, 163, 184, 0.26)",
+        "box-shadow": "0 10px 22px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(146, 64, 14, 0.84), rgba(30, 30, 30, 0.92))",
-        "border-color": "rgba(251, 191, 36, 0.58)",
+        "background": "linear-gradient(90deg, rgba(39, 39, 42, 0.92), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(148, 163, 184, 0.22)",
       },
-      marker: "bg-amber-200",
+      marker: "bg-slate-300/80",
     },
     activity: {
       class: "border-cyan-400/55",
@@ -728,19 +728,19 @@ function GoalConsoleSection(props: {
       class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-panel/80 ${accent.class} ${props.class ?? ""}`}
       style={accent.style}
     >
-      <div data-component="goal-console-section-header" class="shrink-0 border-b border-border-base/60 px-3 py-2" style={accent.headerStyle}>
+      <div data-component="goal-console-section-header" class="shrink-0 border-b border-border-base/60 px-2.5 py-1.5" style={accent.headerStyle}>
         <div
           data-component="goal-console-section-title"
-          class="flex min-w-0 items-start"
+          class="flex min-w-0 items-center"
         >
-          <div class="flex min-w-0 flex-1 items-start gap-2">
-            <span class={`mt-0.5 h-6 w-1.5 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
-            <div class="min-w-0">
-              <span data-component="goal-console-section-title-text" class="block truncate text-[14px] font-black uppercase leading-4 tracking-[0.12em] text-white">
+          <div class="flex min-w-0 flex-1 items-center gap-2">
+            <span class={`h-4 w-1.5 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
+            <div class="flex min-w-0 flex-1 items-baseline gap-2">
+              <span data-component="goal-console-section-title-text" class="shrink-0 truncate text-[13px] font-black uppercase leading-4 tracking-[0.12em] text-white">
                 {props.title}
               </span>
               <Show when={props.subtitle}>
-                <span data-component="goal-console-section-subtitle" class="mt-0.5 block truncate text-[10px] font-semibold leading-4 text-white/58">{props.subtitle}</span>
+                <span data-component="goal-console-section-subtitle" class="min-w-0 truncate border-l border-white/16 pl-2 text-[10px] font-semibold leading-4 text-white/56">{props.subtitle}</span>
               </Show>
             </div>
           </div>
@@ -810,6 +810,7 @@ interface ActionDescriptor {
 }
 
 type ChainStepRunState = "draft" | "done" | "running" | "paused" | "stalled" | "queued"
+type ChainBudgetStatus = "ready" | "turns" | "time" | "both"
 
 type ActionDraftTemplate = GoalTemplateButton & { condition: string; builtin: false }
 
@@ -975,15 +976,54 @@ function actionLibraryPanelStyle(input: ActionDescriptor = { category: "Custom" 
   }
 }
 
+function actionEditorCurrentStyle(input: ActionDescriptor): JSX.CSSProperties {
+  const { from, to, border } = actionCategoryPalette(input)
+  return {
+    "background": `linear-gradient(90deg, ${from}, rgba(24, 24, 27, 0.76) 54%, ${to})`,
+    "border-color": border,
+    "box-shadow": `inset 3px 0 0 ${border}, inset 0 1px 0 rgba(255, 255, 255, 0.035)`,
+  }
+}
+
 function actionEditorPanelStyle(active = false): JSX.CSSProperties {
   return {
     "background": active
-      ? "linear-gradient(135deg, rgba(146, 64, 14, 0.30), rgba(18, 18, 18, 0.82) 52%, rgba(251, 191, 36, 0.09))"
-      : "linear-gradient(135deg, rgba(120, 53, 15, 0.20), rgba(18, 18, 18, 0.82) 52%, rgba(251, 191, 36, 0.06))",
-    "border-color": active ? "rgba(251, 191, 36, 0.46)" : "rgba(251, 191, 36, 0.28)",
+      ? "linear-gradient(135deg, rgba(39, 39, 42, 0.84), rgba(18, 18, 18, 0.86) 58%, rgba(148, 163, 184, 0.06))"
+      : "linear-gradient(135deg, rgba(39, 39, 42, 0.72), rgba(18, 18, 18, 0.84))",
+    "border-color": active ? "rgba(148, 163, 184, 0.24)" : "rgba(148, 163, 184, 0.18)",
     "box-shadow": active
-      ? "inset 3px 0 0 rgba(251, 191, 36, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 14px 30px rgba(0, 0, 0, 0.16)"
+      ? "inset 0 1px 0 rgba(255, 255, 255, 0.035)"
       : "inset 0 1px 0 rgba(255, 255, 255, 0.026)",
+  }
+}
+
+function chainBuilderHeaderStyle(status: ChainBudgetStatus, live = false): JSX.CSSProperties {
+  if (live || status === "ready") {
+    return {
+      "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.16), rgba(15, 23, 42, 0.42))",
+      "border-bottom-color": "rgba(167, 139, 250, 0.10)",
+      "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.014)",
+    }
+  }
+  return {
+    "background": "linear-gradient(90deg, rgba(146, 64, 14, 0.24), rgba(15, 23, 42, 0.44))",
+    "border-bottom-color": "rgba(251, 191, 36, 0.34)",
+    "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.018), 0 0 0 1px rgba(251, 191, 36, 0.08)",
+  }
+}
+
+function chainBudgetPillStyle(status: ChainBudgetStatus): JSX.CSSProperties {
+  if (status === "ready") {
+    return {
+      "background-color": "rgba(16, 185, 129, 0.08)",
+      "border-color": "transparent",
+      color: "rgb(167, 243, 208)",
+    }
+  }
+  return {
+    "background-color": "rgba(251, 191, 36, 0.10)",
+    "border-color": "transparent",
+    color: "rgb(253, 230, 138)",
   }
 }
 
@@ -1678,6 +1718,30 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       maxTimeMinutes: chainDraft.master.maxTimeMinutes,
     }),
   )
+  const chainBudgetStatus = createMemo<ChainBudgetStatus>(() => {
+    const budget = budgetSummary()
+    if (budget.masterTurnsIsCap && budget.masterTimeIsCap) return "both"
+    if (budget.masterTurnsIsCap) return "turns"
+    if (budget.masterTimeIsCap) return "time"
+    return "ready"
+  })
+  const chainBudgetStatusLabel = createMemo(() => {
+    switch (chainBudgetStatus()) {
+      case "both":
+        return language.t("session.goal.chainBuilder.budget.bothOver")
+      case "turns":
+        return language.t("session.goal.chainBuilder.budget.turnsOver")
+      case "time":
+        return language.t("session.goal.chainBuilder.budget.timeOver")
+      default:
+        return language.t("session.goal.chainBuilder.budget.ready")
+    }
+  })
+  const chainBudgetStatusDetail = createMemo(() => {
+    const budget = budgetSummary()
+    if (chainBudgetStatus() === "ready") return language.t("session.goal.chainBuilder.budget.readyDetail")
+    return `${chainBudgetStatusLabel()}: ${budget.ultimateTurns}/${budget.masterTurns} turns · ${budget.ultimateTimeMinutes}/${budget.masterTimeMinutes}m`
+  })
   const chainLimitSummary = createMemo(() => `${masterTurns()} turns / ${masterMinutes()}m`)
   const templateConstraintsLabel = (template: GoalTemplateButton) => {
     const c = template.constraints
@@ -1834,6 +1898,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
     return out
   })
+  const skillPickOptions = createMemo(() =>
+    skillOptionsForDraft().filter((skill) => !actionDraft.skills.includes(skill.name)),
+  )
   const toggleActionSkill = (name: string) => {
     const clean = cleanText(name).trim().slice(0, 80)
     if (!clean) return
@@ -1905,6 +1972,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       builtin: false,
     }
   }
+  const actionEditorDescriptor = createMemo<ActionDescriptor>(() => {
+    return actionDraftTemplate()
+  })
   const upsertLocalTemplate = (template: GoalTemplateButton) => {
     setDeletedTemplateIDs((current) => {
       const next = { ...current }
@@ -2440,8 +2510,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               </section>
               <GoalConsoleSection
                 zone="chain-builder"
-                title="Chain Builder"
-                subtitle={chainRunStateSubtitle()}
+                title={language.t("session.goal.chainBuilder.shortTitle")}
+                subtitle={liveGoal() ? chainRunStateSubtitle() : language.t("session.goal.chainBuilder.sectionHint")}
                 class="min-h-0"
               >
               <div
@@ -2451,42 +2521,62 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               >
               <div
                 data-component="goal-chain-builder-header-strip"
-                class="relative z-10 shrink-0 border-b px-3 py-2.5"
-                style={{
-                  "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.16), rgba(15, 23, 42, 0.42))",
-                  "border-bottom-color": "rgba(167, 139, 250, 0.10)",
-                  "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.014)",
-                }}
+                data-budget-status={liveGoal() ? "running" : chainBudgetStatus()}
+                class="relative z-10 shrink-0 border-b px-2.5 py-1"
+                style={chainBuilderHeaderStyle(chainBudgetStatus(), !!liveGoal())}
               >
-                <div class="grid min-w-0 gap-2 lg:grid-cols-[minmax(260px,1fr)_auto] lg:items-start">
+                <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:grid-cols-[minmax(260px,1fr)_auto]">
                   <div
-                    class="min-w-0"
+                    class="flex min-w-0 items-center gap-1.5"
                     title={liveGoal() ? chainRunStateSubtitle() : language.t("session.goal.chainBuilder.subtitle")}
                   >
-                    <div class="flex min-w-0 items-center gap-2">
+                    <span
+                      class="h-4 w-1.5 shrink-0 rounded-full"
+                      classList={{
+                        "bg-orange-300/90": liveRunStalled(),
+                        "bg-emerald-300/90": liveRunStatus() === "active" && !liveRunStalled(),
+                        "bg-amber-300/90": liveRunStatus() === "paused" || (!liveGoal() && chainBudgetStatus() !== "ready"),
+                        "bg-violet-300/80": !liveGoal() && chainBudgetStatus() === "ready",
+                      }}
+                      aria-hidden
+                    />
+                    <div class="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-violet-50">
+                      {liveGoal() ? language.t("session.goal.chainBuilder.runningHeader") : chainRunStateLabel()}
+                    </div>
+                    <span
+                      class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-violet-100/80"
+                      style={{ "background-color": "rgba(139, 92, 246, 0.075)" }}
+                      title={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
+                      aria-label={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
+                    >
+                      <strong class={numericHighlightClass("mr-1")} style={numericHighlightStyle("violet")}>
+                        {visibleStepCount()}
+                      </strong>
+                      {language.t("session.goal.chainBuilder.steps")}
+                    </span>
+                    <Show when={!liveGoal()}>
                       <span
-                        class="h-5 w-1.5 shrink-0 rounded-full"
-                        classList={{
-                          "bg-orange-300/90": liveRunStalled(),
-                          "bg-emerald-300/90": liveRunStatus() === "active" && !liveRunStalled(),
-                          "bg-amber-300/90": liveRunStatus() === "paused",
-                          "bg-violet-300/80": !liveGoal(),
-                        }}
-                        aria-hidden
-                      />
-                      <div class="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-violet-50">
-                        {liveGoal() ? language.t("session.goal.chainBuilder.runningHeader") : chainRunStateLabel()}
-                      </div>
-                    </div>
-                    <div class="mt-0.5 truncate text-11-regular text-violet-100/70">
-                      {liveGoal() ? cleanText(liveGoal()!.condition) : language.t("session.goal.chainBuilder.planChainHint")}
-                    </div>
+                        data-component="goal-chain-budget-status"
+                        data-budget-status={chainBudgetStatus()}
+                        class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]"
+                        style={chainBudgetPillStyle(chainBudgetStatus())}
+                        title={chainBudgetStatusDetail()}
+                        aria-label={chainBudgetStatusDetail()}
+                      >
+                        {chainBudgetStatusLabel()}
+                      </span>
+                    </Show>
+                    <Show when={liveGoal()}>
+                      <span class="min-w-0 truncate text-[11px] font-semibold text-violet-100/62">
+                        {cleanText(liveGoal()!.condition)}
+                      </span>
+                    </Show>
                   </div>
-                  <div data-component="goal-target-toolbar" class="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
+                  <div data-component="goal-target-toolbar" class="flex shrink-0 items-center justify-end gap-1.5">
                     <ActionButton
                       label={liveGoal() ? "Running…" : "Start Chain"}
                       variant={liveGoal() ? "secondary" : "primary"}
-                      class="h-7 shrink-0 px-3 text-12-medium"
+                      class="h-5 shrink-0 px-2.5 text-11-medium"
                       busy={busy() === "chain"}
                       disabled={
                         !!liveGoal() ||
@@ -2501,7 +2591,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <ActionButton
                           label="Check"
                           variant="secondary"
-                          class="h-7 shrink-0 px-3 text-12-medium"
+                          class="h-5 shrink-0 px-2.5 text-11-medium"
                           disabled={busy() !== null || !props.sessionID}
                           onClick={() => {
                             const errors = validateChainDraft(runnableChainSteps(), {
@@ -2518,7 +2608,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <ActionButton
                           label="Save"
                           variant="secondary"
-                          class="h-7 shrink-0 px-3 text-12-medium"
+                          class="h-5 shrink-0 px-2.5 text-11-medium"
                           disabled={busy() !== null}
                           onClick={() => {
                             writeStoredChainDraft(props.sessionID, {
@@ -2537,7 +2627,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <Show when={chainErrors().length > 0}>
                       <div
                         data-component="goal-chain-validation-errors"
-                        class="mt-2 flex flex-col gap-1 rounded-md border border-amber-600/40 bg-amber-950/30 px-3 py-2"
+                        class="basis-full rounded-md border border-amber-600/40 bg-amber-950/30 px-3 py-1.5"
                       >
                         <For each={chainErrors()}>
                           {(error) => (
@@ -2554,12 +2644,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <div
                     data-component="goal-global-budget"
                     data-layout="compact-chain-header"
-                    class="mt-2 min-w-0"
-                    aria-label={`Chain limits: ${chainLimitSummary()}`}
+                    data-budget-status={chainBudgetStatus()}
+                    class="mt-1 min-w-0"
+                    aria-label={`${chainLimitSummary()} · ${chainBudgetStatusDetail()}`}
                   >
                     <div
                       data-component="goal-target-stat-strip"
-                      class="rounded-lg border p-1.5"
+                      class="rounded-lg border p-1"
                       style={{
                         "background-color": "rgba(2, 6, 23, 0.28)",
                         "border-color": "rgba(167, 139, 250, 0.10)",
@@ -2573,14 +2664,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <label
                       data-component="goal-chain-compact-stat"
                       data-kind="turns"
-                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border px-2.5"
+                      class="flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2"
                       style={{
                         "background-color": "rgba(59, 130, 246, 0.055)",
                         "border-color": "rgba(96, 165, 250, 0.14)",
                       }}
                       title={chainLimitSummary()}
                     >
-                      <span class="min-w-[54px] text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-100/78">
+                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-blue-100/78">
                         {language.t("session.goal.chainBuilder.stat.turns")}
                       </span>
                       <input
@@ -2590,23 +2681,23 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterTurns())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTurns", event.currentTarget.value)}
-                        class="h-6 w-12 rounded border border-blue-200/16 bg-blue-950/20 px-1 text-center text-13-bold tabular-nums text-text-base outline-none focus:border-blue-200/45"
+                        class="h-5 w-11 rounded border border-blue-200/16 bg-blue-950/20 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-blue-200/45"
                       />
-                      <span class="min-w-0 truncate text-[10px] font-semibold text-blue-100/52">
+                      <span class="min-w-0 truncate text-[9px] font-semibold text-blue-100/52">
                         {language.t("session.goal.chainBuilder.stat.turnsHint")}
                       </span>
                     </label>
                     <label
                       data-component="goal-chain-compact-stat"
                       data-kind="time"
-                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border px-2.5"
+                      class="flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2"
                       style={{
                         "background-color": "rgba(139, 92, 246, 0.055)",
                         "border-color": "rgba(167, 139, 250, 0.14)",
                       }}
                       title={chainLimitSummary()}
                     >
-                      <span class="min-w-[54px] text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-100/78">
+                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-100/78">
                         {language.t("session.goal.chainBuilder.stat.time")}
                       </span>
                       <input
@@ -2616,31 +2707,32 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterMinutes())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTimeMinutes", event.currentTarget.value)}
-                        class="h-6 w-12 rounded border border-violet-200/16 bg-violet-950/20 px-1 text-center text-13-bold tabular-nums text-text-base outline-none focus:border-violet-200/45"
+                        class="h-5 w-11 rounded border border-violet-200/16 bg-violet-950/20 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-violet-200/45"
                       />
-                      <span class="min-w-0 truncate text-[10px] font-semibold text-violet-100/52">
+                      <span class="min-w-0 truncate text-[9px] font-semibold text-violet-100/52">
                         {language.t("session.goal.chainBuilder.stat.timeHint")}
                       </span>
                     </label>
-                    <span
-                      data-component="goal-chain-summary-line"
+                    <div
+                      data-component="goal-chain-compact-stat"
                       data-kind="actions"
-                      class="flex h-10 min-w-0 items-center gap-2 overflow-hidden rounded-md border px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-100/78"
+                      class="flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2"
                       style={{
-                        "background-color": "rgba(16, 185, 129, 0.055)",
-                        "border-color": "rgba(52, 211, 153, 0.14)",
+                        "background-color": "rgba(16, 185, 129, 0.05)",
+                        "border-color": "rgba(110, 231, 183, 0.14)",
                       }}
                       title={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
-                      aria-label={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
                     >
-                      <span class="min-w-[54px]">{language.t("session.goal.chainBuilder.stat.actions")}</span>
-                      <strong class={numericHighlightClass()} style={numericHighlightStyle("emerald")}>
+                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-emerald-100/78">
+                        {language.t("session.goal.chainBuilder.stat.actions")}
+                      </span>
+                      <span class="flex h-5 w-11 items-center justify-center rounded border border-emerald-200/16 bg-emerald-950/20 px-1 text-center text-12-bold tabular-nums text-text-base">
                         {visibleStepCount()}
-                      </strong>
-                      <span class="min-w-0 truncate text-[10px] font-semibold normal-case text-emerald-100/52 [letter-spacing:0]">
+                      </span>
+                      <span class="min-w-0 truncate text-[9px] font-semibold text-emerald-100/52">
                         {language.t("session.goal.chainBuilder.stat.actionsHint")}
                       </span>
-                    </span>
+                    </div>
                     </div>
                     </div>
                   </div>
@@ -3026,36 +3118,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   data-component="goal-playbook-chain-pane"
                 class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(180deg,rgba(46,16,101,0.06),rgba(10,10,10,0.42))]"
                 >
-                  <div data-component="goal-plan-chain" class="flex h-full min-h-0 min-w-0 flex-col p-2.5">
+                  <div data-component="goal-plan-chain" class="flex h-full min-h-0 min-w-0 flex-col p-2">
                     <div
-                      class="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2"
-                      style={{
-                        "background-color": "rgba(139, 92, 246, 0.045)",
-                        "border-color": "rgba(167, 139, 250, 0.10)",
-                        "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.012)",
-                      }}
-                    >
-                      <div class="min-w-0 flex items-center gap-2">
-                        <span class="h-4 w-1.5 shrink-0 rounded-full bg-violet-300/75" aria-hidden />
-                        <div class="text-12-medium font-bold uppercase tracking-[0.12em] text-violet-50">
-                          {liveGoal()
-                            ? language.t("session.goal.chainBuilder.runningHeader")
-                            : language.t("session.goal.chainBuilder.planChain")}
-                        </div>
-                      </div>
-                      <div
-                        class="shrink-0 rounded-md border px-2 py-1 text-11-regular font-semibold text-violet-100/80"
-                        style={{ "background-color": "rgba(139, 92, 246, 0.06)", "border-color": "rgba(167, 139, 250, 0.14)" }}
-                      >
-                        <strong class={numericHighlightClass("mr-1")} style={numericHighlightStyle("violet")}>
-                          {visibleStepCount()}
-                        </strong>
-                        {language.t("session.goal.chainBuilder.steps")}
-                      </div>
-                    </div>
-
-                    <div
-                      class="mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border bg-background-panel/76 p-1.5"
+                      class="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border bg-background-panel/76 p-1.5"
                       style={{ "border-color": "rgba(167, 139, 250, 0.10)", "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.012)" }}
                     >
                       <Show
@@ -3097,14 +3162,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-component="goal-chain-step-row"
                                 data-density="compact-chain-row"
                                 data-run-state={stepRunState(i())}
+                                data-editing={editingChainStepID() === step.id ? "true" : "false"}
                                 class={`group grid min-w-[790px] grid-cols-[30px_40px_minmax(220px,1fr)_96px_154px_194px] items-center gap-2 rounded-lg border px-2.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
                                 classList={{
+                                  "ring-2 ring-sky-300/70 shadow-[0_0_24px_rgba(56,189,248,0.22)] brightness-110":
+                                    editingChainStepID() === step.id,
                                   "ring-2 ring-emerald-300/45 shadow-[0_0_22px_rgba(16,185,129,0.18)]":
-                                    stepRunState(i()) === "running",
+                                    stepRunState(i()) === "running" && editingChainStepID() !== step.id,
                                   "ring-2 ring-amber-300/42 shadow-[0_0_22px_rgba(245,158,11,0.16)]":
-                                    stepRunState(i()) === "paused",
+                                    stepRunState(i()) === "paused" && editingChainStepID() !== step.id,
                                   "ring-2 ring-orange-300/42 shadow-[0_0_22px_rgba(249,115,22,0.16)]":
-                                    stepRunState(i()) === "stalled",
+                                    stepRunState(i()) === "stalled" && editingChainStepID() !== step.id,
                                   "opacity-75": stepRunState(i()) === "done",
                                   "opacity-[0.88]": stepRunState(i()) === "queued",
                                 }}
@@ -3275,6 +3343,21 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       </Show>
                     </div>
 
+                    <Show when={!liveGoal()}>
+                      <div
+                        data-component="goal-chain-summary-line"
+                        class="mt-1.5 flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 text-[10px] font-semibold text-violet-100/55"
+                        title={language.t("session.goal.chainBuilder.planChainHint")}
+                      >
+                        <span class="min-w-0 truncate">
+                          {language.t("session.goal.chainBuilder.planChainHint")}
+                        </span>
+                        <span class="shrink-0 tabular-nums text-violet-100/72">
+                          {chainLimitSummary()}
+                        </span>
+                      </div>
+                    </Show>
+
                     <Show when={liveGoal()}>
                       <div
                         data-component="goal-chain-running-activity"
@@ -3350,28 +3433,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 >
                   <GoalConsoleSection
                     zone="action-library"
-                    title="Action Library"
-                    subtitle="Reusable actions. Add inserts into Run Order."
+                    title={language.t("session.goal.template.libraryShortTitle")}
+                    subtitle={language.t("session.goal.template.librarySubtitle")}
                     class="min-h-0"
                   >
                   <section data-testid="action-library" data-component="goal-method-library" class="flex h-full min-h-0 min-w-0 flex-col p-2">
                     <div
                       data-component="goal-method-library-header"
-                      class="flex items-start justify-between gap-3 px-1 py-1"
+                      class="mb-1 flex min-w-0 items-center justify-between gap-2"
                     >
-                      <div class="min-w-0">
-                        <div class="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-text-base">
-                          Actions
-                        </div>
-                        <div class="mt-0.5 text-11-regular leading-4 text-text-weaker">
-                          Plus adds to Run Order. Edit opens the editor.
-                        </div>
-                      </div>
+                      <span class="min-w-0 truncate text-[10px] font-medium leading-4 text-text-weaker">
+                        Plus adds to Run Order. Edit opens the editor.
+                      </span>
                     </div>
-
                     <div
                       data-component="goal-method-category-tabs"
-                      class="mt-1.5 grid min-w-0 grid-cols-8 gap-0.5"
+                      class="grid min-w-0 grid-cols-8 gap-0.5"
                     >
                       <For each={ACTION_CATEGORIES}>
                         {(category) => (
@@ -3389,7 +3466,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                     <div
                       data-component="goal-method-rail-filters"
-                      class="mt-1.5 p-1"
+                      class="mt-1 p-0"
                     >
                       <TextField
                         value={templateSearch()}
@@ -3405,7 +3482,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       role="listbox"
                       aria-label={language.t("session.goal.create.templates")}
                       tabindex={0}
-                      class="mt-1.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain p-1"
+                      class="mt-1.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain p-0.5"
                       onKeyDown={handleTemplateListboxKeyDown}
                     >
                       <Show
@@ -3423,7 +3500,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               role="option"
                               aria-selected={selectedTemplateID() === t.id}
                               title={t.description || t.condition || t.label}
-                              class="group grid min-h-0 grid-cols-[minmax(0,1fr)_26px_26px] items-center gap-1 rounded px-1 py-0.5 hover:brightness-110"
+                              class="group grid min-h-[30px] min-w-0 grid-cols-[minmax(0,1fr)_24px_24px] items-center gap-1 overflow-hidden rounded border px-1 py-0.5 hover:brightness-110"
                               style={actionLibraryRowStyle(t)}
                               classList={{
                                 "outline outline-1 outline-offset-1 outline-emerald-200/65 brightness-110":
@@ -3433,21 +3510,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               <button
                                 type="button"
                                 data-component="goal-method-select"
-                                class="flex min-w-0 items-center gap-1.5 rounded px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-strong"
+                                class="grid w-full min-w-0 grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)_8px] items-center gap-1 overflow-hidden rounded px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-strong"
                                 onClick={() => selectActionForView(t)}
                               >
-                                <span class="shrink-0 text-12-medium text-text-base">{t.label}</span>
-                                <span aria-hidden="true" class="shrink-0 text-11-regular text-text-weaker">
-                                  ·
-                                </span>
-                                <span data-component="goal-method-prompt-preview" class="min-w-0 truncate text-[11px] text-text-weak">
+                                <span data-component="goal-method-label" class="min-w-0 truncate text-[11px] font-semibold leading-4 text-text-base">{t.label}</span>
+                                <span data-component="goal-method-prompt-preview" class="min-w-0 truncate text-[11px] leading-4 text-text-weak">
                                   {cleanText(t.description || t.condition || "")}
                                 </span>
-                                <Show when={selectedTemplateID() === t.id}>
-                                  <span class="ml-auto shrink-0 rounded bg-emerald-300/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-emerald-100">
-                                    Editing
-                                  </span>
-                                </Show>
+                                <span
+                                  data-component="goal-method-selected-dot"
+                                  aria-hidden="true"
+                                  class="h-1.5 w-1.5 justify-self-end rounded-full bg-emerald-200 transition-opacity"
+                                  classList={{
+                                    "opacity-100": selectedTemplateID() === t.id,
+                                    "opacity-0": selectedTemplateID() !== t.id,
+                                  }}
+                                />
                               </button>
                               <button
                                 type="button"
@@ -3489,55 +3567,69 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                   <GoalConsoleSection
                     zone="action-editor"
-                    title="Action Editor"
-                    subtitle="Save changes. Add from Action Library inserts into Run Order."
+                    title={language.t("session.goal.template.editorShortTitle")}
+                    subtitle={language.t("session.goal.template.editorSubtitle")}
                     class="min-h-0"
                   >
                     <section
                       data-testid="action-editor"
                       data-component="goal-method-inspector"
-                      class="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-background-base/70 p-2.5"
+                      class="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-background-base/70 p-2"
                     >
-                      <div class="flex min-w-0 flex-col gap-3">
+                      <div class="flex min-w-0 flex-col gap-2">
                         <div
                           data-component="goal-action-editor-current"
-                          class="rounded-lg border px-2.5 py-2"
-                          style={actionEditorPanelStyle(true)}
+                          class="rounded-md border px-2 py-1.5"
+                          style={actionEditorCurrentStyle(actionEditorDescriptor())}
                         >
                           <div
                             data-component="goal-action-editor-active-state"
-                            class="mb-2 flex min-w-0 items-center gap-2 rounded px-2 py-1 text-amber-200/70 text-[10px]"
+                            class="flex min-w-0 items-center gap-2"
+                            title={editorActiveHint()}
                           >
-                            <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-300" aria-hidden />
-                            <span class="shrink-0 font-semibold uppercase tracking-[0.12em]">
-                              {editorActiveLabel()}
-                            </span>
-                            <span class="min-w-0 truncate text-amber-100/50">
-                              {editorActiveHint()}
-                            </span>
-                          </div>
-                          <div class="flex min-w-0 items-center gap-2">
-                            <div class="min-w-0">
-                              <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
-                                {language.t("session.goal.template.editorTitle")}
-                              </div>
-                              <div class="mt-1 truncate text-14-medium font-semibold text-text-base" title={actionDraft.label}>
-                                {actionDraft.label.trim() || language.t("session.goal.template.newDraft")}
+                            <div class="min-w-0 flex-1">
+                              <div class="flex min-w-0 items-baseline gap-2">
+                                <span class="min-w-0 truncate text-13-medium font-semibold text-text-base" title={actionDraft.label}>
+                                  {actionDraft.label.trim() || language.t("session.goal.template.newDraft")}
+                                </span>
+                                <span class="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-text-weaker">
+                                  {editorActiveLabel()}
+                                </span>
                               </div>
                             </div>
-                            <span
-                              class="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
-                              style={actionCategoryPillStyle(actionDraft.category, true)}
-                            >
-                              {actionCategoryShortLabel(actionDraft.category)}
-                            </span>
+                            <label data-component="goal-action-editor-category" class="ml-auto min-w-[86px] shrink-0">
+                              <span class="sr-only">
+                                {language.t("session.goal.template.category")}
+                              </span>
+                              <select
+                                value={actionDraft.category}
+                                disabled={busy() !== null || !props.sessionID}
+                                onChange={(event) => setActionDraft("category", event.currentTarget.value as GoalTemplateCategory)}
+                                class="h-6 w-full rounded border border-border-base/70 bg-background-panel/80 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-base outline-none transition focus:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <For each={GOAL_TEMPLATE_CATEGORIES}>
+                                  {(category) => (
+                                    <option value={category}>{category}</option>
+                                  )}
+                                </For>
+                              </select>
+                            </label>
                           </div>
-                          <div data-component="goal-action-editor-footer" class="mt-3 flex flex-wrap gap-1">
+                          <div data-component="goal-action-editor-footer" class="mt-1.5 flex flex-wrap gap-1">
+                            <span data-component="goal-method-new-action" class="flex flex-1">
+                              <ActionButton
+                                label={language.t("session.goal.template.new")}
+                                variant="secondary"
+                                class="h-6 flex-1 px-2 text-11-medium"
+                                disabled={busy() !== null}
+                                onClick={openActionEditor}
+                              />
+                            </span>
                             <Show when={editingChainStepID()}>
                               <ActionButton
                                 label={language.t("session.goal.template.updateRunStep")}
                                 variant="primary"
-                                class="flex-1"
+                                class="h-6 flex-1 px-2 text-11-medium"
                                 disabled={busy() !== null || !!liveGoal() || !actionDraft.prompt.trim()}
                                 onClick={() => updateEditingChainStep()}
                               />
@@ -3546,7 +3638,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               label={language.t("session.goal.template.save")}
                               variant="primary"
                               tone="success"
-                              class="flex-1"
+                              class="h-6 flex-1 px-2 text-11-medium"
                               busy={busy() === "template"}
                               disabled={
                                 busy() !== null ||
@@ -3558,7 +3650,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             <ActionButton
                               label={language.t("session.goal.template.duplicate")}
                               variant="secondary"
-                              class="flex-1"
+                              class="h-6 flex-1 px-2 text-11-medium"
                               busy={busy() === "template"}
                               disabled={
                                 busy() !== null || !props.sessionID || !actionDraft.prompt.trim()
@@ -3569,7 +3661,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               label={language.t("session.goal.template.delete")}
                               variant="secondary"
                               tone="danger"
-                              class="flex-1"
+                              class="h-6 flex-1 px-2 text-11-medium"
                               busy={busy() === "template"}
                               disabled={busy() !== null || !props.sessionID || !selectedTemplate() || !!selectedTemplate()?.builtin}
                               onClick={() => {
@@ -3584,8 +3676,169 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </div>
 
                         <div
+                          data-component="goal-action-editor-routing"
+                          class="grid grid-cols-1 gap-1 rounded-md border p-1"
+                          style={{
+                            "background": "linear-gradient(90deg, rgba(15, 23, 42, 0.34), rgba(24, 24, 27, 0.78) 58%, rgba(14, 165, 233, 0.035))",
+                            "border-color": "rgba(148, 163, 184, 0.16)",
+                            "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.018)",
+                          }}
+                        >
+                          <div
+                            data-component="goal-action-editor-model"
+                            class="grid h-7 min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-1.5 rounded-md border px-1.5"
+                            style={{
+                              "background-color": "rgba(14, 165, 233, 0.035)",
+                              "border-color": "rgba(56, 189, 248, 0.12)",
+                            }}
+                          >
+                            <span class="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-sky-100/66">
+                              {language.t("session.goal.template.pinnedModel")}
+                            </span>
+                            <select
+                              value={actionDraft.model}
+                              disabled={busy() !== null || !props.sessionID}
+                              aria-label={language.t("session.goal.template.pinnedModel")}
+                              title={language.t("session.goal.template.pinnedModel")}
+                              onChange={(event) => setActionDraft("model", event.currentTarget.value)}
+                              class="h-5 min-w-0 appearance-none truncate rounded bg-transparent px-1 text-11-medium font-semibold text-sky-100/86 outline-none transition disabled:opacity-30"
+                            >
+                              <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultModel")}</option>
+                              <For each={modelOptionsForDraft()}>
+                                {(option) => <option value={option.key}>{option.label}</option>}
+                              </For>
+                            </select>
+                          </div>
+                          <div
+                            data-component="goal-action-editor-limits"
+                            class="grid h-7 min-w-0 grid-cols-[52px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1 rounded-md border px-1.5"
+                            style={{
+                              "background-color": "rgba(15, 23, 42, 0.30)",
+                              "border-color": "rgba(148, 163, 184, 0.13)",
+                            }}
+                            aria-label={language.t("session.goal.template.constraints")}
+                          >
+                            <span class="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-100/58">
+                              {language.t("session.goal.template.constraints")}
+                            </span>
+                            <div
+                              class="flex h-5 min-w-0 items-center gap-1 rounded-full border px-1.5"
+                              style={{
+                                "background-color": "rgba(59, 130, 246, 0.045)",
+                                "border-color": "rgba(96, 165, 250, 0.12)",
+                              }}
+                            >
+                              <label class="flex min-w-0 flex-1 items-center gap-1" title={language.t("session.goal.chainBuilder.stat.turns")}>
+                                <span class="shrink-0 text-[9px] font-semibold text-blue-100/58">
+                                  {language.t("session.goal.chainBuilder.stat.turns")}
+                                </span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={String(actionDraft.turns)}
+                                  disabled={busy() !== null || !props.sessionID}
+                                  aria-label={language.t("session.goal.chainBuilder.stat.turns")}
+                                  onInput={(event) => {
+                                    const value = Number.parseInt(event.currentTarget.value, 10)
+                                    if (!Number.isFinite(value)) return
+                                    setActionDraft("turns", Math.max(1, value))
+                                  }}
+                                  class="h-5 min-w-0 flex-1 bg-transparent p-0 text-right text-11-medium font-bold tabular-nums text-blue-50/84 outline-none disabled:opacity-40"
+                                />
+                              </label>
+                            </div>
+                            <div
+                              class="flex h-5 min-w-0 items-center gap-1 rounded-full border px-1.5"
+                              style={{
+                                "background-color": "rgba(20, 184, 166, 0.045)",
+                                "border-color": "rgba(45, 212, 191, 0.12)",
+                              }}
+                            >
+                              <label class="flex min-w-0 flex-1 items-center gap-1" title={language.t("session.goal.chainBuilder.stat.time")}>
+                                <span class="shrink-0 text-[9px] font-semibold text-teal-100/58">
+                                  {language.t("session.goal.chainBuilder.stat.time")}
+                                </span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={String(actionDraft.minutes)}
+                                  disabled={busy() !== null || !props.sessionID}
+                                  aria-label={language.t("session.goal.chainBuilder.stat.time")}
+                                  onInput={(event) => {
+                                    const value = Number.parseInt(event.currentTarget.value, 10)
+                                    if (!Number.isFinite(value)) return
+                                    setActionDraft("minutes", Math.max(1, value))
+                                  }}
+                                  class="h-5 min-w-0 flex-1 bg-transparent p-0 text-right text-11-medium font-bold tabular-nums text-teal-50/84 outline-none disabled:opacity-40"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                          <div
+                            class="grid min-w-0 grid-cols-[52px_minmax(0,1fr)_42px] items-center gap-1 rounded-md border px-1.5 py-1"
+                            style={{
+                              "background-color": "rgba(16, 185, 129, 0.026)",
+                              "border-color": "rgba(110, 231, 183, 0.11)",
+                            }}
+                          >
+                            <span class="text-[9px] font-bold uppercase tracking-[0.1em] text-emerald-100/62">
+                              {language.t("session.goal.template.pinnedSkills")}
+                            </span>
+                            <select
+                              value=""
+                              disabled={busy() !== null || !props.sessionID || skillPickOptions().length === 0 || actionDraft.skills.length >= 8}
+                              onChange={(event) => {
+                                const name = event.currentTarget.value
+                                if (name) toggleActionSkill(name)
+                                event.currentTarget.value = ""
+                              }}
+                              class="h-5 min-w-0 appearance-none truncate bg-transparent text-[10px] font-semibold text-emerald-100/72 outline-none transition disabled:opacity-35"
+                              title={language.t("session.goal.template.addSkill")}
+                              aria-label={language.t("session.goal.template.addSkill")}
+                            >
+                              <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.addSkill")}</option>
+                              <For each={skillPickOptions()}>
+                                {(skill) => <option value={skill.name}>{skill.name}</option>}
+                              </For>
+                            </select>
+                            <span class="rounded-full border px-1 py-0.5 text-center text-[10px] font-semibold tabular-nums text-emerald-100/70"
+                              style={{
+                                "background-color": "rgba(16, 185, 129, 0.035)",
+                                "border-color": "rgba(110, 231, 183, 0.12)",
+                              }}
+                            >
+                              {actionDraft.skills.length}/8
+                            </span>
+                            <Show when={skillOptionsForDraft().length > 0} fallback={
+                              <div class="col-span-3 rounded-md border border-dashed border-border-base bg-background-base/35 px-2 py-1.5 text-11-regular text-text-weak">
+                                {language.t("session.goal.template.noSkills")}
+                              </div>
+                            }>
+                              <Show when={actionDraft.skills.length > 0}>
+                                <div class="col-span-3 flex min-w-0 flex-wrap gap-1 overflow-hidden">
+                                  <For each={actionDraft.skills}>
+                                    {(skill) => (
+                                      <button
+                                        type="button"
+                                        title={language.t("session.goal.template.removeSkill", { skill })}
+                                        aria-label={language.t("session.goal.template.removeSkill", { skill })}
+                                        disabled={busy() !== null || !props.sessionID}
+                                        onClick={() => toggleActionSkill(skill)}
+                                        class="max-w-[118px] truncate rounded border border-emerald-200/24 bg-emerald-500/13 px-1.5 py-0.5 text-left text-[10px] font-semibold text-emerald-100/90 transition hover:border-emerald-200/45 hover:bg-emerald-500/20 disabled:opacity-35"
+                                      >
+                                        {skill}
+                                      </button>
+                                    )}
+                                  </For>
+                                </div>
+                              </Show>
+                            </Show>
+                          </div>
+                        </div>
+
+                        <div
                           data-component="goal-action-editor-fields"
-                          class="flex flex-col gap-1.5 p-1.5"
+                          class="flex flex-col gap-1.5 p-1"
                         >
                           <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-weaker">
                             Details
@@ -3614,118 +3867,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             disabled={busy() !== null || !props.sessionID}
                             class="w-full"
                           />
-                        </div>
-
-                        <div
-                          data-component="goal-action-editor-limits"
-                          class="flex items-center gap-2 p-1.5"
-                        >
-                          <span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-weaker shrink-0">Limits</span>
-                            <label class="flex items-center gap-1">
-                              <span class="text-[10px] text-text-weaker">Turns</span>
-                              <input
-                                type="number"
-                                min="1"
-                                value={String(actionDraft.turns)}
-                                disabled={busy() !== null}
-                                onInput={(event) =>
-                                  setActionDraft(
-                                    "turns",
-                                    Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
-                                  )
-                                }
-                                class="h-5 w-10 rounded px-1 text-center text-11-medium tabular-nums text-text-base bg-transparent outline-none"
-                              />
-                            </label>
-                            <label class="flex items-center gap-1">
-                              <span class="text-[10px] text-text-weaker">Min</span>
-                              <input
-                                type="number"
-                                min="1"
-                                value={String(actionDraft.minutes)}
-                                disabled={busy() !== null}
-                                onInput={(event) =>
-                                  setActionDraft(
-                                    "minutes",
-                                    Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1),
-                                  )
-                                }
-                                class="h-5 w-10 rounded px-1 text-center text-11-medium tabular-nums text-text-base bg-transparent outline-none"
-                              />
-                            </label>
-                        </div>
-
-                        <div
-                          data-component="goal-action-editor-runtime-pins"
-                          class="grid grid-cols-1 gap-2 rounded-lg border p-2.5"
-                          style={actionEditorPanelStyle()}
-                        >
-                          <div class="flex min-w-0 items-center justify-between gap-2">
-                            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-base">
-                              {language.t("session.goal.template.runtimePins")}
-                            </div>
-                            <div class="truncate text-[10px] text-text-weak">
-                              {language.t("session.goal.template.runtimePinsHint")}
-                            </div>
-                          </div>
-                          <label class="grid gap-1.5">
-                            <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100/85">
-                              {language.t("session.goal.template.pinnedModel")}
-                            </span>
-                            <select
-                              value={actionDraft.model}
-                              disabled={busy() !== null || !props.sessionID}
-                              onChange={(event) => setActionDraft("model", event.currentTarget.value)}
-                              class="h-7 w-full rounded bg-transparent px-1 text-11-medium text-sky-200/80 outline-none disabled:opacity-30"
-                            >
-                              <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultModel")}</option>
-                              <For each={modelOptionsForDraft()}>
-                                {(option) => <option value={option.key}>{option.label}</option>}
-                              </For>
-                            </select>
-                          </label>
-                          <div class="grid gap-1.5">
-                            <div class="flex items-center justify-between gap-2">
-                              <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-100/85">
-                                {language.t("session.goal.template.pinnedSkills")}
-                              </span>
-                              <span class="rounded border border-emerald-200/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-emerald-100">
-                                {actionDraft.skills.length}/8
-                              </span>
-                            </div>
-                            <Show
-                              when={skillOptionsForDraft().length > 0}
-                              fallback={
-                                <div class="rounded-md border border-dashed border-border-base bg-background-base/35 px-2 py-2 text-11-regular text-text-weak">
-                                  {language.t("session.goal.template.noSkills")}
-                                </div>
-                              }
-                            >
-                              <div class="flex max-h-28 min-w-0 flex-wrap gap-1 overflow-y-auto p-1">
-                                <For each={skillOptionsForDraft()}>
-                                  {(skill) => {
-                                    const selected = () => actionDraft.skills.includes(skill.name)
-                                    return (
-                                      <button
-                                        type="button"
-                                        aria-pressed={selected()}
-                                        title={skill.description || skill.name}
-                                        disabled={busy() !== null || !props.sessionID}
-                                        onClick={() => toggleActionSkill(skill.name)}
-                                        class="rounded px-2 py-0.5 text-left text-[10px] font-semibold transition disabled:opacity-30"
-                                        classList={{
-                                          "bg-emerald-500/20 text-emerald-200": selected(),
-                                          "text-text-weaker hover:bg-emerald-500/10 hover:text-emerald-200/80": !selected(),
-                                        }}
-                                      >
-                                        {skill.name}
-                                      </button>
-                                    )
-                                  }}
-                                </For>
-                              </div>
-                            </Show>
-                          </div>
                         </div>
                       </div>
                     </section>

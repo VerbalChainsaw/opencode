@@ -542,6 +542,20 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       expect(capError?.message).toContain("exceeds master time limit")
     })
 
+    test("reports master turn cap when steps exceed limit", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [
+          { id: "1", actionID: "a", label: "A", condition: "a", command: "", maxTurns: 8, maxTimeMinutes: 10, builtin: false },
+          { id: "2", actionID: "b", label: "B", condition: "b", command: "", maxTurns: 8, maxTimeMinutes: 10, builtin: false },
+        ],
+        { maxTurns: 12, maxTimeMinutes: 60 },
+      )
+      const capError = errors.find((e: { stepIndex: number; message: string }) => e.stepIndex === -1 && e.message.includes("turn"))
+      expect(capError).toBeTruthy()
+      expect(capError?.message).toContain("exceeds master turn limit")
+    })
+
     test("validates model format (malformed object)", async () => {
       ;({ validateChainDraft } = await load())
       const errors = validateChainDraft(
