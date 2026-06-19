@@ -1,6 +1,13 @@
 export * as ServerAuth from "./auth"
 
+import { timingSafeEqual } from "node:crypto"
 import { Config as EffectConfig, Context, Effect, Layer, Option, Redacted } from "effect"
+
+function safeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a)
+  const bBytes = new TextEncoder().encode(b)
+  return aBytes.length === bBytes.length && timingSafeEqual(aBytes, bBytes)
+}
 
 export type Credentials = {
   password?: string
@@ -45,7 +52,7 @@ export function authorized(credentials: DecodedCredentials, config: Info) {
   return (
     Option.isSome(config.password) &&
     credentials.username === config.username &&
-    Redacted.value(credentials.password) === config.password.value
+    safeEqual(Redacted.value(credentials.password), config.password.value)
   )
 }
 

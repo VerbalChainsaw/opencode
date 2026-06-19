@@ -57,7 +57,7 @@ export const { use: usePromptHistory, provider: PromptHistoryProvider } = create
 
       // Rewrite valid retained entries to self-heal corruption and enforce the limit.
       if (lines.length > 0)
-        writeText(historyPath, lines.map((line) => JSON.stringify(line)).join("\n") + "\n").catch(() => {})
+        writeText(historyPath, lines.map((line) => JSON.stringify(line)).join("\n") + "\n").catch((err) => { console.error(err) })
     })
 
     const [store, setStore] = createStore({
@@ -101,10 +101,10 @@ export const { use: usePromptHistory, provider: PromptHistoryProvider } = create
         )
 
         if (trimmed) {
-          writeText(historyPath, store.history.map((line) => JSON.stringify(line)).join("\n") + "\n").catch(() => {})
+          writeText(historyPath, store.history.map((line) => JSON.stringify(line)).join("\n") + "\n").catch((err) => { console.error(err) })
           return
         }
-        appendText(historyPath, JSON.stringify(entry) + "\n").catch(() => {})
+        appendText(historyPath, JSON.stringify(entry) + "\n").catch((err) => { console.error(err) })
       },
     }
   },

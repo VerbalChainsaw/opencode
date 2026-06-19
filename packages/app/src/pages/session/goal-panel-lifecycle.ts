@@ -149,3 +149,33 @@ export function pauseResumeAction(
   if (effective === "paused") return "resume"
   return null
 }
+
+/**
+ * Stalled-run detection (the app-side slice of the spec's "stalled" state).
+ *
+ * A goal is "stalled" when it's still ACTIVE but nothing has happened for a
+ * while — the agent stopped responding, a provider timed out, or the sidecar
+ * is wedged. We derive it from the freshest activity timestamp the dock
+ * already polls (`.opencode/.session-events.jsonl`) rather than adding a new
+ * status to the plugin schema, so it's purely additive and cannot mislead a
+ * paused/terminal run. `lastActivityAt` is the newest activity event's `at`
+ * (or null when there's been no activity yet — a just-started goal is never
+ * stalled).
+ */
+export const DEFAULT_STALL_MINUTES = 5
+
+export function goalIdleMinutes(lastActivityAt: number | null | undefined, now: number): number {
+  if (typeof lastActivityAt !== "number" || !Number.isFinite(lastActivityAt) || lastActivityAt > now) return 0
+  return Math.floor((now - lastActivityAt) / 60_000)
+}
+
+export function isGoalStalled(
+  status: GoalState["status"] | undefined,
+  lastActivityAt: number | null | undefined,
+  now: number,
+  thresholdMinutes: number = DEFAULT_STALL_MINUTES,
+): boolean {
+  if (status !== "active") return false
+  if (typeof lastActivityAt !== "number" || !Number.isFinite(lastActivityAt) || lastActivityAt > now) return false
+  return now - lastActivityAt >= thresholdMinutes * 60_000
+}

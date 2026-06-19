@@ -1,8 +1,15 @@
 export * as ServerAuth from "./auth"
 
+import { timingSafeEqual } from "node:crypto"
 import { ConfigService } from "@/effect/config-service"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Config as EffectConfig, Context, Option, Redacted } from "effect"
+
+function safeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a)
+  const bBytes = new TextEncoder().encode(b)
+  return aBytes.length === bBytes.length && timingSafeEqual(aBytes, bBytes)
+}
 
 export type Credentials = {
   password?: string
@@ -29,7 +36,7 @@ export function authorized(credentials: DecodedCredentials, config: Info) {
   return (
     Option.isSome(config.password) &&
     credentials.username === config.username &&
-    Redacted.value(credentials.password) === config.password.value
+    safeEqual(Redacted.value(credentials.password), config.password.value)
   )
 }
 

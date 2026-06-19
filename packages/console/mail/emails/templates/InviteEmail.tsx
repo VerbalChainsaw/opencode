@@ -38,7 +38,7 @@ export const InviteEmail = ({
       </Head>
       <Fonts assetsUrl={assetsUrl} />
       <Preview>{messagePlain}</Preview>
-      <Body style={body} id={Math.random().toString()}>
+      <Body style={body}>
         <Container style={container}>
           <Section style={frame}>
             <Row>

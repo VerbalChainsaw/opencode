@@ -47,7 +47,7 @@ async function handleToolUpdate(part: ToolPart, channel: string, thread: string)
       thread_ts: thread,
       text: toolMessage,
     })
-    .catch(() => {})
+    .catch((err) => { console.error(err) })
 }
 
 app.use(async ({ next, context }) => {

@@ -1,0 +1,30 @@
+opencode script {
+  "channel": "dev",
+  "version": "0.0.0-dev-202606170626",
+  "preview": true,
+  "release": false,
+  "team": [
+    "adamdotdevin",
+    "Brendonovich",
+    "fwang",
+    "Hona",
+    "iamdavidhill",
+    "jayair",
+    "jlongster",
+    "kitlangton",
+    "kommander",
+    "MrMushrooooom",
+    "nexxeln",
+    "R44VC0RP",
+    "rekram1-node",
+    "thdxr",
+    "simonklee",
+    "vimtor",
+    "starptech",
+    "actions-user",
+    "opencode",
+    "opencode-agent[bot]"
+  ]
+}
+Loaded models.dev snapshot
+Build complete

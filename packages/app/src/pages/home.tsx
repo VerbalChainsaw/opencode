@@ -614,6 +614,7 @@ function HomeDesign() {
       <Dialog title={`${language.t("home.projects")} · ${snapshot.length}`}>
         <ProjectsDialogBody
           projects={snapshot}
+          language={language}
           onSelect={(directory) => {
             selectProject(conn, directory)
             dialog.close()
@@ -650,6 +651,7 @@ function HomeDesign() {
       <Dialog title={language.t("home.attention.title")}>
         <AttentionDialogBody
           records={snapshot}
+          language={language}
           onClear={(record) => clearAttentionRecord(record)}
           onOpen={(record) => {
             openAttentionRecord(record)
@@ -765,9 +767,13 @@ function HomeDesign() {
     })
   }
 
+  function openHelp() {
+    platform.openLink("https://opencode.ai/desktop-feedback")
+  }
+
   return (
     <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
-      <div class="mx-auto grid w-full h-full max-w-[1080px] gap-8 px-6 pb-16 lg:grid-cols-[280px_minmax(0,720px)]">
+      <div class="mx-auto grid w-full h-full max-w-[1160px] gap-6 px-6 pb-12 lg:grid-cols-[280px_minmax(0,1fr)]">
         <HomeProjectColumn
           projects={projects()}
           selected={state.selection}
@@ -787,26 +793,79 @@ function HomeDesign() {
           }}
           clearNotifications={clearNotifications}
           unseenCount={unseenCount}
-          openSettings={openSettings}
-          openHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
           language={language}
         />
 
-        <section
-          class="min-h-0 min-w-0 flex-1 flex flex-col pt-12"
-          aria-label={sessionBoardTitle()}
-        >
+        <section class="min-h-0 min-w-0 flex-1 flex flex-col pt-10" aria-label={sessionBoardTitle()}>
           <div class="flex min-h-0 flex-1 flex-col gap-4 pb-8">
-            <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div data-component="home-brand-strip" class="flex min-w-0 flex-col gap-4">
+              <div class="flex min-w-0 flex-col gap-4 border-b border-v2-border-border-base pb-4 xl:flex-row xl:items-end xl:justify-between">
+                <div class="flex min-w-0 items-start gap-4">
+                  <div class="min-w-0">
+                    <Logo class="h-6 w-[134px]" />
+                    <div class={HOME_SECTION_LABEL}>{language.t("home.header.kicker")}</div>
+                    <h1 class="mt-1 truncate text-[22px] leading-7 text-v2-text-text-base [font-weight:600]">
+                      {language.t("app.name.desktop")}
+                    </h1>
+                    <p class="mt-1 max-w-[620px] text-[13px] leading-5 text-v2-text-text-muted">
+                      {language.t("home.header.subtitle")}
+                    </p>
+                  </div>
+                </div>
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <ButtonV2
+                    data-action="home-primary-new-session"
+                    variant="contrast"
+                    size="normal"
+                    icon="plus"
+                    onClick={openNewSession}
+                  >
+                    {language.t("home.actions.newSession")}
+                  </ButtonV2>
+                  <ButtonV2
+                    data-action="home-primary-open-project"
+                    variant="neutral"
+                    size="normal"
+                    icon="folder-add-left"
+                    disabled={!focusedServer()}
+                    onClick={() => focusedServer() && chooseProject(focusedServer()!)}
+                  >
+                    {language.t("home.actions.openProject")}
+                  </ButtonV2>
+                  <IconButtonV2
+                    data-action="home-header-settings"
+                    variant="ghost-muted"
+                    size="large"
+                    icon={<IconV2 name="settings-gear" />}
+                    onClick={openSettings}
+                    aria-label={language.t("sidebar.settings")}
+                  />
+                  <IconButtonV2
+                    data-action="home-header-help"
+                    variant="ghost-muted"
+                    size="large"
+                    icon={<IconV2 name="help" />}
+                    onClick={openHelp}
+                    aria-label={language.t("sidebar.help")}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div data-component="home-metric-strip" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
               <HomeMetricCard
-                label="Projects"
+                label={language.t("home.projects")}
                 value={String(projects().length)}
+                detail={language.t("home.metrics.projects.detail")}
+                icon="folder-add-left"
                 disabled={projects().length === 0}
                 onClick={() => openProjectsDialog()}
               />
               <HomeMetricCard
-                label="Live Sessions"
+                label={language.t("home.metrics.liveSessions")}
                 value={String(liveSessionCount())}
+                detail={language.t("home.metrics.liveSessions.detail")}
+                icon="status-active"
                 disabled={liveSessionCount() === 0}
                 onClick={() => {
                   setState("searchFocused", true)
@@ -814,14 +873,18 @@ function HomeDesign() {
                 }}
               />
               <HomeMetricCard
-                label="Active Goals"
+                label={language.t("home.metrics.activeGoals")}
                 value={String(activeGoalCount())}
+                detail={language.t("home.metrics.activeGoals.detail")}
+                icon="status"
                 disabled={activeGoalCount() === 0}
                 onClick={() => openGoalsDialog()}
               />
               <HomeMetricCard
-                label="Needs Attention"
+                label={language.t("home.metrics.needsAttention")}
                 value={String(attentionRecords().length)}
+                detail={language.t("home.metrics.needsAttention.detail")}
+                icon="help"
                 tone="warning"
                 disabled={attentionRecords().length === 0}
                 onClick={() => openAttentionDialog()}
@@ -831,11 +894,13 @@ function HomeDesign() {
             <div class="grid min-h-0 flex-1 grid-rows-[minmax(240px,1fr)_auto] gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:grid-rows-none">
               <section
                 data-component="home-live-board"
-                class="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded-[12px] border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 pb-2 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] xl:min-h-0"
+                class="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded-[10px] border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 pb-2 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] xl:min-h-0"
               >
                 <div class="mb-2 flex items-center justify-between gap-3 px-2">
                   <div class="min-w-0">
-                    <div class="truncate text-v2-text-text-muted [font-weight:440]">{sessionBoardTitle()}</div>
+                    <div class="truncate text-[15px] leading-5 text-v2-text-text-base [font-weight:560]">
+                      {sessionBoardTitle()}
+                    </div>
                     <Show when={selectedProjectName()}>
                       {(project) => (
                         <div class="mt-0.5 truncate text-[12px] leading-4 text-v2-text-text-weaker">
@@ -928,31 +993,37 @@ function HomeDesign() {
               </section>
 
               <aside class="flex min-h-0 flex-col gap-4">
-                <section class="rounded-[12px] border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                <section class="rounded-[10px] border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                   <div class="mb-2 text-v2-text-text-muted [font-weight:440]">{language.t("home.actions.title")}</div>
                   <div class="flex flex-col gap-2">
-                    <ButtonV2 variant="contrast" size="normal" onClick={openNewSession}>
+                    <ButtonV2 data-action="home-sidebar-new-session" variant="contrast" size="normal" icon="plus" onClick={openNewSession}>
                       {language.t("home.actions.newSession")}
                     </ButtonV2>
                     <ButtonV2
+                      data-action="home-sidebar-resume-last"
                       variant="ghost-muted"
                       size="normal"
+                      icon="status-active"
                       disabled={!latestRecord()}
                       onClick={() => latestRecord() && openSession(latestRecord()!.session)}
                     >
                       {language.t("home.actions.resumeLast")}
                     </ButtonV2>
                     <ButtonV2
+                      data-action="home-sidebar-open-goal"
                       variant="ghost-muted"
                       size="normal"
+                      icon="status"
                       disabled={!latestGoalRecord()}
                       onClick={() => latestGoalRecord() && openGoalRecord(latestGoalRecord()!)}
                     >
                       {language.t("home.actions.openGoal")}
                     </ButtonV2>
                     <ButtonV2
+                      data-action="home-sidebar-open-project"
                       variant="ghost-muted"
                       size="normal"
+                      icon="folder-add-left"
                       disabled={!focusedServer()}
                       onClick={() => focusedServer() && chooseProject(focusedServer()!)}
                     >
@@ -961,11 +1032,11 @@ function HomeDesign() {
                   </div>
                 </section>
 
-                <section class="rounded-[12px] border border-amber-500/40 bg-amber-500/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                <section class="rounded-[10px] border border-amber-500/40 bg-amber-500/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                   <div class="mb-2 text-v2-text-text-base [font-weight:530]">{language.t("home.attention.title")}</div>
                   <Show
                     when={attentionRecords().length > 0}
-                    fallback={<p class="text-[13px] leading-5 text-v2-text-text-muted">No outstanding alerts right now.</p>}
+                    fallback={<p class="text-[13px] leading-5 text-v2-text-text-muted">{language.t("home.attention.empty")}</p>}
                   >
                     <ul class="flex flex-col gap-1.5">
                       <For each={attentionRecords().slice(0, 3)}>
@@ -990,9 +1061,9 @@ function HomeDesign() {
                                   type="button"
                                   class="shrink-0 rounded-md px-1.5 text-[11px] text-v2-text-text-weaker transition-colors hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
                                   onClick={() => clearAttentionRecord(record)}
-                                  aria-label={`Clear ${record.reason}`}
+                                  aria-label={language.t("home.attention.clear", { reason: record.reason })}
                                 >
-                                  clear
+                                  {language.t("home.attention.clear.short")}
                                 </button>
                               </Show>
                             </div>
@@ -1014,6 +1085,8 @@ function HomeDesign() {
 function HomeMetricCard(props: {
   label: string
   value: string
+  detail: string
+  icon: Parameters<typeof IconV2>[0]["name"]
   tone?: "warning" | "default"
   onClick?: () => void
   disabled?: boolean
@@ -1022,30 +1095,56 @@ function HomeMetricCard(props: {
   return (
     <button
       type="button"
-      class="flex w-full flex-col items-stretch rounded-[12px] border px-3 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-all disabled:cursor-not-allowed disabled:opacity-60"
+      data-component="home-metric-card"
+      class="group flex min-h-[92px] w-full flex-col items-stretch rounded-[10px] border px-3 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[background-color,border-color,box-shadow] disabled:cursor-default disabled:opacity-70"
       classList={{
-        "border-v2-border-border-base bg-v2-background-bg-layer-01 hover:border-border-strong hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong": props.tone !== "warning" && isInteractive(),
-        "border-v2-border-border-base bg-v2-background-bg-layer-01 cursor-default": props.tone !== "warning" && !isInteractive(),
-        "border-amber-500/40 bg-amber-500/8 hover:border-amber-400/60 hover:bg-amber-500/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60": props.tone === "warning" && isInteractive(),
-        "border-amber-500/40 bg-amber-500/8 cursor-default": props.tone === "warning" && !isInteractive(),
+        "border-v2-border-border-base bg-v2-background-bg-layer-01 hover:border-border-strong hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong":
+          props.tone !== "warning" && isInteractive(),
+        "border-v2-border-border-base bg-v2-background-bg-layer-01": props.tone !== "warning" && !isInteractive(),
+        "border-amber-500/40 bg-amber-500/8 hover:border-amber-400/60 hover:bg-amber-500/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60":
+          props.tone === "warning" && isInteractive(),
+        "border-amber-500/40 bg-amber-500/8": props.tone === "warning" && !isInteractive(),
       }}
       onClick={() => isInteractive() && props.onClick?.()}
       disabled={!isInteractive()}
-      aria-label={`${props.label}: ${props.value}`}
+      aria-label={`${props.label}: ${props.value}. ${props.detail}`}
     >
-      <div class="flex items-center justify-between gap-2">
-        <div class="text-[11px] uppercase tracking-[0.08em] text-v2-text-text-muted">{props.label}</div>
+      <div class="flex min-w-0 items-center justify-between gap-2">
+        <span class="flex min-w-0 items-center gap-1.5">
+          <span
+            class="flex size-5 shrink-0 items-center justify-center rounded-[5px] border border-v2-border-border-muted text-v2-icon-icon-muted"
+            classList={{
+              "border-amber-400/30 text-amber-300": props.tone === "warning",
+            }}
+            aria-hidden
+          >
+            <IconV2 name={props.icon} size="small" />
+          </span>
+          <span class="min-w-0 truncate text-[11px] uppercase tracking-[0.08em] text-v2-text-text-muted [font-weight:560]">
+            {props.label}
+          </span>
+        </span>
         <Show when={isInteractive()}>
-          <span class="text-v2-text-text-weaker text-[12px]" aria-hidden>›</span>
+          <span
+            class="shrink-0 text-[13px] text-v2-text-text-weaker transition-colors group-hover:text-v2-text-text-base"
+            aria-hidden
+          >
+            ›
+          </span>
         </Show>
       </div>
-      <div class="mt-2 text-[24px] leading-none text-v2-text-text-base [font-weight:530]">{props.value}</div>
+      <div class="mt-2 flex min-w-0 items-end justify-between gap-2">
+        <div class="text-[26px] leading-none text-v2-text-text-base [font-weight:600] tabular-nums">{props.value}</div>
+        <p class="min-w-0 flex-1 text-right text-[12px] leading-4 text-v2-text-text-weaker">{props.detail}</p>
+      </div>
     </button>
   )
 }
 
+
 function ProjectsDialogBody(props: {
   projects: LocalProject[]
+  language: ReturnType<typeof useLanguage>
   onSelect: (directory: string) => void
   onNewSession: (directory: string) => void
 }) {
@@ -1063,13 +1162,13 @@ function ProjectsDialogBody(props: {
                 >
                   <span class="h-1.5 w-1.5 rounded-full bg-icon-success-base shrink-0" aria-hidden />
                   <span class="min-w-0 flex-1 truncate">{displayName(project)}</span>
-                  <span class="shrink-0 text-[11px] text-v2-text-text-weaker">open</span>
+                  <span class="shrink-0 text-[11px] text-v2-text-text-weaker">{props.language.t("common.open")}</span>
                 </button>
                 <button
                   type="button"
                   class="flex items-center gap-1 rounded-md border border-v2-border-border-muted px-2 py-1 text-[12px] text-v2-text-text-muted transition-colors hover:border-border-strong hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
                   onClick={() => props.onNewSession(project.worktree)}
-                  aria-label={`New session in ${displayName(project)}`}
+                  aria-label={props.language.t("home.project.newSessionIn", { project: displayName(project) })}
                 >
                   +
                 </button>
@@ -1126,6 +1225,7 @@ function GoalsDialogBody(props: {
 
 function AttentionDialogBody(props: {
   records: HomeAttentionRecord[]
+  language: ReturnType<typeof useLanguage>
   onClear: (record: HomeAttentionRecord) => void
   onOpen: (record: HomeAttentionRecord) => void
 }) {
@@ -1135,7 +1235,7 @@ function AttentionDialogBody(props: {
         when={props.records.length > 0}
         fallback={
           <div class="px-2 py-6 text-center text-v2-text-text-muted text-13-regular">
-            No outstanding alerts right now.
+            {props.language.t("home.attention.empty")}
           </div>
         }
       >
@@ -1168,9 +1268,9 @@ function AttentionDialogBody(props: {
                       type="button"
                       class="flex items-center gap-1 rounded-md border border-v2-border-border-muted px-2 py-1 text-[12px] text-v2-text-text-muted transition-colors hover:border-border-strong hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
                       onClick={() => props.onClear(record)}
-                      aria-label={`Clear ${record.reason}`}
+                      aria-label={props.language.t("home.attention.clear", { reason: record.reason })}
                     >
-                      clear
+                      {props.language.t("home.attention.clear.short")}
                     </button>
                   </Show>
                 </div>
@@ -1194,18 +1294,16 @@ function HomeProjectColumn(props: {
   closeProject: (server: ServerConnection.Any, directory: string) => void
   clearNotifications: (server: ServerConnection.Any, project: LocalProject) => void
   unseenCount: (server: ServerConnection.Any, project: LocalProject) => number
-  openSettings: () => void
-  openHelp: () => void
   language: ReturnType<typeof useLanguage>
 }) {
   const global = useGlobal()
   const dialog = useDialog()
   const controller = useServerManagementController({ navigateOnAdd: false })
   return (
-    <aside class="mt-14 flex min-w-0 flex-col gap-4 lg:pt-[52px]" aria-label={props.language.t("home.projects")}>
+    <aside class="flex min-h-0 min-w-0 flex-col pb-8 pt-10" aria-label={props.language.t("home.projects")}>
       <nav
         data-component="home-project-tree"
-        class="flex min-w-0 flex-col gap-2 rounded-[12px] border border-v2-border-border-base bg-v2-background-bg-layer-01 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+        class="flex min-h-0 flex-1 min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-v2-border-border-base bg-v2-background-bg-layer-01 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
       >
         <div class="flex h-8 min-w-0 items-center justify-between px-1">
           <div class={HOME_SECTION_LABEL}>{props.language.t("home.projects")}</div>
@@ -1228,7 +1326,11 @@ function HomeProjectColumn(props: {
         </div>
         <Show
           when={global.servers.list().length > 1}
-          fallback={<HomeProjectList {...props} server={global.servers.list()[0]!} />}
+          fallback={
+            <div class="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <HomeProjectList {...props} server={global.servers.list()[0]!} />
+            </div>
+          }
         >
           <For each={global.servers.list()}>
             {(item) => {
@@ -1236,7 +1338,7 @@ function HomeProjectColumn(props: {
               const healthy = () => !!global.servers.health[key]?.healthy
               const serverCtx = global.createServerCtx(item)
               return (
-                <div class="flex max-h-[min(572px,calc(100vh_-_300px))] min-w-0 flex-col gap-1.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div class="flex min-h-0 flex-1 min-w-0 flex-col gap-1.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <HomeServerRow
                     server={item}
                     selected={props.selected.server === key && !props.selected.directory}
@@ -1258,24 +1360,6 @@ function HomeProjectColumn(props: {
           </For>
         </Show>
       </nav>
-      <div class="mt-4 flex min-w-0 flex-col gap-1">
-        <button
-          type="button"
-          class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
-          onClick={props.openSettings}
-        >
-          <IconV2 name="settings-gear" size="small" />
-          <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("sidebar.settings")}</span>
-        </button>
-        <button
-          type="button"
-          class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
-          onClick={props.openHelp}
-        >
-          <IconV2 name="help" size="small" />
-          <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("sidebar.help")}</span>
-        </button>
-      </div>
     </aside>
   )
 }

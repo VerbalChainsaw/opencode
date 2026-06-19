@@ -114,6 +114,11 @@ export default defineConfig({
           lang: "tr-TR",
           dir: "ltr",
         },
+        uk: {
+          label: "Українська",
+          lang: "uk-UA",
+          dir: "ltr",
+        },
         "zh-cn": {
           label: "简体中文",
           lang: "zh-CN",
@@ -316,7 +321,10 @@ function configSchema() {
     hooks: {
       "astro:build:done": async () => {
         console.log("generating config schema")
-        spawnSync("../opencode/script/schema.ts", ["./dist/config.json", "./dist/tui.json"])
+        const result = spawnSync("../opencode/script/schema.ts", ["./dist/config.json", "./dist/tui.json"])
+        if (result.status !== 0) {
+          console.error("configSchema generation failed:", result.stderr?.toString() || result.error)
+        }
       },
     },
   }

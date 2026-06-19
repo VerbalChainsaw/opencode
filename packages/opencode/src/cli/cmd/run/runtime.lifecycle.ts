@@ -223,7 +223,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
         detail: directoryLabel(input.directory),
       }),
     )
-    await renderer.idle().catch(() => {})
+    await renderer.idle().catch((err) => { console.error(err) })
 
     const { RunFooter } = await footerTask
     let closed = false
@@ -259,7 +259,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
           return
         }
 
-        await renderer.idle().catch(() => {})
+        await renderer.idle().catch((err) => { console.error(err) })
         const ignore = () => {}
         detachSigint()
         process.on("SIGINT", ignore)
@@ -317,7 +317,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       let wroteExit = false
 
       try {
-        await footer.idle().catch(() => {})
+        await footer.idle().catch((err) => { console.error(err) })
 
         const show = renderer.isDestroyed ? false : next.showExit
         if (!renderer.isDestroyed && show) {
@@ -335,11 +335,11 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
               theme: footer.currentTheme().splash,
             }),
           )
-          await renderer.idle().catch(() => {})
+          await renderer.idle().catch((err) => { console.error(err) })
         }
       } finally {
         footer.close()
-        await footer.idle().catch(() => {})
+        await footer.idle().catch((err) => { console.error(err) })
         footer.destroy()
         unregisterKeymap?.()
         shutdown(renderer)

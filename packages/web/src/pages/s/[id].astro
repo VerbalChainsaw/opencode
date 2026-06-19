@@ -70,10 +70,25 @@ const messages = {
 }
 
 const id = Astro.params.id || ""
-const res = await fetch(`${apiUrl}/share_data?id=${id}`)
-const data = (await res.json()) as {
+
+let data: {
   info?: Session.Info
   messages: Record<string, { role?: string; modelID?: string }>
+}
+try {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  const res = await fetch(`${apiUrl}/share_data?id=${id}`, { signal: controller.signal })
+  clearTimeout(timeout)
+  if (!res.ok) {
+    return new Response(null, { status: 502, statusText: tx("share.fetch_failed") })
+  }
+  data = await res.json()
+} catch (err: any) {
+  if (err?.name === "AbortError") {
+    return new Response(null, { status: 504, statusText: tx("share.timeout") })
+  }
+  return new Response(null, { status: 502, statusText: tx("share.fetch_failed") })
 }
 
 if (!data.info) {
@@ -100,7 +115,9 @@ const encodedTitle = encodeURIComponent(
 
 const modelsArray = Array.from(models)
 const modelParam =
-  modelsArray.length === 1
+  modelsArray.length === 0
+    ? "unknown"
+    : modelsArray.length === 1
     ? modelsArray[0]
     : modelsArray.length === 2
       ? encodeURIComponent(`${modelsArray[0]} & ${modelsArray[1]}`)

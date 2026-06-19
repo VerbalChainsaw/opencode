@@ -1,0 +1,842 @@
+# Architecture & UI Defect List
+
+**Audit Date:** 2026-06-13
+**Re-validated:** 2026-06-13 (second pass correcting MED-01, HIGH-03, MED-05)
+**Inspector:** ARCHITECTURE AUDITOR 9000
+**Scope:** TypeScript/TSX code quality, UI component architecture, spec compliance, wiring defects, regression risks
+**Packages Examined:** `packages/{tui,ui,app,opencode,cli,enterprise}`
+**Typecheck Status:** ✅ All packages typecheck clean (`bun typecheck` exits 0 on all 5 packages)
+
+---
+
+## How to Read This
+
+Each defect has:
+- **ID** — unique reference
+- **Severity** — Critical / High / Medium / Low / Cosmetic
+- **Confidence** — Confirmed / Likely / Suspected
+- **Category** — see classification below
+- **Evidence** — file paths, line numbers, code excerpts
+- **Spec Reference** — if a written spec is violated
+- **Impact** — what breaks or is at risk
+- **Recommendation** — minimal surgical fix
+
+### Category Legend
+
+| Code | Meaning |
+|------|---------|
+| ARC | Architecture Gap — wrong layer, wrong boundary, wrong ownership |
+| WIR | Wiring Defect — broken chain, mismatched import, stale reference |
+| ERR | Error Handling Defect — swallowed exceptions, missing `.catch()`, silent failure |
+| STD | Standards Drift — inconsistent coding conventions, style conflicts |
+| FRG | Runtime Fragility — fragile assumptions, temporal coupling |
+| OBS | Observability Gap — can't diagnose what's happening |
+| DUP | Dead Code or Duplicate System — two implementations of the same thing |
+| SPEC | Spec Violation — code breaks a documented invariant |
+
+---
+
+## 🔴 CRITICAL
+
+---
+
+### CRIT-01: TUI Package Depends on `@opencode-ai/core` — Spec Isolation Violated
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Critical |
+| **Confidence** | Confirmed |
+| **Category** | ARC, SPEC |
+
+**Spec Reference:** `specs/tui-package.md` lines 26–28:
+
+> "It must not depend on `packages/opencode`, `packages/cli`, or `@opencode-ai/core`."
+
+Same spec, lines 549–551 (Section 10 exit criteria):
+
+> "No source under `packages/tui` imports `@/...`, `@opencode-ai/core`, or either executable package."
+
+Same spec, lines 596–599 (Verification gate):
+
+> `rg '@opencode-ai/core|packages/opencode|packages/cli' packages/tui`
+
+The spec is unambiguous — the enforcement is in writing and has a verification command. No exceptions or TODO markers exist in the TUI source.
+
+**Evidence — The dependency itself:**
+
+```
+File: packages/tui/package.json:50
+  "@opencode-ai/core": "workspace:*",
+```
+
+**Evidence — 8 TUI source files that import from `@opencode-ai/core`:**
+
+```
+File: packages/tui/src/app.tsx:4-6
+  import { Global } from "@opencode-ai/core/global"
+  import { Flag } from "@opencode-ai/core/flag/flag"
+  import { InstallationVersion } from "@opencode-ai/core/installation/version"
+
+File: packages/tui/src/context/kv.tsx:4-5
+  import { Flock } from "@opencode-ai/core/util/flock"
+  import { Global } from "@opencode-ai/core/global"
+
+File: packages/tui/src/context/theme.tsx:27-28
+  import { Global } from "@opencode-ai/core/global"
+  import { Glob } from "@opencode-ai/core/util/glob"
+
+File: packages/tui/src/context/sdk.tsx:3
+  import { Flag } from "@opencode-ai/core/flag/flag"
+
+File: packages/tui/src/ui/dialog.tsx:7
+  import { Flag } from "@opencode-ai/core/flag/flag"
+
+File: packages/tui/src/component/error-component.tsx:6
+  import { InstallationVersion } from "@opencode-ai/core/installation/version"
+
+File: packages/tui/src/routes/session/sidebar.tsx:3
+  import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
+
+File: packages/tui/src/component/prompt/index.tsx:2
+  import { Flag } from "@opencode-ai/core/flag/flag"
+
+File: packages/tui/src/clipboard.ts:1
+  const { which } = await import("@opencode-ai/core/util/which")
+```
+
+**Re-validation note:** These imports are all real production code paths. The `packages/tui/package.json` lists `@opencode-ai/core` as a first-class dependency, and 8 source files import from it. The spec's verification gate (line 598) would fail if run.
+
+**Impact:**
+
+1. The TUI package cannot be used as a standalone component. It requires the entire `@opencode-ai/core` backend.
+2. The spec's primary isolation invariant is violated — this is the entire point of the TUI extraction (Sections 1–10).
+3. If the SDK lacks an operation, the fix should be "add the operation to the SDK and regenerate" (per spec), but instead developers import directly from core.
+4. Blocks independent testing, bundling, and future distribution of the TUI.
+
+**Recommendation (multi-step — each independently verifiable):**
+
+1. Remove `@opencode-ai/core` from `packages/tui/package.json` dependencies.
+2. Replace `Global.Path.state` usage in `context/kv.tsx` with TUI paths from runtime context (`useTuiPaths()` already available).
+3. Replace `Flag.OPENCODE_DISABLE_MOUSE` in `app.tsx` with capability input: `input.capabilities.mouse` (already part of `TuiCapabilities` type per spec line 251).
+4. Replace `InstallationVersion` and `InstallationChannel` in `error-component.tsx` and `sidebar.tsx` with the `buildInfo` field from `TuiBuildInfo` (per spec line 265).
+5. Implement a simple mutex in `packages/tui/src/util/` to replace `Flock` dependency.
+6. Replace `Glob` in `theme.tsx` with TUI-owned file globbing (Bun's `Glob` or a minimal implementation).
+7. Move `which` utility into TUI or replace with a direct `execFile` check.
+
+**Verification:**
+```bash
+rg "from ['\"]@opencode-ai/core" packages/tui/src/   # must return no matches
+rg '@opencode-ai/core|packages/opencode|packages/cli' packages/tui  # must return no sources
+```
+
+---
+
+### CRIT-02: Dual V1/V2 UI Component System — Incomplete Migration with Active Mixed Imports
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Critical |
+| **Confidence** | Confirmed |
+| **Category** | ARC, DUP, STD |
+
+**Re-validation note:** This finding was verified by counting actual files in both directories and by tracing imports across `packages/app/src/`. The numbers are precise, and the mixed imports in 7 files are real.
+
+**Evidence — 18 duplicated component pairs:**
+
+Both versions are exported via `packages/ui/package.json` under parallel paths:
+```
+"./*": "./src/components/*.tsx"            → v1 components
+"./v2/*": "./src/v2/components/*.tsx"     → v2 components
+```
+
+The duplicated pairs (same concept, two implementations):
+
+| Component | v1 path | v2 path |
+|-----------|---------|---------|
+| accordion | `components/accordion.tsx` | `v2/components/accordion-v2.tsx` |
+| avatar | `components/avatar.tsx` | `v2/components/avatar-v2.tsx` |
+| basic-tool | `components/basic-tool.tsx` | `v2/components/basic-tool-v2.tsx` |
+| button | `components/button.tsx` | `v2/components/button-v2.tsx` |
+| checkbox | `components/checkbox.tsx` | `v2/components/checkbox-v2.tsx` |
+| dialog | `components/dialog.tsx` | `v2/components/dialog-v2.tsx` |
+| diff-changes | `components/diff-changes.tsx` | `v2/components/diff-changes-v2.tsx` |
+| icon-button | `components/icon-button.tsx` | `v2/components/icon-button-v2.tsx` |
+| inline-input | `components/inline-input.tsx` | `v2/components/inline-input-v2.tsx` |
+| keybind | `components/keybind.tsx` | `v2/components/keybind-v2.tsx` |
+| line-comment | `components/line-comment.tsx` | `v2/components/line-comment-v2.tsx` |
+| select | `components/select.tsx` | `v2/components/select-v2.tsx` |
+| switch | `components/switch.tsx` | `v2/components/switch-v2.tsx` |
+| tabs | `components/tabs.tsx` | `v2/components/tabs-v2.tsx` |
+| text-shimmer | `components/text-shimmer.tsx` | `v2/components/text-shimmer-v2.tsx` |
+| toast | `components/toast.tsx` | `v2/components/toast-v2.tsx` |
+| tool-error-card | `components/tool-error-card.tsx` | `v2/components/tool-error-card-v2.tsx` |
+| tooltip | `components/tooltip.tsx` | `v2/components/tooltip-v2.tsx` |
+
+**Evidence — Same files import from BOTH versions simultaneously (7 files):**
+
+| File | v1 imports | v2 imports | Risk |
+|------|-----------|-----------|------|
+| `app/src/components/session/session-header.tsx` | `button`, `icon-button`, `keybind`, `tooltip` | `icon-button-v2` | **HIGH** — same icon-button family mixed in one view |
+| `app/src/components/titlebar.tsx` | `button`, `icon-button`, `tooltip` | `icon-button-v2` | **HIGH** — same icon-button family mixed |
+| `app/src/pages/home.tsx` | `button` | `button-v2`, `icon-button-v2` | **HIGH** — same button family mixed |
+| `app/src/components/status-popover.tsx` | `button` | `icon-button-v2` | MEDIUM — different component families |
+| `app/src/components/windows-app-menu.tsx` | `icon-button` | `icon-button-v2` | **HIGH** — same icon-button family mixed |
+| `app/src/components/settings-v2/general.tsx` | `tooltip` | `button-v2`, `select-v2`, `switch-v2` | MEDIUM — different component families |
+| `app/src/utils/toast.tsx` | `toast` (legacy) | `toast-v2` | LOW — bridge/wrapper file |
+
+**Evidence — 45 v1-only components have NO v2 counterpart:**
+```
+animated-number, app-icon, card, collapsible, context-menu,
+dock-prompt, dock-surface, dropdown-menu, favicon, file-icon,
+file-media, file-search, file-ssr, file, font, hover-card, icon,
+image-preview, line-comment-annotations, list, logo, markdown,
+message-nav, message-part, motion-spring, popover, progress-circle,
+progress, provider-icon, radio-group, resize-handle, scroll-view,
+session-retry, session-review, session-turn, spinner,
+sticky-accordion-header, tag, text-field, text-reveal,
+text-strikethrough, tool-count-label, tool-count-summary,
+tool-status-title, typewriter
+```
+
+**Evidence — 12 v2-only components with no v1 counterpart:**
+```
+badge-v2, field-v2, icon (v2-specific), menu-v2, project-avatar-v2,
+radio-v2, segmented-control-v2, tab-state-indicator, text-input-v2,
+textarea-v2, wordmark-v2, icon (v2 version)
+```
+
+**Evidence — Different APIs between versions (incompatible):**
+
+```
+v1 Button variant:      "primary" | "secondary" | "ghost"
+v2 ButtonV2 variant:    "neutral" | "contrast" | "ghost" | "ghost-muted"
+
+v1 IconButton size:     "small" | "normal" | "large"
+v2 IconButtonV2 size:   "small" | "normal" | "large"  (same size enum but different CSS)
+```
+
+**Impact:**
+
+1. **Visual design inconsistency** — 4 files (`session-header.tsx`, `titlebar.tsx`, `home.tsx`, `windows-app-menu.tsx`) render both v1 and v2 variants of the same component family side by side in the same view. Users see mismatched buttons, icons, and layout elements.
+2. **Doubled maintenance** — every bug fix or enhancement must be applied to both v1 and v2.
+3. **No migration plan** — there is no documented strategy for completing the migration, no deprecation schedule for v1, and no criteria for "migration complete."
+4. **Onboarding confusion** — new developers don't know which version to use. The existence of `settings-v2/` and `v2/` directories suggests a migration, but the presence of mixed imports in production files suggests the migration is incomplete.
+
+**Recommendation:**
+
+1. Create `packages/ui/MIGRATION.md` listing all component concepts with status (v1-only, v2-only, duplicated).
+2. For each of the 18 paired components, decide: keep v1, keep v2, or merge.
+3. Remove the losing variant from `packages/ui/package.json` exports.
+4. Update all consumers:
+   ```bash
+   rg "@opencode-ai/ui/(button|dialog|accordion|icon-button|select|switch|tabs|toast|tooltip)\b" packages/app/src/
+   # Update each occurrence to the surviving version
+   ```
+5. **Verification:**
+   ```bash
+   # After migration, no file should import both versions of the same component:
+   rg "@opencode-ai/ui/(button|icon-button)" packages/app/src/components/session/session-header.tsx
+   # Should show only one version
+   ```
+
+---
+
+## 🔴 HIGH
+
+---
+
+### HIGH-01: Empty Catch Blocks Swallow Errors in Persistence and Sync
+
+| Field | Value |
+|-------|-------|
+| **Severity** | High |
+| **Confidence** | Confirmed |
+| **Category** | ERR |
+
+**Re-validation note:** This finding was re-counted using `rg` across `packages/tui/src/` and `packages/ui/src/`. The 19 persistence-related instances are the highest risk. The 6 cleanup/URL-open instances are lower risk but included for completeness.
+
+**Evidence — 19 empty catch blocks in persistence (data loss risk):**
+
+These silently discard write failures in the user's prompt history, stash, frecency, and local state:
+
+```
+packages/tui/src/prompt/stash.tsx:41   writeText(stashPath, ...).catch(() => {})
+packages/tui/src/prompt/stash.tsx:64   writeText(stashPath, ...).catch(() => {})
+packages/tui/src/prompt/stash.tsx:67   appendText(stashPath, ...).catch(() => {})
+packages/tui/src/prompt/stash.tsx:76   ).catch(() => {})
+packages/tui/src/prompt/stash.tsx:85   ).catch(() => {})
+  → 5 instances. Stash persistence failures silently discarded.
+
+packages/tui/src/prompt/history.tsx:60   writeText(historyPath, ...).catch(() => {})
+packages/tui/src/prompt/history.tsx:104  writeText(historyPath, ...).catch(() => {})
+packages/tui/src/prompt/history.tsx:107  appendText(historyPath, ...).catch(() => {})
+  → 3 instances. Prompt history write failures silently discarded.
+
+packages/tui/src/prompt/frecency.tsx:52  writeText(frecencyPath, ...).catch(() => {})
+packages/tui/src/prompt/frecency.tsx:61  appendText(frecencyPath, ...).catch(() => {})
+packages/tui/src/prompt/frecency.tsx:71  ).catch(() => {})
+  → 3 instances. Frecency persistence failures silently discarded.
+
+packages/tui/src/context/local.tsx:200  .catch(() => {})
+packages/tui/src/context/local.tsx:452  .catch(() => {})
+  → 2 instances. Local state persistence failures silently discarded.
+
+packages/tui/src/context/sdk.tsx:99   await sdk.sync.start().catch(() => {})
+packages/tui/src/context/sdk.tsx:116  })().catch(() => {})
+packages/tui/src/context/sdk.tsx:127  await sdk.sync.start().catch(() => {})
+  → 3 instances. SDK sync startup failures silently discarded.
+
+packages/tui/src/context/theme.tsx:315  .catch(() => {})
+  → 1 instance. Theme load failure silently discarded.
+
+packages/tui/src/component/prompt/index.tsx → 1 instance. Interaction failure silently discarded.
+```
+
+**Evidence — 6 lower-risk empty catch blocks (cleanup/URL-open):**
+
+These swallow errors but the operations are genuinely best-effort:
+
+```
+packages/tui/src/clipboard.ts:73   await rm(file, { force: true }).catch(() => {})
+packages/tui/src/editor.ts:33      await rm(file, { force: true }).catch(() => {})
+packages/tui/src/app.tsx:          open("https://opencode.ai/docs").catch(() => {})
+packages/tui/src/ui/link.tsx:      open(props.href).catch(() => {})
+packages/tui/src/component/dialog-retry-action.tsx: open(props.link).catch(() => {})
+packages/tui/src/routes/session/index.tsx: session.abort().catch(() => {})
+```
+
+**Note:** These are distinguished from the defensible `.catch(() => undefined)` pattern (21 instances), which returns a safe default on failure and is acceptable.
+
+**Impact:**
+
+1. **Persistence data loss** — if stash, history, or frecency writes fail (disk full, permissions, race condition), the user's data is silently lost. The user thinks data is saved but it isn't.
+2. **Synd startup failures invisible** — if SDK sync fails during initialization, the TUI starts in a degraded state with no indication.
+3. **Theme load failures invisible** — if user's custom theme file is corrupted, the app silently falls back to default with no error shown.
+4. **Hardest to debug class of bug** — failures don't surface until data loss is discovered days later, and by then the root cause is gone.
+
+**Recommendation (surgical, one-line each):**
+
+```ts
+// Replace this:
+.catch(() => {})
+
+// With this:
+.catch((error) => console.warn("[stash] write failed:", error))
+
+// For user-facing operations, prefer:
+.catch(toast.error)
+```
+
+18 of the 25 instances are in persistence files (`prompt/stash.tsx`, `prompt/history.tsx`, `prompt/frecency.tsx`, `context/local.tsx`). Fix these first.
+
+**Verification:**
+```bash
+rg "\.catch\(\(\) => \{\}\)" --include "*.tsx" --include "*.ts" packages/tui/src/ packages/ui/src/
+# Should return zero matches after fix
+```
+
+---
+
+### HIGH-02: No UI Component Design Spec — No Formal Component API Contract
+
+| Field | Value |
+|-------|-------|
+| **Severity** | High |
+| **Confidence** | Confirmed |
+| **Category** | ARC, OBS |
+
+**Evidence:**
+
+1. **No `DESIGN.md` anywhere in the repository.** The glob returns zero results:
+   ```bash
+   fd DESIGN.md
+   # No results
+   ```
+
+2. **No formal component API documents exist.** The `specs/` directory contains only:
+   - `tui-package.md` — extraction plan (not a component design spec)
+   - `v2/session.md`, `v2/tools.md`, `v2/config.md` — backend architecture specs
+   - `project.md` — REST API endpoint design
+
+3. **Component APIs differ between v1 and v2 without documentation:**
+
+   ```
+   ButtonV2 variant: "neutral" | "contrast" | "ghost" | "ghost-muted"
+   Button variant:   "primary" | "secondary" | "ghost"
+   ```
+   No design doc explains why the change, what visual states map to what, or whether this is a breaking change.
+
+4. **Package exports in `packages/ui/package.json` lack shape documentation.** The catch-all export `"./*": "./src/components/*.tsx"` means any file in the components directory becomes a public API surface — there is no deliberate API narrowing.
+
+**Impact:**
+
+1. Component evolution is ad-hoc — any developer can add a new variant or change an existing prop without design review.
+2. Breaking changes in v2 components can't be tracked against v1 behavior because there's no baseline.
+3. New contributors can't determine the intended API without reading every component's source.
+4. Migration from v1 to v2 can never be declared "complete" without written completion criteria.
+
+**Recommendation:**
+
+Create `packages/ui/DESIGN.md` documenting:
+- Complete set of components with version status (v1, v2, or merged)
+- API contracts per component (props, CSS classes, accessibility)
+- Design tokens (colors, typography, spacing)
+- Deprecation schedule for v1 components
+- Migration completion criteria
+
+No code changes required.
+
+---
+
+## 🟡 MEDIUM
+
+---
+
+### MED-01: `@opencode-ai/ui` Imports Utility Functions from `@opencode-ai/core`
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Confidence** | Confirmed |
+| **Category** | ARC |
+
+**Re-validation note:** The TUI extraction spec (`specs/tui-package.md`) only forbids `@opencode-ai/core` dependency for `@opencode-ai/tui`. It does not restrict `@opencode-ai/ui`. This finding is therefore a design concern (coupling/bundle size), not a spec violation. Downgraded from HIGH-03 to MED-01.
+
+**Evidence:**
+```
+File: packages/ui/package.json:52
+  "@opencode-ai/core": "workspace:*",
+
+packages/ui/src/components/file.tsx:              import { sampledChecksum } from "@opencode-ai/core/util/encode"
+packages/ui/src/components/line-comment.tsx:      import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+packages/ui/src/components/markdown.tsx:          import { checksum } from "@opencode-ai/core/util/encode"
+packages/ui/src/components/message-part.tsx:      import { checksum } from "@opencode-ai/core/util/encode"
+packages/ui/src/components/message-part.tsx:      import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
+packages/ui/src/components/session-turn.tsx:      import { Binary } from "@opencode-ai/core/util/binary"
+packages/ui/src/components/session-turn.tsx:      import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+packages/ui/src/components/session-review.tsx:    import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+packages/ui/src/components/session-review.tsx:    import { checksum } from "@opencode-ai/core/util/encode"
+```
+
+All imports are utility functions (`util/encode`, `util/path`, `util/binary`) — not backend domain types. These are genuinely useful shared utilities.
+
+**Impact:**
+
+1. The web UI bundle includes backend utilities that could be self-contained.
+2. Any change to `@opencode-ai/core` utility signatures can break the UI build.
+3. The UI cannot be published as a standalone package.
+
+**Recommendation:**
+- Either inline the small utility functions (`checksum`, `getDirectory`, `getFilename`) directly into `packages/ui`, OR
+- Extract them into a shared `@opencode-ai/util` package that both `core` and `ui` can depend on.
+
+---
+
+### MED-02: CSS Fragmentation — 54 Individual Component CSS Files
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Confidence** | Confirmed |
+| **Category** | STD |
+
+**Evidence:**
+```bash
+Get-ChildItem packages/ui/src/components/*.css packages/ui/src/v2/components/*.css | Measure-Object
+# Count: 54
+```
+
+54 separate CSS files alongside the Tailwind utility approach. Examples:
+```
+packages/ui/src/components/accordion.css
+packages/ui/src/components/button.css
+packages/ui/src/components/dialog.css
+packages/ui/src/components/markdown.css
+packages/ui/src/components/tabs.css
+packages/ui/src/v2/components/accordion-v2.css
+packages/ui/src/v2/components/button-v2.css
+packages/ui/src/v2/components/dialog-v2.css
+...
+```
+
+The project uses three styling approaches simultaneously:
+- Tailwind utility classes (via `@tailwindcss/vite`)
+- Per-component CSS files (54 files)
+- Inline styles in some components
+
+**Impact:**
+1. No consistent styling strategy — developers must choose between Tailwind and CSS files.
+2. Design tokens are embedded in CSS files, not centralized.
+3. CSS duplication between v1 and v2 component pairs (e.g., `button.css` + `button-v2.css`).
+4. Unused CSS can accumulate — no tree-shaking for global CSS.
+5. Changing a design token requires editing N CSS files.
+
+**Recommendation:**
+- Standardize on Tailwind utility classes for new components.
+- As components are touched for other reasons, migrate CSS to Tailwind.
+- Consider using CSS modules or a CSS-in-JS approach for component-specific styles.
+
+---
+
+### MED-03: `any` Types in Three Core Infrastructure Components
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Confidence** | Confirmed |
+| **Category** | FRG |
+
+**Re-validation note:** The `any` usage in these three components is defensible (KV stores are naturally polymorphic, dialog content varies), but `unknown` would be strictly better as it forces type narrowing.
+
+**Evidence:**
+
+```
+File: packages/tui/src/context/kv.tsx:51
+  get<K, V>(key: string, defaultValue?: V): V  → should be typed
+  Current: get(key: string, defaultValue?: any) {
+
+File: packages/tui/src/context/kv.tsx:54
+  set(key: string, value: any) {
+  → value type erased
+
+File: packages/tui/src/ui/dialog.tsx:147
+  replace(input: any, onClose?: () => void) {
+  → input shape erased
+
+File: packages/tui/src/ui/toast.tsx:69
+  error: (err: any) => {
+  → error type erased
+```
+
+**Impact:**
+1. No type checking at the boundaries of shared services (KV, Dialog, Toast).
+2. KV store callers can store and retrieve mismatched types without compiler errors.
+3. Makes refactoring harder — you can't trace what types flow through these APIs.
+
+**Recommendation:**
+- `KV.get` should be generic: `get<T>(key: string, defaultValue?: T): T`
+- `KV.set` should use `unknown` instead of `any`
+- `Dialog.replace` should accept `Record<string, unknown>` or a typed interface
+- `Toast.error` should accept `Error | string`
+
+---
+
+### MED-04: Editorconfig / Prettier max_line_length Conflict
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Confidence** | Confirmed |
+| **Category** | STD |
+
+**Evidence:**
+
+```
+File: .editorconfig:9
+  max_line_length = 80
+  (applies to ALL files via [*])
+
+File: package.json:123 (inline prettier config)
+  "prettier": { "printWidth": 120 }
+```
+
+Two conflicting rules for maximum line length: 80 (editorconfig) vs 120 (Prettier). No `.editorconfig` override exists for `.ts`/`.tsx` files.
+
+**Impact:**
+1. Editorconfig-compatible editors (VS Code with EditorConfig extension) show warnings at column 80.
+2. Prettier formats to 120.
+3. AI-generated code and hand-written code use different line lengths.
+4. No single source of truth.
+
+**Recommendation:**
+- Align `.editorconfig` with Prettier: change `max_line_length = 80` to `max_line_length = 120`, OR
+- Add a language-specific override in `.editorconfig`:
+  ```
+  [*.{ts,tsx}]
+  max_line_length = 120
+  ```
+
+---
+
+### MED-05: Stale Test Snapshots Reference Old Tool Output Paths
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Confidence** | Confirmed |
+| **Category** | WIR |
+
+**Re-validation note:** The `thread.test.ts` import is VALID — `packages/opencode/src/cli/cmd/tui.ts` still exists as the legacy adapter file. However, the snapshot content in `inline-tool-wrap-snapshot.test.tsx` references `packages/opencode/src/storage/db.ts` (a file that may or may not still exist) and old TUI paths. These snapshots should be regenerated against current tool output.
+
+**Evidence — Snapshot content references old paths:**
+
+```
+File: packages/tui/test/cli/tui/inline-tool-wrap-snapshot.test.tsx:32-50
+
+Sample tool labels in test fixtures:
+  'Grep "..." in packages/opencode/src (151 matches)',
+  'Glob "**/*db*" in packages/opencode (6 matches)',
+  'Read packages/opencode/src/storage/db.ts [offset=1, limit=130]',
+  'Read packages/opencode/src/index.ts [offset=1, limit=100]',
+```
+
+These are fixture strings used by the snapshot test. They should be verified against current tool output format.
+
+**Impact:**
+- Snapshot tests may pass with stale data that doesn't reflect current tool behavior.
+- If `packages/opencode/src/storage/db.ts` was removed or renamed, the test doesn't catch it because it's testing rendering, not file existence. But the snapshot should still reflect current realistic output.
+
+**Recommendation:**
+- Update the fixture strings to reference files that currently exist and are representative.
+- Regenerate snapshots:
+  ```bash
+  cd packages/tui && bun test --update-snapshots
+  ```
+
+---
+
+### MED-06: Commented-Out Code in Production Application
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Confidence** | Confirmed |
+| **Category** | STD |
+
+**Evidence:**
+```
+File: packages/app/src/app.tsx:222-225
+
+  {/*
+  <Suspense fallback={<Loading />}>
+  */}
+  {props.appChildren}
+  {props.children}
+  {/*
+  </Suspense>
+  */}
+```
+
+A Suspense/Loading wrapper is commented out with no explanation, no TODO comment, and no associated issue reference.
+
+**Impact:**
+1. Dead code that degrades over time (imports may break, semantics may change).
+2. No indication whether this is intentional (loading screen disabled) or accidental (debugging artifact).
+3. New developers can't tell if it should be restored or removed.
+
+**Recommendation:** Either:
+- Remove it entirely (4 lines), OR
+- Add a comment: `{/* Suspense intentionally disabled — see #ISSUE */}`
+
+---
+
+### MED-07: `@opencode-ai/core` Flag/Global Usage in TUI Despite Effect Migration Plan
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Confidence** | Confirmed |
+| **Category** | ARC |
+
+**Evidence:**
+
+The Effect migration roadmap (`packages/opencode/specs/effect/todo.md`) lists these as migration targets:
+
+```
+P2  RF — Move mutable runtime flags into typed runtime/config services.
+P3  GLOBAL — Make global paths explicit and remove import-time side effects.
+```
+
+But the TUI still directly reads:
+- `Flag.OPENCODE_DISABLE_MOUSE` in `app.tsx`, `dialog.tsx`, `sdk.tsx`, `prompt/index.tsx`
+- `Global.Path.state`, `Global.Path.config`, `Global.home` in `app.tsx`, `kv.tsx`, `theme.tsx`
+
+The TUI spec already defines replacement types at lines 249–268:
+
+```ts
+type TuiCapabilities = {
+  mouse: boolean
+  copyOnSelect: boolean
+  terminalTitle: boolean
+  workspaces: boolean
+  showTimeToFirstDraw: boolean
+}
+
+type TuiPaths = {
+  home: string
+  state: string
+  config: string
+  data: string
+}
+```
+
+**Impact:**
+- TUI is coupled to mutable global state that can't be tested or overridden.
+- The Effect migration can't progress past P2/P3 while TUI still uses the legacy APIs.
+
+**Recommendation:**
+- Replace `Flag.OPENCODE_DISABLE_MOUSE` with `input.capabilities.mouse`.
+- Replace `Global.Path.state` with `input.paths.state`.
+- Replace `Global.Path.config` with `input.paths.config`.
+- Replace `Global.home` with `input.paths.home`.
+
+This overlaps with CRIT-01 (the core dependency violation). Fixing CRIT-01 will automatically fix MED-07.
+
+---
+
+## 🟢 LOW
+
+---
+
+### LOW-01: One-Line Package Entrypoint — Fragile Re-export
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Low |
+| **Confidence** | Confirmed |
+| **Category** | FRG |
+
+**Evidence:**
+```
+File: packages/tui/src/index.tsx:1
+  export { run, type TuiInput } from "./app"
+```
+
+The entire package entrypoint is a single re-export. This is fragile because any change to `app.tsx`'s exports can silently change the package API.
+
+**Recommendation:** Expand the entrypoint to explicitly define the public API:
+```ts
+export { run } from "./app"
+export type { TuiInput, TuiConfig } from "./config"
+```
+
+---
+
+### LOW-02: Long Import Lines Exceed Standard
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Low |
+| **Confidence** | Confirmed |
+| **Category** | STD |
+
+**Evidence:** Multiple files have import blocks spanning 5+ lines, exceeding the project's `printWidth: 120`:
+```
+File: packages/app/src/app.tsx:15-28
+  import { type Component, createEffect, createMemo, createResource,
+           createSignal, ErrorBoundary, For, type JSX, lazy,
+           onCleanup, type ParentProps, Show } from "solid-js"
+```
+
+These should be formatted by Prettier but may slip through because Prettier doesn't format regions that already have manual line breaks.
+
+---
+
+### LOW-03: V2 Feature Backlog — Open Items from Spec
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Low |
+| **Confidence** | Confirmed |
+| **Category** | ARC |
+
+**Re-validation note:** This is a development roadmap, not a code defect. It's listed here for visibility.
+
+**Evidence:** `specs/v2/todo.md` documents several incomplete features:
+
+```
+- Compaction: "The new agent loop needs to trigger compaction properly"
+- Plugin API: "We need to figure out how we want server plugins to work"
+- Config rework: "We should do another pass on config"
+- Provider timeout/retry: Intentionally deferred per session.md:149
+- Post-crash activity recovery: Intentionally deferred per session.md:161
+```
+
+These are acknowledged in the spec and explicitly deferred. Not a defect, but tracked for awareness.
+
+---
+
+## 🔴 SPEC INVOLATION VERIFICATION GATES
+
+From `specs/tui-package.md` lines 596–599:
+
+```text
+rg "from ['\"]@/" packages/tui/src                                   → ✅ PASS (no matches)
+rg '@opencode-ai/core|packages/opencode|packages/cli' packages/tui    → ❌ FAIL (13 matches in source)
+rg 'src/cli/cmd/tui|@tui/' packages/opencode/src packages/opencode/test → ✅ PASS (no source matches)
+```
+
+| Invariant | Status | Detail |
+|-----------|--------|--------|
+| "No source under packages/tui imports @/..." | ✅ PASS | rg returns no matches |
+| "No source under packages/tui imports @opencode-ai/core" | ❌ **FAIL** | 8 source files violate this |
+| "TUI must not depend on packages/opencode, packages/cli, or @opencode-ai/core" | ❌ **FAIL** | `@opencode-ai/core` in package.json + 8 imports |
+| "Old TUI directory contains no canonical implementation files" | ✅ PASS | Directory was removed |
+| "SDK is the TUI's OpenCode boundary" | ⚠️ **PARTIAL** | Core imports bypass SDK |
+
+---
+
+## 📊 Summary
+
+### Final Counts (after re-validation corrections)
+
+| Severity | Count | IDs |
+|----------|-------|------|
+| **Critical** | 2 | CRIT-01, CRIT-02 |
+| **High** | 2 | HIGH-01, HIGH-02 |
+| **Medium** | 7 | MED-01 through MED-07 |
+| **Low** | 3 | LOW-01, LOW-02, LOW-03 |
+| **Total** | 14 | |
+
+### Corrections Applied from First Pass
+
+| Original Finding | Change | Reason |
+|-----------------|--------|--------|
+| MED-01 "Stale test references" | Removed; replaced with MED-05 "Stale snapshots" | Tests reference a file that exists. Snapshots need regeneration. |
+| HIGH-03 "UI depends on core" | Downgraded to MED-01 "UI imports core utilities" | TUI spec doesn't restrict UI package. Coupling concern only. |
+| MED-05 "V2 backlog" | Downgraded to LOW-03 "V2 feature backlog" | Roadmap items, not code defects. |
+| HIGH-01 "Catch blocks" | Nuance added: 19 high-risk persistence, 6 lower-risk cleanup | Distinguishes between data-loss risk and acceptable best-effort. |
+| CRIT-02 "Mixed imports" | Precision improved: 7 files, 4 files are **HIGH** risk (same component family), 3 are MEDIUM/LOW | More accurate impact assessment. |
+
+### By Category
+
+| Category | Count | IDs |
+|----------|-------|------|
+| ARC — Architecture Gap | 5 | CRIT-01, CRIT-02, MED-01, MED-07, LOW-03 |
+| ERR — Error Handling Defect | 1 | HIGH-01 |
+| STD — Standards Drift | 3 | CRIT-02 (DUP), MED-02, MED-04, LOW-02 |
+| FRG — Runtime Fragility | 2 | MED-03, LOW-01 |
+| OBS — Observability Gap | 1 | HIGH-02 |
+| WIR — Wiring Defect | 1 | MED-05 |
+
+### Verification Commands
+
+```bash
+# Typecheck all packages after any change
+cd packages/tui && bun typecheck
+cd packages/ui && bun typecheck
+cd packages/app && bun typecheck
+cd packages/opencode && bun typecheck
+
+# CRIT-01: TUI core dependency check
+rg "from ['\"]@opencode-ai/core" packages/tui/src/   # must be empty
+rg '@opencode-ai/core' packages/tui/package.json      # must be removed
+
+# CRIT-02: Mixed v1/v2 imports (check after migration)
+rg "@opencode-ai/ui/(button|icon-button)\b" packages/app/src/components/session/session-header.tsx
+# Must show only ONE version per component family
+
+# HIGH-01: Empty catch blocks
+rg "\.catch\(\(\) => \{\}\)" --include "*.ts" --include "*.tsx" packages/tui/src/ packages/ui/src/
+# Must be zero
+```
+
+---
+
+## 🔜 Next Three Safest Actions
+
+1. **Fix HIGH-01 (empty catch blocks in persistence)** — 19 instances in `prompt/stash.tsx`, `prompt/history.tsx`, `prompt/frecency.tsx`, `context/local.tsx`. Each fix is `console.warn` + error. Zero risk, immediate debugging improvement.
+
+2. **Create `packages/ui/MIGRATION.md`** — Document the 118 component inventory with migration status and version decisions. No code changes. Unblocks all v1/v2 decisions.
+
+3. **Fix CRIT-01 step 1 (easiest replacement)** — Replace `Global.Path.state` with `useTuiPaths().state` in `context/kv.tsx` (no new dependencies needed — `useTuiPaths` already available as a context import). Verify with typecheck.

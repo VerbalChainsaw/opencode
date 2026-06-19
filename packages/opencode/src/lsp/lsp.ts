@@ -359,7 +359,7 @@ export const layer = Layer.effect(
               after,
             })
           }),
-        ).catch(() => {}),
+        ).catch((err) => { console.error(err) }),
       )
     })
 

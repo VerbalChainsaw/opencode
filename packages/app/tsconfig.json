@@ -15,12 +15,12 @@
     "strict": true,
     "noEmit": false,
     "emitDeclarationOnly": true,
-    "outDir": "node_modules/.ts-dist",
+    "outDir": "dist/types",
     "isolatedModules": true,
     "paths": {
       "@/*": ["./src/*"]
     }
   },
   "include": ["src", "package.json"],
-  "exclude": ["dist", "ts-dist"]
+  "exclude": ["dist", "ts-dist", "src/**/__*-probe.ts", "src/**/*.probe.ts"]
 }

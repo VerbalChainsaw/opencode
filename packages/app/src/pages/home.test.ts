@@ -50,10 +50,9 @@ describe("home mission-control contract", () => {
     // The i18n key references must be present in the source.
     for (const key of [
       "home.projects", // MetricCards use language.t("home.projects")
-      // The other 3 metric card labels are defined inline as
-      // "Live Sessions", "Active Goals", "Needs Attention" — the
-      // assertion below that no raw English appears is what protects
-      // against silent removal of those labels.
+      "home.metrics.liveSessions",
+      "home.metrics.activeGoals",
+      "home.metrics.needsAttention",
     ]) {
       expect(src).toContain(key)
     }
@@ -98,6 +97,22 @@ describe("home mission-control contract", () => {
   test("ships the latestGoalRecord memo for the Open Goal button", async () => {
     expect(await hasTopLevel("HomeDesign")).toBe(true)
     expect(await uses("latestGoalRecord")).toBe(true)
+  })
+
+  test("home opening window has the OpenCode brand strip and primary action buttons", async () => {
+    const src = await home()
+    expect(src).toContain('data-component="home-brand-strip"')
+    expect(src).toContain("<Logo")
+    expect(src).toContain('language.t("app.name.desktop")')
+    expect(src).toContain('language.t("home.header.subtitle")')
+    expect(src).toContain('data-action="home-primary-new-session"')
+    expect(src).toContain('data-action="home-primary-open-project"')
+    expect(src).toContain('data-action="home-header-settings"')
+    expect(src).toContain('data-action="home-header-help"')
+    expect(src).toMatch(/data-action="home-primary-new-session"[\s\S]{0,350}onClick=\{openNewSession\}/)
+    expect(src).toMatch(/data-action="home-primary-open-project"[\s\S]{0,450}chooseProject\(focusedServer\(\)!\)/)
+    expect(src).toMatch(/data-action="home-header-settings"[\s\S]{0,350}onClick=\{openSettings\}/)
+    expect(src).toMatch(/data-action="home-header-help"[\s\S]{0,350}onClick=\{openHelp\}/)
   })
 
   test("ships the three dialog body components (rendered via dialog.show)", async () => {
@@ -145,7 +160,7 @@ describe("home mission-control contract", () => {
     expect(src).toContain("type HomeAttentionRecord")
     expect(src).toContain("attentionRecords")
 
-    const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label="Needs Attention"[\s\S]*?\/>/)
+    const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
     expect(attentionCard).toBeTruthy()
     expect(attentionCard![0]).toContain("attentionRecords().length")
 
@@ -195,22 +210,22 @@ describe("home mission-control contract", () => {
     // corresponding function.
     const src = await home()
     // Projects card → openProjectsDialog
-    const projectsCard = src.match(/<HomeMetricCard[\s\S]*?label="Projects"[\s\S]*?\/>/)
+    const projectsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.projects"\)\}[\s\S]*?\/>/)
     expect(projectsCard).toBeTruthy()
     expect(projectsCard![0]).toMatch(/onClick=\{[^}]*openProjectsDialog/)
 
     // Active Goals card → openGoalsDialog
-    const goalsCard = src.match(/<HomeMetricCard[\s\S]*?label="Active Goals"[\s\S]*?\/>/)
+    const goalsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
     expect(goalsCard).toBeTruthy()
     expect(goalsCard![0]).toMatch(/onClick=\{[^}]*openGoalsDialog/)
 
     // Needs Attention card → openAttentionDialog
-    const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label="Needs Attention"[\s\S]*?\/>/)
+    const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
     expect(attentionCard).toBeTruthy()
     expect(attentionCard![0]).toMatch(/onClick=\{[^}]*openAttentionDialog/)
 
     // Live Sessions card → focus the search input (not a dialog)
-    const sessionsCard = src.match(/<HomeMetricCard[\s\S]*?label="Live Sessions"[\s\S]*?\/>/)
+    const sessionsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?\/>/)
     expect(sessionsCard).toBeTruthy()
     expect(sessionsCard![0]).toMatch(/onClick=\{/)
     // Specifically: it must trigger the search, not a dialog
@@ -351,7 +366,10 @@ describe("home mission-control contract", () => {
     const src = await home()
     const tree = src.slice(src.indexOf('data-component="home-project-tree"'), src.indexOf('data-component="home-project-row"'))
     expect(tree).toContain('data-component="home-project-tree"')
-    expect(tree).toContain("rounded-[12px]")
+    expect(tree).toContain("rounded-[10px]")
+    expect(tree).toContain("flex-1")
+    expect(tree).toContain("overflow-hidden")
+    expect(src).toContain("overflow-y-auto")
     expect(tree).toContain("border-v2-border-border-base")
     expect(tree).toContain("props.projects.length")
     expect(src).toContain("data-[selected]:border-l-sky-400")

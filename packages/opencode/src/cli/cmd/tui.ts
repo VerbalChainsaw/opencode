@@ -129,7 +129,7 @@ export const TuiThreadCommand = cmd({
       const worker = new Worker(file)
       const client = Rpc.client<typeof rpc>(worker)
       const reload = () => {
-        client.call("reload", undefined).catch(() => {})
+        client.call("reload", undefined).catch((err) => { console.error(err) })
       }
       process.on("SIGUSR2", reload)
 
@@ -138,7 +138,7 @@ export const TuiThreadCommand = cmd({
         if (stopped) return
         stopped = true
         process.off("SIGUSR2", reload)
-        await withTimeout(client.call("shutdown", undefined), 5000).catch(() => {})
+        await withTimeout(client.call("shutdown", undefined), 5000).catch((err) => { console.error(err) })
         worker.terminate()
       }
 
@@ -180,7 +180,7 @@ export const TuiThreadCommand = cmd({
       }
 
       setTimeout(() => {
-        client.call("checkUpgrade", { directory: cwd }).catch(() => {})
+        client.call("checkUpgrade", { directory: cwd }).catch((err) => { console.error(err) })
       }, 1000).unref?.()
 
       try {

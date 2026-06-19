@@ -1,0 +1,16 @@
+$ bun --cwd packages/app dev --host "127.0.0.1" --port "4173"
+$ vite --host "127.0.0.1" --port "4173"
+[2m10:16:05 AM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [33mwarning: [33mThe JSX import source cannot be set without also enabling React's "automatic" JSX transform[33m
+1593 |  
+1594 |  /**
+1595 |   * @jsxImportSource solid-js
+     |                      ^
+1596 |   */
+1597 |  /**
+[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zerop/Development/opencode-source/node_modules/.bun/virtua@0.49.1+be3c23352fe29258/node_modules/virtua/lib/solid/index.jsx[39m
+[2m10:34:23 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /@fs/C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/types.gen.ts (resolved id: C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/types.gen.ts) in C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/client.ts. Does the file exist?
+[2m10:34:23 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /@fs/C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/sdk.gen.ts (resolved id: C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/sdk.gen.ts) in C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/client.ts. Does the file exist?
+[2m10:34:23 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /@fs/C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/client/client.gen.ts (resolved id: C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/client/client.gen.ts) in C:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/client.ts. Does the file exist?
+error: script "dev:web" exited with code 4

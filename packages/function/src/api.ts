@@ -276,9 +276,18 @@ export default new Hono<{ Bindings: Env }>()
         audience: EXPECTED_AUDIENCE,
       })
       const sub = payload.sub // e.g. 'repo:my-org/my-repo:ref:refs/heads/main'
-      const parts = sub.split(":")[1].split("/")
-      owner = parts[0]
-      repo = parts[1]
+      const parts = sub.split(":")
+      if (parts.length < 2) {
+        console.error("Invalid sub claim format:", sub)
+        return c.json({ error: "Invalid token" }, { status: 403 })
+      }
+      const repoParts = parts[1].split("/")
+      if (repoParts.length < 2) {
+        console.error("Invalid repository path in sub claim:", parts[1])
+        return c.json({ error: "Invalid token" }, { status: 403 })
+      }
+      owner = repoParts[0]
+      repo = repoParts[1]
     } catch (err) {
       console.error("Token verification failed:", err)
       return c.json({ error: "Invalid or expired token" }, { status: 403 })

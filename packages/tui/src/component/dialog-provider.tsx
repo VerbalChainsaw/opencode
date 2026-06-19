@@ -15,6 +15,7 @@ import { isConsoleManagedProvider } from "../util/provider-origin"
 import { useConnected } from "./use-connected"
 import { useBindings } from "../keymap"
 import { useClipboard } from "../context/clipboard"
+import { errorMessage } from "../util/error"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   opencode: 0,
@@ -190,7 +191,7 @@ export function createDialogProviderOptions() {
               if (result.error) {
                 toast.show({
                   variant: "error",
-                  message: JSON.stringify(result.error),
+                  message: errorMessage(result.error),
                 })
                 dialog.clear()
                 return
@@ -273,7 +274,7 @@ function AutoMethod(props: AutoMethodProps) {
         message:
           "name" in result.error && result.error.name === "ProviderAuthOauthCallbackFailed"
             ? "OAuth authorization failed. Try /connect again."
-            : JSON.stringify(result.error),
+            : errorMessage(result.error),
       })
       dialog.clear()
       return

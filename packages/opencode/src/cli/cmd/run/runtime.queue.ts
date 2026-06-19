@@ -344,6 +344,6 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
     offClose()
     offRemoveQueued()
     close()
-    await draining?.catch(() => {})
+    await draining?.catch((err) => { console.error(err) })
   }
 }

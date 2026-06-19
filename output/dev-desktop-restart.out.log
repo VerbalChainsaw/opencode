@@ -1,0 +1,118 @@
+Copied dev icons from ./icons/dev to resources/icons
+opencode script {
+  "channel": "dev",
+  "version": "0.0.0-dev-202606181844",
+  "preview": true,
+  "release": false,
+  "team": [
+    "adamdotdevin",
+    "Brendonovich",
+    "fwang",
+    "Hona",
+    "iamdavidhill",
+    "jayair",
+    "jlongster",
+    "kitlangton",
+    "kommander",
+    "MrMushrooooom",
+    "nexxeln",
+    "R44VC0RP",
+    "rekram1-node",
+    "thdxr",
+    "simonklee",
+    "vimtor",
+    "starptech",
+    "actions-user",
+    "opencode",
+    "opencode-agent[bot]"
+  ]
+}
+Loaded models.dev snapshot
+Build complete
+[36mvite v7.1.4 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 39 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36msidecar.js               [39m[1m[2m     3.20 kB[22m[1m[22m
+[2mout/main/[22m[36mindex.js                 [39m[1m[2m   131.14 kB[22m[1m[22m
+[2mout/main/[22m[36mchunks/node-BZQAki8N.js  [39m[1m[33m20,556.50 kB[39m[22m
+[32m✓ built in 18.37s[39m
+[32m
+electron main process built successfully[39m
+[90m
+-----
+[39m
+[36mvite v7.1.4 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m6.86 kB[22m[1m[22m
+[32m✓ built in 19ms[39m
+[32m
+electron preload scripts built successfully[39m
+[90m
+-----
+[39m
+Port 5173 is in use, trying another one...
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5174[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+starting electron app...
+[39m
+
+13:44:42.840 (crash) > crash reporter started {
+  path: 'C:\\Users\\zerop\\AppData\\Roaming\\ai.opencode.desktop.dev\\Crashpad'
+}
+13:44:42.861         > app starting { version: '1.17.3', packaged: false, onboardingTest: false }
+13:44:42.921         > tauri migration: already done, skipping
+13:44:42.941         > auto updater configured {
+  channel: 'latest',
+  allowPrerelease: false,
+  allowDowngrade: true,
+  currentVersion: '1.17.3'
+}
+13:44:42.959 (network) > net log started {
+  path: 'C:\\Users\\zerop\\AppData\\Roaming\\ai.opencode.desktop.dev\\logs\\20260618T184442\\network.netlog'
+}
+13:44:42.973           > sidecar connection started { url: 'http://127.0.0.1:27349' }
+13:44:42.973           > spawning sidecar { url: 'http://127.0.0.1:27349' }
+13:44:43.889           > loading task finished
+13:44:45.211           > [vite] connecting...
+13:44:45.222           > [vite] connected.
+13:44:53.343           > awaiting server ready
+13:44:53.344           > server ready { url: 'http://127.0.0.1:27349' }
+[2m1:48:26 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx[22m
+13:48:29.064           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css
+13:48:29.148           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx
+[2m1:48:56 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx[22m
+13:48:58.902           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css
+[2m1:48:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx[22m
+13:48:58.903           > [vite] invalidate /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx
+[2m1:48:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx[22m
+13:48:58.904           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx
+13:48:59.019           > [vite] invalidate /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx
+13:48:59.019           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx
+[2m1:48:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx[22m
+[2m1:48:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx[22m
+13:48:59.226           > [vite] invalidate /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx
+13:48:59.226           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx
+[2m1:48:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx[22m
+[2m1:48:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/app.tsx[22m
+13:48:59.358           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/app.tsx
+[2m1:49:26 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx[22m
+13:49:28.662           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css
+[2m1:49:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx[22m
+[2m1:49:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx[22m
+13:49:28.663           > [vite] invalidate /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx
+13:49:28.664           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx
+13:49:28.793           > [vite] invalidate /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx
+13:49:28.794           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx
+[2m1:49:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx[22m
+[2m1:49:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx[22m
+[2m1:49:29 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx[22m
+[2m1:49:29 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/app.tsx[22m
+13:49:29.004           > [vite] invalidate /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx
+13:49:29.005           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx
+13:49:29.097           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/app.tsx

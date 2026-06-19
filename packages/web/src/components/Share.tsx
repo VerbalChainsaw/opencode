@@ -87,7 +87,7 @@ export default function Share(props: {
     }
 
     if (!apiUrl) {
-      console.error("API URL not found in environment variables")
+      console.error("API URL not found in props")
       setConnectionStatus(["error", props.messages.error_api_url_not_found])
       return
     }

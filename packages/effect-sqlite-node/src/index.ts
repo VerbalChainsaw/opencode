@@ -1,5 +1,3 @@
-export * as NodeSqliteClient from "./index"
-
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { identity } from "effect/Function"
 import * as Context from "effect/Context"

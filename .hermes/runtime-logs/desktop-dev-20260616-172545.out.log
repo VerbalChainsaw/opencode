@@ -1,0 +1,144 @@
+Copied dev icons from ./icons/dev to resources/icons
+opencode script {
+  "channel": "dev",
+  "version": "0.0.0-dev-202606162225",
+  "preview": true,
+  "release": false,
+  "team": [
+    "adamdotdevin",
+    "Brendonovich",
+    "fwang",
+    "Hona",
+    "iamdavidhill",
+    "jayair",
+    "jlongster",
+    "kitlangton",
+    "kommander",
+    "MrMushrooooom",
+    "nexxeln",
+    "R44VC0RP",
+    "rekram1-node",
+    "thdxr",
+    "simonklee",
+    "vimtor",
+    "starptech",
+    "actions-user",
+    "opencode",
+    "opencode-agent[bot]"
+  ]
+}
+Loaded models.dev snapshot
+Build complete
+[36mvite v7.1.4 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 39 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36msidecar.js               [39m[1m[2m     3.20 kB[22m[1m[22m
+[2mout/main/[22m[36mindex.js                 [39m[1m[2m   131.14 kB[22m[1m[22m
+[2mout/main/[22m[36mchunks/node-uUX_319G.js  [39m[1m[33m20,533.95 kB[39m[22m
+[32m✓ built in 18.08s[39m
+[32m
+electron main process built successfully[39m
+[90m
+-----
+[39m
+[36mvite v7.1.4 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m6.86 kB[22m[1m[22m
+[32m✓ built in 11ms[39m
+[32m
+electron preload scripts built successfully[39m
+[90m
+-----
+[39m
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+starting electron app...
+[39m
+
+17:26:08.370 (crash) > crash reporter started {
+  path: 'C:\\Users\\zerop\\AppData\\Roaming\\ai.opencode.desktop.dev\\Crashpad'
+}
+17:26:08.396         > app starting { version: '1.17.3', packaged: false, onboardingTest: false }
+17:26:08.432         > tauri migration: already done, skipping
+17:26:08.436         > auto updater configured {
+  channel: 'latest',
+  allowPrerelease: false,
+  allowDowngrade: true,
+  currentVersion: '1.17.3'
+}
+17:26:08.485 (network) > net log started {
+  path: 'C:\\Users\\zerop\\AppData\\Roaming\\ai.opencode.desktop.dev\\logs\\20260616T222608\\network.netlog'
+}
+17:26:08.497           > sidecar connection started { url: 'http://127.0.0.1:10162' }
+17:26:08.498           > spawning sidecar { url: 'http://127.0.0.1:10162' }
+17:26:09.986           > loading task finished
+17:26:10.224           > [vite] connecting...
+17:26:10.336           > [vite] connected.
+17:26:15.950           > awaiting server ready
+17:26:15.950           > server ready { url: 'http://127.0.0.1:10162' }
+[2m5:29:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css[22m
+17:29:02.185           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css
+[2m5:29:07 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/app.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/directory-layout.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session-context-usage.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/file-tree.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-sortable-tab.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/file-tabs.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/prompt-input.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/terminal-panel.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-sortable-terminal-tab.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-header.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/dialog-select-model.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/message-timeline.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-context-tab.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-new-view.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/composer/session-composer-region.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/status-popover.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/review-tab.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/terminal.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/composer/session-question-dock.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/titlebar.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/home.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout/sidebar-items.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout/sidebar-project.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout/sidebar-workspace.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/dialog-select-directory.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/dialog-select-server.tsx, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css[22m
+17:29:09.797           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/app.tsx
+17:29:09.799           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/directory-layout.tsx
+17:29:09.799           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session.tsx
+17:29:09.800           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/session-side-panel.tsx
+17:29:09.800           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session-context-usage.tsx
+17:29:09.801           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/file-tree.tsx
+17:29:09.801           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-sortable-tab.tsx
+17:29:09.802           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/file-tabs.tsx
+17:29:09.803           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/prompt-input.tsx
+17:29:09.803           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout.tsx
+17:29:09.803           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/terminal-panel.tsx
+17:29:09.804 (pty)     > console {
+  window: 'main',
+  level: 0,
+  message: '[vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/terminal-panel.tsx',
+  line: 810,
+  sourceId: 'http://localhost:5173/@vite/client'
+}
+17:29:09.805           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-sortable-terminal-tab.tsx
+17:29:09.806 (pty)     > console {
+  window: 'main',
+  level: 0,
+  message: '[vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-sortable-terminal-tab.tsx',
+  line: 810,
+  sourceId: 'http://localhost:5173/@vite/client'
+}
+17:29:09.807           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-header.tsx
+17:29:09.807           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/dialog-select-model.tsx
+17:29:09.808           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/message-timeline.tsx
+17:29:09.808           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-context-tab.tsx
+17:29:09.809           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/session/session-new-view.tsx
+17:29:09.809           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/composer/session-composer-region.tsx
+17:29:09.810           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx
+17:29:09.810           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/status-popover.tsx
+17:29:09.811           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/review-tab.tsx
+17:29:09.811           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/terminal.tsx
+17:29:09.812 (pty)     > console {
+  window: 'main',
+  level: 0,
+  message: '[vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/terminal.tsx',
+  line: 810,
+  sourceId: 'http://localhost:5173/@vite/client'
+}
+17:29:09.812           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/composer/session-question-dock.tsx
+17:29:09.813           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/titlebar.tsx
+17:29:09.813           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/home.tsx
+17:29:09.814           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout/sidebar-items.tsx
+17:29:09.815           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout/sidebar-project.tsx
+17:29:09.816           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/layout/sidebar-workspace.tsx
+17:29:09.816           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/dialog-select-directory.tsx
+17:29:09.817           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/components/dialog-select-server.tsx
+17:29:09.817           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css
+[2m5:29:17 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css, /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx[22m
+17:29:18.645           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css
+17:29:18.646           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/pages/session/goal-panel.tsx
+[2m5:29:27 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css[22m
+17:29:29.031           > [vite] hot updated: /@fs/C:/Users/zerop/Development/opencode-source/packages/app/src/index.css

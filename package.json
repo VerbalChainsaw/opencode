@@ -54,6 +54,7 @@
       "@pierre/diffs": "1.1.0-beta.18",
       "opentui-spinner": "0.0.6",
       "@solid-primitives/storage": "4.3.3",
+      "@solid-primitives/resize-observer": "2.1.5",
       "@tailwindcss/vite": "4.1.11",
       "diff": "8.0.2",
       "dompurify": "3.3.1",

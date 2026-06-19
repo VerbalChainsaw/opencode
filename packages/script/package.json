@@ -1,6 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/package",
   "name": "@opencode-ai/script",
+  "version": "1.17.3",
+  "type": "module",
   "license": "MIT",
   "dependencies": {
     "semver": "^7.6.3"

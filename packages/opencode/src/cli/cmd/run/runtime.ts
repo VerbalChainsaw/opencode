@@ -347,14 +347,14 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         .abort({
           sessionID: state.sessionID,
         })
-        .catch(() => {})
+        .catch((err) => { console.error(err) })
         .finally(() => {
           state.aborting = false
         })
     },
     onBackground: () => {
       if (!hasSession(input, state)) return
-      void ctx.sdk.experimental.session.background({ sessionID: state.sessionID }).catch(() => {})
+      void ctx.sdk.experimental.session.background({ sessionID: state.sessionID }).catch((err) => { console.error(err) })
     },
     onSubagentSelect: (sessionID) => {
       state.selectSubagent?.(sessionID)
@@ -402,7 +402,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   void footer
     .idle()
     .then(loadCatalog)
-    .catch(() => {})
+    .catch((err) => { console.error(err) })
 
   if (Flag.OPENCODE_SHOW_TTFD) {
     footer.append({
@@ -424,7 +424,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   }
 
   if (input.afterPaint) {
-    void Promise.resolve(input.afterPaint(ctx)).catch(() => {})
+    void Promise.resolve(input.afterPaint(ctx)).catch((err) => { console.error(err) })
   }
 
   void modelTask.then((info) => {
@@ -530,7 +530,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
               }),
           }),
         )
-        .catch(() => {})
+        .catch((err) => { console.error(err) })
     }, RESIZE_DELAY)
   })
 
@@ -562,14 +562,14 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       onNewSession: createSession
         ? async () => {
             try {
-              await state.switching?.catch(() => {})
+              await state.switching?.catch((err) => { console.error(err) })
               const created = await createSession(ctx, {
                 agent: state.agent,
                 model: state.model,
                 variant: state.activeVariant,
               })
-              await footer.idle().catch(() => {})
-              await state.stream?.then((item) => item.handle.close()).catch(() => {})
+              await footer.idle().catch((err) => { console.error(err) })
+              await state.stream?.then((item) => item.handle.close()).catch((err) => { console.error(err) })
               state.stream = undefined
               state.session = undefined
               state.selectSubagent = undefined
@@ -642,7 +642,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           return
         }
 
-        await state.switching?.catch(() => {})
+        await state.switching?.catch((err) => { console.error(err) })
 
         let outputAnchor: LocalReplayAnchor | undefined
         try {
@@ -705,7 +705,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           return
         }
 
-        void ensureStream().catch(() => {})
+        void ensureStream().catch((err) => { console.error(err) })
       })
     }
 
@@ -716,7 +716,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         clearTimeout(resizeTimer)
       }
       offResize()
-      await state.stream?.then((item) => item.handle.close()).catch(() => {})
+      await state.stream?.then((item) => item.handle.close()).catch((err) => { console.error(err) })
     }
   } finally {
     const title = await resolveExitTitle(ctx, input, state)
@@ -758,7 +758,7 @@ export async function runInteractiveLocalMode(input: RunLocalInput): Promise<voi
           throw new Error("Session not found")
         }
 
-        void input.share(sdk, next.id).catch(() => {})
+        void input.share(sdk, next.id).catch((err) => { console.error(err) })
         return {
           sessionID: next.id,
           sessionTitle: next.title,

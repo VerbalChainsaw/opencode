@@ -1,158 +1,288 @@
-- To regenerate the JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
-- The default branch in this repo is `dev`.
-- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+# AGENTS.md — OpenCode Desktop & OpenGoal (Mission Control)
 
-## Branch Names
+Codex / Claude Code session-load file. Loaded at session start.
+Covers the dual-repo surface: this repo (GUI) + sibling OpenGoal (plugin).
+Current as of 2026-06-17. Sources cited inline.
 
-Use a short branch name of at most three words, separated by hyphens. Do not use slashes or type prefixes such as `feat/` or `fix/`.
+---
 
-Examples: `session-recovery`, `fix-scroll-state`, `regenerate-sdk`.
+## Dual-Repo Landscape
 
-## Commits and PR Titles
+| Concern | This repo (`opencode-source`) | Sibling (`../OpenGoal`) |
+|---------|-------------------------------|--------------------------|
+| Role | Desktop app UI (SolidJS + Electron) | Server plugin (goal loop, budget, blocks) |
+| Branch | `dev` | `main` |
+| Test runner | `bun test --preload ./happydom.ts` | `node --test test/**/*.test.mjs` |
+| Typecheck | `bun run typecheck` (tsgo -b) | `npx tsc -p tsconfig.json` |
+| Package dirs | `packages/app`, `packages/desktop`, `packages/ui` | Single package (root) |
+| Key dep | `@opencode-ai/sdk` (1.17.6), SolidJS, Kobalte | `@opencode-ai/plugin` |
 
-Use conventional commit-style messages and PR titles: `type(scope): summary`.
+**Design docs live in OpenGoal**: `MISSION_CONTROL_UI_DESIGN.md`, `MISSION_CONTROL_UI_IMPLEMENTATION_PLAN.md`.
+The plugin defines the DATA; this app DRAWS the data.
 
-Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, or `plugin`.
+---
 
-Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributing guide`, `chore(sdk): regenerate types`.
+## Spec Surface (read before any non-trivial work)
 
-## Style Guide
+In `../OpenGoal/specs/`:
+- `desktop-ui-design.md` — GUI feature work orders (426 lines)
+- `v0.4.0-roadmap.md` — Phase planning (635 lines)
+- `v0.5.0-feature-work-orders.md` — Feature specs (301 lines)
+- `cli-hardening-work-order.md` — CLI/budget hardening (326 lines)
 
-### General Principles
+In `../OpenGoal/` (root-level):
+- `MISSION_CONTROL_UI_DESIGN.md` — visual spec: steel-and-signal dark aesthetic, Global Ops Board, Dual-Band Dock (386 lines)
 
-- Keep things in one function unless composable or reusable
-- Do not extract single-use helpers preemptively. Inline the logic at the call site unless the helper is reused, hides a genuinely complex boundary, or has a clear independent name that improves the caller.
-- Avoid `try`/`catch` where possible
-- Avoid using the `any` type
-- Use Bun APIs when possible, like `Bun.file()`
-- Rely on type inference when possible; avoid explicit type annotations or interfaces unless necessary for exports or clarity
-- Prefer functional array methods (flatMap, filter, map) over for loops; use type guards on filter to maintain type inference downstream
-- In `src/config`, follow the existing self-export pattern at the top of the file (for example `export * as ConfigAgent from "./agent"`) when adding a new config module.
+**Rule:** Read the relevant spec file fully before writing code. The spec wins over chat instructions.
+If the spec and the user's words conflict, surface the conflict before coding.
 
-Reduce total variable count by inlining when a value is only used once.
+---
 
-```ts
-// Good
-const journal = await Bun.file(path.join(dir, "journal.json")).json()
+## Commands (exact invocations)
 
-// Bad
-const journalPath = path.join(dir, "journal.json")
-const journal = await Bun.file(journalPath).json()
+### This repo (opencode-source)
+
+```bash
+# App typecheck
+cd packages/app && bun run typecheck
+
+# App tests (must preload happydom for DOM-dependent components)
+cd packages/app && bun test --preload ./happydom.ts
+
+# Run specific test file
+cd packages/app && bun test --preload ./happydom.ts src/pages/session/goal-panel-pure.test.ts
+
+# Desktop typecheck
+cd packages/desktop && bun run typecheck
+
+# Desktop build
+cd packages/desktop && bun run build
+
+# Start Electron desktop app (what "start the tool" means)
+cd packages/desktop && bun dev
+
+# NOT the web dev server — user wants Electron, not the webserver
+# cd packages/app && bun dev -- --port 4444  ← only for web-only debugging
 ```
 
-### Destructuring
+### Sibling repo (OpenGoal)
 
-Avoid unnecessary destructuring. Use dot notation to preserve context.
+```bash
+# Full test pipeline (typecheck → build → test)
+cd ../OpenGoal && npm test
 
-```ts
-// Good
-obj.a
-obj.b
+# Build only
+cd ../OpenGoal && npm run build
 
-// Bad
-const { a, b } = obj
+# Rails verification (agent guardrails)
+cd ../OpenGoal && npm run rails:verify
+
+# Rails preflight (run before non-trivial work)
+cd ../OpenGoal && npm run rails:preflight
 ```
 
-### Imports
+### OpenCode SDK (used by both repos)
 
-- Never alias imports. Do not use `import { foo as bar } from "..."` or renamed imports like `resolve as pathResolve`.
-- Never use star imports. Do not use `import * as Foo from "..."` or `import type * as Foo from "..."`.
-- If a namespace-style value is needed, import the module's own exported namespace by name, for example `import { Project } from "@opencode-ai/core/project"`, then reference `Project.ID`.
-- Prefer dynamic imports for heavy modules that are only needed in selected code paths, especially in startup-sensitive entrypoints. Destructure dynamic import bindings near the top of the narrowest scope that needs them so they read like normal imports. Avoid inline chains such as `await import("./module").then((mod) => mod.value())` or `(await import("./module")).value()`. Keep branch-specific imports inside the branch that needs them to preserve lazy loading.
-
-### Variables
-
-Prefer `const` over `let`. Use ternaries or early returns instead of reassignment.
-
-```ts
-// Good
-const foo = condition ? 1 : 2
-
-// Bad
-let foo
-if (condition) foo = 1
-else foo = 2
+```bash
+npm install @opencode-ai/sdk   # v1.17.6 current
 ```
 
-### Control Flow
-
-Avoid `else` statements. Prefer early returns.
-
 ```ts
-// Good
-function foo() {
-  if (condition) return 1
-  return 2
+// Quickstart — programmatic session control
+import { createOpencode } from "@opencode-ai/sdk"
+const { client, server } = await createOpencode()
+const session = await client.session.create({ body: { title: "...", agent: "build" } })
+await client.session.prompt({ path: { id: session.data.id }, body: { parts: [{ type: "text", text: "..." }] } })
+await server.close()
+```
+
+Docs: https://opencode.ai/docs/sdk/ | npm: https://www.npmjs.com/package/@opencode-ai/sdk | GitHub: https://github.com/anomalyco/opencode-sdk-js
+
+---
+
+## Mission Control GUI — What We're Building
+
+**Visual language:** steel-and-signal, dark theme, operator-console accents.
+**Product surfaces:** Global Ops Board (home page) → conversation-first work surface (session) → Dual-Band Dock (right sidebar).
+
+### Key files (this repo)
+
+| Surface | File |
+|---------|------|
+| Home page / Global Ops Board | `packages/app/src/pages/home.tsx` |
+| Session shell + resize | `packages/app/src/pages/session.tsx` |
+| Goal dock / Dual-Band Dock | `packages/app/src/pages/session/goal-panel.tsx` |
+| Goal panel pure logic (testable) | `packages/app/src/pages/session/goal-panel-pure.ts` |
+| Goal panel lifecycle | `packages/app/src/pages/session/goal-panel-lifecycle.ts` |
+| Session header (goal toggle) | `packages/app/src/components/session/session-header.tsx` |
+| New Session draft page | `packages/app/src/pages/new-session.tsx` |
+| Theme system | `packages/ui/src/theme/context.tsx` |
+| Theme tokens (oc-2) | `packages/ui/src/theme/themes/oc-2.json` |
+| Tailwind color tokens | `packages/ui/src/styles/tailwind/colors.css` |
+| Standard `<Dialog>` component | `packages/ui/src/dialog.tsx` |
+| Dialog context (global stack) | `packages/ui/src/context/dialog.tsx` |
+| Desktop renderer entry | `packages/desktop/src/renderer/index.tsx` |
+| Titlebar / session tabs | `packages/app/src/components/titlebar.tsx` |
+| i18n strings (English source) | `packages/app/src/i18n/en.ts` |
+| i18n (zh / zht) | `packages/app/src/i18n/zh.ts`, `zht.ts` |
+
+### Key files (OpenGoal sibling)
+
+| Concern | File |
+|---------|------|
+| Goal state + budget enforcement | `src/goal-state.ts` |
+| Server plugin (auto-loop) | `src/server.ts` |
+| RenderBlock types + factories | `src/blocks/goal-blocks.ts` |
+| Goal chain (sub-goals) | `src/goal-chain.ts` |
+| Goal templates | `src/goal-templates.ts` |
+| Design spec | `MISSION_CONTROL_UI_DESIGN.md` |
+
+---
+
+## SolidJS Gotchas (these bite)
+
+1. **TDZ: `createMemo` referencing a `const` defined later.** Reorder — define dependency before consumer.
+2. **`<Show when={accessor}>` without `()`** — always truthy. Fix: `<Show when={accessor()}>`.
+3. **Barrel imports crash Vite `lazy()` imports.** Import leaf modules directly, never through barrels.
+4. **`!` non-null assertion on signals in event handlers** — signal value can change between render and click. Guard inside handler: `const val = signal(); if (!val) return`.
+5. **`createStore` preferred over multiple `createSignal` calls.**
+6. **Prefer `const` over `let`. Avoid `else` — use early returns. Never alias imports. Never star imports.**
+
+Full style guide: see § Style Guide below.
+
+---
+
+## Theme Rules
+
+- **Default is dark.** `ThemeProvider` receives `defaultColorScheme="dark"` in `app.tsx`.
+- **Token classes format:** `v2-{category}-{token-name}` — e.g., `v2-background-bg-layer-01`, `v2-border-border-muted`, `text-v2-text-text-base`.
+- **Modal scrim token:** `v2-overlay-simple-overlay-scrim` (NOT `v2-background-overlay` — that token doesn't exist).
+- **Verify tokens exist** before using: `grep -r "v2-<name>" packages/ui/src/styles/tailwind/colors.css`.
+- **Shadow token:** `shadow-[var(--v2-elevation-overlay)]` for modal panels.
+
+---
+
+## Dialogs: Use the Standard `<Dialog>`, Not Hand-Rolled
+
+The shared `<Dialog>` (`packages/ui/src/dialog.tsx`) handles focus trap, Esc, click-outside, ARIA, scroll lock.
+Use via `dialog.show(() => <Dialog>...body...</Dialog>)`. Do NOT build new `fixed inset-0 z-50` overlays.
+
+Pattern:
+```tsx
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
+
+function openMyDialog() {
+  const snapshot = data()  // snapshot at click time
+  dialog.show(() => (
+    <Dialog title="My Dialog">
+      <MyDialogBody data={snapshot} onSelect={(item) => { doThing(item); dialog.close() }} />
+    </Dialog>
+  ))
 }
-
-// Bad
-function foo() {
-  if (condition) return 1
-  else return 2
-}
 ```
 
-### Complex Logic
+---
 
-When a function has several validation branches or supporting details, make the main function read as the happy path and move supporting details into small helpers below it.
+## i18n: Never Hardcode English in JSX
 
-```ts
-// Good
-export function loadThing(input: unknown) {
-  const config = requireConfig(input)
-  const metadata = readMetadata(input)
-  return createThing({ config, metadata })
-}
+All user-facing strings go through `language.t("dotted.key")`. Source of truth: `packages/app/src/i18n/en.ts`.
+Every key added to `en.ts` MUST also be added to `zh.ts` and `zht.ts`.
 
-function requireConfig(input: unknown) {
-  ...
-}
+---
+
+## Testing: Behavior Tests, Not String-Match
+
+- **Test real functions**, not file contents. `await import("./goal-panel-pure")` then call the function and assert return values.
+- **String-match tests** (`Bun.file(...).text(); expect(src).toContain("string")`) have near-zero value. Migrate them to behavioral tests.
+- **Extract pure logic to `<name>-pure.ts`** when the TSX crashes in test (Kobalte SSR, Electron imports).
+- **Use `await import()` inside test bodies** for modules with side effects.
+
+---
+
+## What NOT to Do
+
+- **Do NOT build standalone terminal TUIs for "GUI" requests.** The deliverable is `RenderBlock[]` payloads + app-side rendering, not `src/control-center.ts`.
+- **Do NOT use `v2-background-overlay`** — it doesn't exist. Use `v2-overlay-simple-overlay-scrim`.
+- **Do NOT add new `state.openDialog` enums.** Use the standard `dialog.show()` API.
+- **Do NOT use `!` non-null assertions on signals in handlers.**
+- **Do NOT import from barrels** (`@/components/session`) in lazily-loaded routes.
+- **Do NOT hardcode English strings in JSX.** Route through `language.t()`.
+- **Do NOT run `bun dev` from `packages/app` when the user says "start the tool"** — they mean the Electron desktop (`packages/desktop && bun dev`).
+- **Do NOT run `tsc` directly** — use `bun run typecheck`.
+- **Do NOT run tests from repo root** — run from the package directory.
+
+---
+
+## Definition of Done
+
+A task is complete when ALL pass:
+1. `bun run typecheck` exits 0 (from the changed package dir)
+2. `bun test --preload ./happydom.ts` exits 0 (app) or `bun test src/...` exits 0 (desktop)
+3. If plugin code changed: `cd ../OpenGoal && npm test` exits 0
+4. Changed files staged, commit message follows `type(scope): summary` format
+5. No new hardcoded English strings in JSX (grep check)
+6. No new `!` non-null assertions on signals (grep check)
+7. For visual changes: confirmed in the Electron window, not just browser
+
+---
+
+## When Blocked (Escalation)
+
+- Tests fail after 3 fix attempts: **stop** and report the failing test with full output. Do not delete tests.
+- Dependency missing: check `package.json` first, then ask. Do not install globally.
+- Merge conflicts: **stop** and show conflicting files. Do not force-resolve.
+- Unsure which surface: re-read the spec. Still unsure: ask with spec file + line references.
+- **Never:** delete files to resolve errors, force push, skip tests, or bypass the pre-commit hook.
+
+---
+
+## Branch Names & Commits
+
+- Branch names: ≤3 words, hyphens. No slashes, no type prefixes. Examples: `goal-dock-resize`, `fix-scroll-state`.
+- Commits: `type(scope): summary` — types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`.
+- Default branch is `dev`. Local `main` may not exist; use `dev` or `origin/dev`.
+
+---
+
+## Director Gabriel's launch preference
+
+When Director Gabriel says "start the tool" or "run the app," he means:
+
+```bash
+bun dev
 ```
 
-- Keep helpers close to the code they support, below the main export when that improves readability.
-- Do not over-abstract simple expressions into many single-use helpers; extract only when it names a real concept like `requireConfig` or `readMetadata`.
-- Do not return `Effect` from helpers unless they actually perform effectful work. Synchronous parsing, validation, and option building should stay synchronous.
-- Prefer Effect schema helpers such as `Schema.UnknownFromJsonString` and `Schema.decodeUnknownOption` over manual `JSON.parse` wrapped in `Effect.try` when parsing untrusted JSON strings.
-- Add comments for non-obvious constraints and surprising behavior, not for obvious assignments or control flow.
+from `packages/desktop` (electron-vite), **NEVER** from `packages/app`
+(Vite web). Getting this wrong causes significant frustration — "I want
+the desktop app, not the god damn webserver!" Verify which process is
+being started before assuming.
 
-### Schema Definitions (Drizzle)
+*(Migrated from `C:\hermes\memories\USER.md` on 2026-06-18.)*
 
-Use snake_case for field names so column names don't need to be redefined as strings.
+---
 
-```ts
-// Good
-const table = sqliteTable("session", {
-  id: text().primaryKey(),
-  project_id: text().notNull(),
-  created_at: integer().notNull(),
-})
+## Style Guide (preserved from existing conventions)
 
-// Bad
-const table = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  projectID: text("project_id").notNull(),
-  createdAt: integer("created_at").notNull(),
-})
-```
+- Keep things in one function unless composable or reusable.
+- Do not extract single-use helpers preemptively. Inline at call site.
+- Avoid `try`/`catch` where possible. Avoid `any`. Prefer `const` over `let`.
+- Use Bun APIs when possible (`Bun.file()`).
+- Rely on type inference; avoid explicit annotations unless for exports.
+- Prefer functional array methods (`flatMap`, `filter`, `map`).
+- Avoid unnecessary destructuring — use dot notation to preserve context.
+- Never alias imports. Never star imports.
+- Avoid `else` — use early returns.
+- Drizzle schemas: use snake_case field names.
+- Avoid mocks as much as possible. Test actual implementation.
 
-## Testing
+---
 
-- Avoid mocks as much as possible
-- Test actual implementation, do not duplicate logic into tests
-- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
+## Sources
 
-## Type Checking
-
-- Always run `bun typecheck` from package directories (e.g., `packages/opencode`), never `tsc` directly.
-
-## V2 Session Core
-
-- Keep durable prompt admission separate from model execution. `SessionV2.prompt(...)` admits one durable `session_input` row before scheduling advisory `SessionExecution.wake(sessionID)` unless `resume: false` requests admit-only behavior. The serialized runner promotes admitted inputs into visible user messages at safe boundaries.
-- Reusing a Session ID adopts the existing Session. Reusing a prompt message ID reconciles an exact retry only when Session, prompt, and delivery mode match; conflicting reuse fails. Historical projected prompts lazily synthesize promoted inbox records during exact retry.
-- Keep `SessionExecution` process-global and Session-ID based. Its local implementation owns the process-local Session coordinator and discovers placement through `SessionStore` plus `LocationServiceMap.get(session.location)` only when a drain starts; no layer should take a Session ID. V2 interruption targets the active process-local ownership chain for that Session; idle or missing interruption is a no-op.
-- Keep `SessionRunner`, model resolution, tool registry, permissions, and filesystem Location-scoped. Omitted `Location.workspaceID` means implicit-local placement; explicit workspace identity remains reserved for future placement semantics.
-- Preserve one explicit `llm.stream(request)` call per provider turn and reload projected history before durable continuation. Do not bridge through legacy `SessionPrompt.loop(...)` or delegate orchestration to an in-memory tool loop.
-- Keep local Session drains process-local until clustering is implemented. `SessionRunCoordinator` joins explicit same-Session resumes, coalesces prompt wakeups, and allows different Sessions to run concurrently. Advisory wakes drain eligible durable inbox rows only; post-crash activity recovery requires a separate explicit design before it may retry provider work.
-- Keep delivery vocabulary explicit. Prompts steer by default and coalesce into the active activity at the next safe provider-turn boundary. Explicit `queue` inputs open FIFO future activities one at a time after the active activity settles.
-- Keep EventV2 replay owner claims separate from clustered Session execution ownership.
-- Keep the System Context algebra, registry, and built-ins in `src/system-context`; keep Context Source producers with their observed domains, and keep Session History selection plus Context Epoch persistence Session-owned.
+- OpenCode SDK docs: https://opencode.ai/docs/sdk/ (updated 2026-06-15, SDK v1.17.6)
+- Claude Code best practices: https://code.claude.com/docs/en/best-practices
+- AGENTS.md patterns (Blake Crosley): https://blakecrosley.com/blog/agents-md-patterns ("operational policy, not documentation")
+- Claude Code memory/CLAUDE.md: https://code.claude.com/docs/en/memory
+- npm: https://www.npmjs.com/package/@opencode-ai/sdk
+- GitHub SDK: https://github.com/anomalyco/opencode-sdk-js

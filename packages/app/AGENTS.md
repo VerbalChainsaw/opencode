@@ -1,6 +1,15 @@
 ## Debugging
 
-- NEVER try to restart the app, or the server process, EVER.
+- Prefer using the currently running app/server when validating
+  renderer-only changes.
+- For Desktop/Electron E2E, server-side changes, plugin reloads, or
+  stale-runtime bugs, restart or relaunch the owned local dev
+  app/server/sidecar deliberately. First identify the target process or
+  port, avoid killing unrelated processes, and record the PID/log path
+  when practical.
+- Browser validation is diagnostic only when the user asks for
+  Electron, Desktop, or "the app". In that case, final GUI proof must
+  come from the native Desktop window.
 
 ## Local Dev
 
@@ -9,6 +18,9 @@
 - Backend (from `packages/opencode`): `bun run --conditions=browser ./src/index.ts serve --port 4096`
 - App (from `packages/app`): `bun dev -- --port 4444`
 - Open `http://localhost:4444` to verify UI changes (it targets the backend at `http://localhost:4096`).
+- For native Desktop verification, run `bun run dev` from
+  `packages/desktop` and verify the Electron window. Plugin changes
+  need the plugin package rebuilt and the Desktop sidecar relaunched.
 
 ## SolidJS
 

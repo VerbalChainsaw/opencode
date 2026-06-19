@@ -1,0 +1,7 @@
+{
+  "name": "@opencode-ai/containers",
+  "version": "1.17.3",
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}

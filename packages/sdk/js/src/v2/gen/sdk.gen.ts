@@ -1555,6 +1555,57 @@ export class Tool extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Run goal control
+   *
+   * Execute the opencode-autogoal Desktop GUI control bridge without enqueueing an AI assistant turn.
+   */
+  public control<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      toolID: "goal_control"
+      sessionID: string
+      arguments: {
+        command: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "toolID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      { 200: { title: string; output: string; metadata: Record<string, unknown> } },
+      ToolIdsErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/goal/control/{toolID}",
+      ...options,
+      ...params,
+      body: {
+        directory: parameters.directory,
+        workspace: parameters.workspace,
+        arguments: parameters.arguments,
+        sessionID: parameters.sessionID,
+      },
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
 }
 
 export class Worktree extends HeyApiClient {

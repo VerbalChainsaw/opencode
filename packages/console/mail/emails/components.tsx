@@ -1,7 +1,11 @@
-// @ts-nocheck
 import React from "react"
 import { Font, Text as JEText, type TextProps } from "@jsx-email/all"
 import { baseText } from "./styles"
+
+type TitleProps = { children: React.ReactNode }
+type AProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & { children?: React.ReactNode }
+type SpanProps = React.HTMLAttributes<HTMLSpanElement> & { children?: React.ReactNode }
+type WbrProps = React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }
 
 export function Text(props: TextProps) {
   return <JEText {...props} style={{ ...baseText, ...props.style }} />

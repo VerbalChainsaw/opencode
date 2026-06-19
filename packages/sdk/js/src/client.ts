@@ -32,14 +32,31 @@ function rewrite(request: Request, directory?: string) {
 
 export function createOpencodeClient(config?: Config & { directory?: string }) {
   if (!config?.fetch) {
-    const customFetch: any = (req: any) => {
-      // @ts-ignore
+    // Per audit AUDIT-DEFECTS.md MED-43: the customFetch shim used to
+    // be `any` for both the variable and the request param, defeating
+    // type checking. Define a structural Fetch interface that captures
+    // the call signature the SDK client actually uses (which is a
+    // strict subset of both Node's fetch and the DOM's fetch) so the
+    // local variable and parameter both get real types.
+    interface CustomFetch {
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response>
+    }
+    const customFetch: CustomFetch = (req) => {
+      // @ts-ignore — Node's undici fetch supports `timeout = false` to
+      // disable the default request timeout; standard Request type
+      // does not include it. Single-site opt-out, not a shim-wide
+      // escape hatch.
       req.timeout = false
       return fetch(req)
     }
     config = {
       ...config,
-      fetch: customFetch,
+      // Config's `fetch` is the DOM Fetch interface (with methods like
+      // `preconnect` that Node lacks). The shim is runtime-compatible
+      // for the SDK client's actual call pattern; only DOM-only
+      // surface methods are missing. Narrow cast at this single
+      // boundary is documented and intentional.
+      fetch: customFetch as unknown as Config["fetch"],
     }
   }
 

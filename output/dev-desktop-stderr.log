@@ -1,0 +1,145 @@
+$ bun --cwd packages/desktop dev
+$ bun ./scripts/predev.ts
+$ electron-vite dev
+[33m"execFileSync" is imported from external module "node:child_process" but never used in "../opencode/dist/node/node.js".[39m
+[33m../opencode/dist/node/node.js (89008:15): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged as it poses security risks and may cause issues with minification.[39m
+[33m../opencode/dist/node/node.js (442777:34): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged as it poses security risks and may cause issues with minification.[39m
+[33m../opencode/dist/node/node.js (442800:36): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged as it poses security risks and may cause issues with minification.[39m
+
+DevTools listening on ws://127.0.0.1:9222/devtools/browser/0a22e2f3-f0cf-48ba-8868-5a4a0ba8d9a0
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+02:26:56.145           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[2m2:28:58 AM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [33mwarning: [33mThe JSX import source cannot be set without also enabling React's "automatic" JSX transform[33m
+1593 |  
+1594 |  /**
+1595 |   * @jsxImportSource solid-js
+     |                      ^
+1596 |   */
+1597 |  /**
+[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zerop/Development/opencode-source/node_modules/.bun/virtua@0.49.1+be3c23352fe29258/node_modules/virtua/lib/solid/index.jsx[39m
+02:28:59.266           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+02:31:32.054           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+02:34:01.435           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+02:37:48.074           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+02:39:43.654           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+02:41:58.972           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+(node:30048) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 destroyed listeners added to [WebContents]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `electron --trace-warnings ...` to show where the warning was created)
+02:44:18.122           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+02:46:20.947 (server)  > stderr {
+  message: "(node:2704) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/zerop/Development/opencode-source/.opencode/tool/github-triage.ts is not specified and it doesn't parse as CommonJS.\n" +
+    'Reparsing as ES module because module syntax was detected. This incurs a performance overhead.\n' +
+    'To eliminate this warning, add "type": "module" to C:\\Users\\zerop\\Development\\opencode-source\\.opencode\\package.json.\n' +
+    '(Use `electron --trace-warnings ...` to show where the warning was created)'
+}
+02:46:21.603           > ResizeObserver loop completed with undelivered notifications.
+02:46:23.526           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+02:48:11.193           > ResizeObserver loop completed with undelivered notifications.
+02:48:14.991           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+08:49:47.519           > [global-sdk] event stream error [object Object]
+08:49:50.656           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+08:55:17.189           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+08:55:23.705           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+09:00:38.831           > [global-sdk] event stream error [object Object]
+09:00:39.255           > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+09:02:36.595 (utility) > sidecar exited { code: 0 }

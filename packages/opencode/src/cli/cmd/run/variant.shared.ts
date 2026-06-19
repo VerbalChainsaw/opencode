@@ -200,7 +200,7 @@ export function createVariantRuntime(fs = FSUtil.defaultLayer): VariantRuntime {
   const runtime = makeRuntime(Service, createLayer(fs))
   return {
     resolveSavedVariant: (model) => runtime.runPromise((svc) => svc.resolveSavedVariant(model)).catch(() => undefined),
-    saveVariant: (model, variant) => runtime.runPromise((svc) => svc.saveVariant(model, variant)).catch(() => {}),
+    saveVariant: (model, variant) => runtime.runPromise((svc) => svc.saveVariant(model, variant)).catch((err) => { console.error(err) }),
   }
 }
 

@@ -140,7 +140,13 @@ export const fromWebSocket = (
   input: WebSocketRequest,
 ): Effect.Effect<WebSocketConnection, LLMError> =>
   Effect.gen(function* () {
-    yield* waitOpen(ws, input)
+    // v0.4.1 (HIGH-11) — create the message queue and register listeners
+    // BEFORE waiting for the WebSocket to open. Previously, waitOpen
+    // resolved first (blocking until the server accepted the connection),
+    // THEN listeners were registered — messages arriving in the gap
+    // between open and listener registration were silently dropped.
+    // Now the queue buffers them immediately, and the Effect awaits
+    // the open confirmation last so no messages are lost.
     const messages = yield* Queue.bounded<string | Uint8Array, LLMError | Cause.Done<void>>(128)
 
     const onMessage = (event: MessageEvent) => {
@@ -180,6 +186,8 @@ export const fromWebSocket = (
     ws.addEventListener("message", onMessage)
     ws.addEventListener("error", onError)
     ws.addEventListener("close", onClose)
+
+    yield* waitOpen(ws, input)
 
     return {
       sendText: (message) =>

@@ -55,6 +55,20 @@ export const ToolListQuery = Schema.Struct({
   provider: ProviderV2.ID,
   model: ModelV2.ID,
 })
+const GoalControlToolID = Schema.Literal("goal_control")
+export const GoalControlPayload = Schema.Struct({
+  directory: Schema.optional(Schema.String),
+  workspace: Schema.optional(Schema.String),
+  arguments: Schema.Struct({
+    command: Schema.String,
+  }),
+  sessionID: Schema.optional(SessionID),
+})
+const GoalControlResponse = Schema.Struct({
+  title: Schema.String,
+  output: Schema.String,
+  metadata: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({ identifier: "GoalControlResponse" })
 
 const WorktreeList = Schema.Array(Schema.String)
 const WorktreeErrorName = Schema.Union([
@@ -89,6 +103,7 @@ export const ExperimentalPaths = {
   consoleSwitch: "/experimental/console/switch",
   tool: "/experimental/tool",
   toolIDs: "/experimental/tool/ids",
+  goalControl: "/experimental/goal/control/:toolID",
   worktree: "/experimental/worktree",
   worktreeReset: "/experimental/worktree/reset",
   session: "/experimental/session",
@@ -156,6 +171,20 @@ export const ExperimentalApi = HttpApi.make("experimental")
             summary: "List tool IDs",
             description:
               "Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.",
+          }),
+        ),
+        HttpApiEndpoint.post("goalControl", ExperimentalPaths.goalControl, {
+          params: { toolID: GoalControlToolID },
+          query: WorkspaceRoutingQuery,
+          payload: GoalControlPayload,
+          success: described(GoalControlResponse, "Goal control result"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.goal.control",
+            summary: "Run an allowlisted goal control tool",
+            description:
+              "Execute the opencode-autogoal Desktop GUI control bridge without enqueueing an AI assistant turn.",
           }),
         ),
         HttpApiEndpoint.get("worktree", ExperimentalPaths.worktree, {

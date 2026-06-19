@@ -1,0 +1,161 @@
+
+  [32m[1mVITE[22m v7.1.4[39m  [2mready in [0m[1m1186[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m4173[22m/[39m
+[2m[32m  ➜[39m[22m[2m  press [22m[1mh + enter[22m[2m to show help[22m
+[2m2:07:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m2:07:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/home.tsx, /src/index.css[22m
+[2m2:07:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/components/titlebar.tsx, /src/index.css[22m
+[2m2:07:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m2:07:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m2:07:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m2:08:15 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m2:09:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:06:07 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:07:04 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:07:35 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:08:15 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:08:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:08:34 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:08:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:09:03 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:09:23 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:10:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:10:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:10:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:10:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:10:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:10:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:11:21 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:11:36 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:12:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:12:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:12:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:54:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:54:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:54:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:54:44 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:54:44 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:54:44 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:05 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m7:56:56 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m7:57:26 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m7:58:01 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m7:58:28 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m7:59:15 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:50:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:50:44 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:51:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:51:18 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app.tsx, /src/index.css[22m
+[2m9:51:49 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app.tsx, /src/index.css[22m
+[2m9:52:27 AM[22m [36m[1m[vite][22m[39m changed tsconfig file detected: C:/Users/zerop/Development/opencode-source/packages/desktop/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+[2m9:52:27 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:52:27 AM[22m [36m[1m[vite][22m[39m changed tsconfig file detected: C:/Users/zerop/Development/opencode-source/packages/app/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+[2m9:52:27 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:52:27 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:52:56 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:53:21 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:53:21 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:53:28 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:53:36 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:26 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:55:51 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:56:50 AM[22m [36m[1m[vite][22m[39m changed tsconfig file detected: C:/Users/zerop/Development/opencode-source/packages/app/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+[2m9:56:50 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:57:25 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:59:08 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:01:50 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:02:36 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:02:51 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:10 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:10 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:03:12 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:18:01 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/components/titlebar.tsx, /src/index.css[22m
+[2m10:18:08 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/session/goal-panel.tsx[22m
+[2m10:18:15 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:18:24 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:33:16 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/app.tsx, /src/pages/directory-layout.tsx, /src/components/prompt-input.tsx, /src/pages/session.tsx, /src/pages/session/session-side-panel.tsx, /src/components/session/session-sortable-tab.tsx, /src/components/session-context-usage.tsx, /src/pages/session/file-tabs.tsx, /src/components/file-tree.tsx, /src/pages/layout.tsx, /src/pages/session/terminal-panel.tsx, /src/components/session/session-sortable-terminal-tab.tsx, /src/components/session/session-header.tsx, /src/components/dialog-select-model.tsx, /src/pages/new-session.tsx, /src/pages/session/composer/session-composer-region.tsx, /src/pages/session/message-timeline.tsx, /src/components/session/session-new-view.tsx, /src/components/session/session-context-tab.tsx, /src/components/status-popover.tsx, /src/pages/session/composer/session-question-dock.tsx, /src/pages/session/review-tab.tsx, /src/components/terminal.tsx, /src/pages/session/goal-panel.tsx, /src/pages/layout/sidebar-project.tsx, /src/pages/layout/sidebar-items.tsx, /src/components/titlebar.tsx, /src/pages/home.tsx, /src/components/settings-v2/general.tsx, /src/components/settings-v2/models.tsx, /src/components/settings-v2/providers.tsx, /src/components/dialog-select-provider.tsx, /src/components/dialog-connect-provider.tsx, /src/pages/layout/sidebar-workspace.tsx, /src/components/dialog-custom-provider.tsx, /src/components/dialog-select-directory.tsx, /src/components/dialog-select-server.tsx, /src/index.css[22m
+[2m10:33:17 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/entry.tsx[22m
+[2m10:33:17 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/entry.tsx[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/app.tsx, /src/pages/directory-layout.tsx, /src/components/prompt-input.tsx, /src/pages/session.tsx, /src/pages/session/session-side-panel.tsx, /src/components/session/session-sortable-tab.tsx, /src/components/session-context-usage.tsx, /src/pages/session/file-tabs.tsx, /src/components/file-tree.tsx, /src/pages/layout.tsx, /src/pages/session/terminal-panel.tsx, /src/components/session/session-sortable-terminal-tab.tsx, /src/components/session/session-header.tsx, /src/components/dialog-select-model.tsx, /src/pages/new-session.tsx, /src/pages/session/composer/session-composer-region.tsx, /src/pages/session/message-timeline.tsx, /src/components/session/session-new-view.tsx, /src/components/session/session-context-tab.tsx, /src/components/status-popover.tsx, /src/pages/session/composer/session-question-dock.tsx, /src/pages/session/review-tab.tsx, /src/components/terminal.tsx, /src/pages/session/goal-panel.tsx, /src/pages/layout/sidebar-project.tsx, /src/pages/layout/sidebar-items.tsx, /src/components/titlebar.tsx, /src/pages/home.tsx, /src/components/settings-v2/general.tsx, /src/components/settings-v2/models.tsx, /src/components/settings-v2/providers.tsx, /src/components/dialog-select-provider.tsx, /src/components/dialog-connect-provider.tsx, /src/pages/layout/sidebar-workspace.tsx, /src/components/dialog-custom-provider.tsx, /src/components/dialog-select-directory.tsx, /src/components/dialog-select-server.tsx, /src/index.css[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/client/index.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/client/utils.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/client.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/core/auth.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/core/bodySerializer.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/core/params.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/core/pathSerializer.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/core/queryKeySerializer.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/core/serverSentEvents.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mC:/Users/zerop/Development/opencode-source/packages/sdk/js/src/v2/gen/core/utils.gen.ts[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/app.tsx, /src/pages/directory-layout.tsx, /src/components/prompt-input.tsx, /src/pages/session.tsx, /src/pages/session/session-side-panel.tsx, /src/components/session/session-sortable-tab.tsx, /src/components/session-context-usage.tsx, /src/pages/session/file-tabs.tsx, /src/components/file-tree.tsx, /src/pages/layout.tsx, /src/pages/session/terminal-panel.tsx, /src/components/session/session-sortable-terminal-tab.tsx, /src/components/session/session-header.tsx, /src/components/dialog-select-model.tsx, /src/pages/new-session.tsx, /src/pages/session/composer/session-composer-region.tsx, /src/pages/session/message-timeline.tsx, /src/components/session/session-new-view.tsx, /src/components/session/session-context-tab.tsx, /src/components/status-popover.tsx, /src/pages/session/composer/session-question-dock.tsx, /src/pages/session/review-tab.tsx, /src/components/terminal.tsx, /src/pages/session/goal-panel.tsx, /src/pages/layout/sidebar-project.tsx, /src/pages/layout/sidebar-items.tsx, /src/components/titlebar.tsx, /src/pages/home.tsx, /src/components/settings-v2/general.tsx, /src/components/settings-v2/models.tsx, /src/components/settings-v2/providers.tsx, /src/components/dialog-select-provider.tsx, /src/components/dialog-connect-provider.tsx, /src/pages/layout/sidebar-workspace.tsx, /src/components/dialog-custom-provider.tsx, /src/components/dialog-select-directory.tsx, /src/components/dialog-select-server.tsx, /src/index.css[22m
+[2m10:34:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/app.tsx, /src/pages/directory-layout.tsx, /src/components/prompt-input.tsx, /src/pages/session.tsx, /src/pages/session/session-side-panel.tsx, /src/components/session/session-sortable-tab.tsx, /src/components/session-context-usage.tsx, /src/pages/session/file-tabs.tsx, /src/components/file-tree.tsx, /src/pages/layout.tsx, /src/pages/session/terminal-panel.tsx, /src/components/session/session-sortable-terminal-tab.tsx, /src/components/session/session-header.tsx, /src/components/dialog-select-model.tsx, /src/pages/new-session.tsx, /src/pages/session/composer/session-composer-region.tsx, /src/pages/session/message-timeline.tsx, /src/components/session/session-new-view.tsx, /src/components/session/session-context-tab.tsx, /src/components/status-popover.tsx, /src/pages/session/composer/session-question-dock.tsx, /src/pages/session/review-tab.tsx, /src/components/terminal.tsx, /src/pages/session/goal-panel.tsx, /src/pages/layout/sidebar-project.tsx, /src/pages/layout/sidebar-items.tsx, /src/components/titlebar.tsx, /src/pages/home.tsx, /src/components/settings-v2/general.tsx, /src/components/settings-v2/models.tsx, /src/components/settings-v2/providers.tsx, /src/components/dialog-select-provider.tsx, /src/components/dialog-connect-provider.tsx, /src/pages/layout/sidebar-workspace.tsx, /src/components/dialog-custom-provider.tsx, /src/components/dialog-select-directory.tsx, /src/components/dialog-select-server.tsx, /src/index.css[22m
+[2m10:34:25 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/entry.tsx[22m
+[2m10:34:25 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/entry.tsx[22m
+[2m10:34:29 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m11:09:10 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m11:09:56 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m3:43:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/app.tsx, /src/pages/directory-layout.tsx, /src/components/prompt-input.tsx, /src/pages/session.tsx, /src/pages/session/session-side-panel.tsx, /src/components/session/session-sortable-tab.tsx, /src/components/session-context-usage.tsx, /src/pages/session/file-tabs.tsx, /src/components/file-tree.tsx, /src/pages/layout.tsx, /src/pages/session/terminal-panel.tsx, /src/components/session/session-sortable-terminal-tab.tsx, /src/components/session/session-header.tsx, /src/components/dialog-select-model.tsx, /src/pages/new-session.tsx, /src/pages/session/composer/session-composer-region.tsx, /src/pages/session/message-timeline.tsx, /src/components/session/session-new-view.tsx, /src/components/session/session-context-tab.tsx, /src/components/status-popover.tsx, /src/components/status-popover-body.tsx, /src/pages/session/composer/session-question-dock.tsx, /src/pages/session/review-tab.tsx, /src/components/terminal.tsx, /src/pages/session/goal-panel.tsx, /src/pages/layout/sidebar-project.tsx, /src/pages/layout/sidebar-items.tsx, /src/components/titlebar.tsx, /src/pages/home.tsx, /src/components/settings-v2/general.tsx, /src/components/settings-v2/models.tsx, /src/components/settings-v2/providers.tsx, /src/components/dialog-select-provider.tsx, /src/components/dialog-connect-provider.tsx, /src/pages/layout/sidebar-workspace.tsx, /src/components/dialog-custom-provider.tsx, /src/components/dialog-select-directory.tsx, /src/components/dialog-select-server.tsx, /src/index.css[22m
+[2m3:43:10 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m3:44:12 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/index.css[22m
+[2m3:48:18 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/app.tsx, /src/pages/directory-layout.tsx, /src/components/prompt-input.tsx, /src/pages/session.tsx, /src/pages/session/session-side-panel.tsx, /src/components/session/session-sortable-tab.tsx, /src/components/session-context-usage.tsx, /src/pages/session/file-tabs.tsx, /src/components/file-tree.tsx, /src/pages/layout.tsx, /src/pages/session/terminal-panel.tsx, /src/components/session/session-sortable-terminal-tab.tsx, /src/components/session/session-header.tsx, /src/components/dialog-select-model.tsx, /src/pages/new-session.tsx, /src/pages/session/composer/session-composer-region.tsx, /src/pages/session/message-timeline.tsx, /src/components/session/session-new-view.tsx, /src/components/session/session-context-tab.tsx, /src/components/status-popover.tsx, /src/components/status-popover-body.tsx, /src/pages/session/composer/session-question-dock.tsx, /src/pages/session/review-tab.tsx, /src/components/terminal.tsx, /src/pages/session/goal-panel.tsx, /src/pages/layout/sidebar-project.tsx, /src/pages/layout/sidebar-items.tsx, /src/components/titlebar.tsx, /src/pages/home.tsx, /src/components/settings-v2/general.tsx, /src/components/settings-v2/models.tsx, /src/components/settings-v2/providers.tsx, /src/components/dialog-select-provider.tsx, /src/components/dialog-connect-provider.tsx, /src/pages/layout/sidebar-workspace.tsx, /src/components/dialog-custom-provider.tsx, /src/components/dialog-select-directory.tsx, /src/components/dialog-select-server.tsx, /src/index.css[22m
+[2m3:48:19 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/entry.tsx[22m
+[2m3:48:19 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/entry.tsx[22m
+[2m3:48:29 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m3:48:35 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/index.css[22m
+[2m3:48:36 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/entry.tsx[22m
+[2m3:48:36 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/entry.tsx[22m
+[2m3:52:02 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/app.tsx, /src/pages/directory-layout.tsx, /src/components/prompt-input.tsx, /src/pages/session.tsx, /src/pages/session/session-side-panel.tsx, /src/components/session/session-sortable-tab.tsx, /src/components/session-context-usage.tsx, /src/pages/session/file-tabs.tsx, /src/components/file-tree.tsx, /src/pages/layout.tsx, /src/pages/session/terminal-panel.tsx, /src/components/session/session-sortable-terminal-tab.tsx, /src/components/session/session-header.tsx, /src/components/dialog-select-model.tsx, /src/pages/new-session.tsx, /src/pages/session/composer/session-composer-region.tsx, /src/pages/session/message-timeline.tsx, /src/components/session/session-new-view.tsx, /src/components/session/session-context-tab.tsx, /src/components/status-popover.tsx, /src/components/status-popover-body.tsx, /src/pages/session/composer/session-question-dock.tsx, /src/pages/session/review-tab.tsx, /src/components/terminal.tsx, /src/pages/session/goal-panel.tsx, /src/pages/layout/sidebar-project.tsx, /src/pages/layout/sidebar-items.tsx, /src/components/titlebar.tsx, /src/pages/home.tsx, /src/components/settings-v2/general.tsx, /src/components/settings-v2/models.tsx, /src/components/settings-v2/providers.tsx, /src/components/dialog-select-provider.tsx, /src/components/dialog-connect-provider.tsx, /src/pages/layout/sidebar-workspace.tsx, /src/components/dialog-custom-provider.tsx, /src/components/dialog-select-directory.tsx, /src/components/dialog-select-server.tsx, /src/index.css[22m
+[2m3:52:04 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/entry.tsx[22m
+[2m3:52:04 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/entry.tsx[22m
+[2m3:52:09 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m3:52:14 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/entry.tsx, /src/index.css[22m
+[2m3:52:16 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/src/entry.tsx[22m
+[2m3:52:16 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/entry.tsx[22m
+[2m3:53:19 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/session/session-side-panel.tsx[22m
+[2m3:59:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/session/goal-panel.tsx[22m
+[2m4:16:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m10:26:37 AM[22m [36m[1m[vite][22m[39m [32mvite.config.ts changed, restarting server...[39m
+[2m10:26:38 AM[22m [36m[1m[vite][22m[39m server restarted.
+[2m10:52:43 AM[22m [36m[1m[vite][22m[39m changed tsconfig file detected: C:/Users/zerop/Development/opencode-source/packages/app/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.

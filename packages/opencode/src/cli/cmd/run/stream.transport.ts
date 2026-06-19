@@ -432,12 +432,12 @@ function createLayer(input: StreamInput) {
             ),
             (events) =>
               Effect.sync(() => {
-                void events.stream.return(StreamClosed).catch(() => {})
+                void events.stream.return(StreamClosed).catch((err) => { console.error(err) })
               }),
           ),
         )
         closeStream = () => {
-          void events.stream.return(StreamClosed).catch(() => {})
+          void events.stream.return(StreamClosed).catch((err) => { console.error(err) })
         }
         input.trace?.write("recv.subscribe", {
           sessionID: input.sessionID,

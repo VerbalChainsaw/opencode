@@ -153,11 +153,25 @@ const live: Layer.Layer<
         })
 
         const approvedToolsForSession = new Set<string>()
+        // v0.4.1 (HIGH-04) — serialize concurrent approval handler calls
+        // so two tool calls racing through the handler don't both trigger
+        // approval dialogs for the same tool. Without this, the shared
+        // `approvedToolsForSession` Set is read and written across await
+        // boundaries with no synchronization, causing duplicate dialogs
+        // and incorrect deny/grant decisions.
+        let approvalChain: Promise<void> = Promise.resolve()
         workflowModel.approvalHandler = bridge.bind(async (approvalTools) => {
+          // Wait for the previous approval to finish, then re-check.
+          // The re-check is load-bearing: another approval may have
+          // already approved these tools while we were waiting.
+          const previous = approvalChain
+          let resolveCurrent: () => void = () => {}
+          approvalChain = new Promise<void>((resolve) => { resolveCurrent = resolve })
+          await previous
+
           const uniqueNames = [...new Set(approvalTools.map((t: { name: string }) => t.name))] as string[]
-          // Auto-approve tools that were already approved in this session
-          // (prevents infinite approval loops for server-side MCP tools)
           if (uniqueNames.every((name) => approvedToolsForSession.has(name))) {
+            resolveCurrent()
             return { approved: true }
           }
 
@@ -200,6 +214,7 @@ const live: Layer.Layer<
           } catch {
             return { approved: false }
           } finally {
+            resolveCurrent()
             if (unsub) await bridge.promise(unsub)
           }
         })

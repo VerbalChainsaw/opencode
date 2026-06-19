@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "06253bd1-b45a-46d6-b951-b451945bed6c",
+  "steps": [
+    {
+      "condition": "Debug the reported failure. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
+      "verification": {
+        "type": "marker"
+      },
+      "maxTurns": 8,
+      "maxMinutes": 30
+    },
+    {
+      "condition": "Validate the current change. Run the relevant tests, typechecks, builds, or UI checks; inspect failures; and fix regressions until the verification set is clean.",
+      "verification": {
+        "type": "marker"
+      },
+      "maxTurns": 4,
+      "maxMinutes": 15
+    },
+    {
+      "condition": "Typecheck the current change. Find the repository's relevant typecheck command, run it, fix type errors without broad refactors, and re-run until clean.",
+      "verification": {
+        "type": "marker"
+      },
+      "maxTurns": 3,
+      "maxMinutes": 10
+    }
+  ],
+  "current": 0,
+  "maxCycles": 1,
+  "onComplete": "stop",
+  "master": {
+    "maxTurns": 20,
+    "maxMinutes": 60
+  },
+  "metadata": {
+    "createdAt": 1781727658688,
+    "setBy": "chain"
+  }
+}

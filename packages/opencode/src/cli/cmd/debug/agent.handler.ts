@@ -105,15 +105,12 @@ function parseToolParams(input?: string) {
   const parsed = iife(() => {
     try {
       return JSON.parse(trimmed)
-    } catch (jsonError) {
-      try {
-        return new Function(`return (${trimmed})`)()
-      } catch (evalError) {
-        throw new Error(
-          `Failed to parse --params. Use JSON or a JS object literal. JSON error: ${jsonError}. Eval error: ${evalError}.`,
-          { cause: evalError },
-        )
-      }
+    } catch (jsonError: any) {
+      throw new Error(
+        `Failed to parse --params as JSON: ${jsonError?.message ?? jsonError}. ` +
+        `Use valid JSON (e.g. '{\"key\": \"value\"}').`,
+        { cause: jsonError },
+      )
     }
   })
 

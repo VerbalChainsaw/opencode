@@ -103,7 +103,7 @@ export const layer = Layer.effect(
         Effect.tap((subscription) => Effect.sync(() => subscriptions.push(subscription))),
         Effect.timeout(SUBSCRIBE_TIMEOUT_MS),
         Effect.catchCause((cause) => {
-          pending.then((subscription) => subscription.unsubscribe()).catch(() => {})
+          pending.then((subscription) => subscription.unsubscribe()).catch((err) => { console.error(err) })
           return Effect.logError("failed to subscribe", { directory, cause: Cause.pretty(cause) })
         }),
       )

@@ -503,7 +503,7 @@ export const RunCommand = effectCmd({
           throw new Error("Failed to create session")
         }
 
-        void share(sdk, id).catch(() => {})
+        void share(sdk, id).catch((err) => { console.error(err) })
         return {
           id,
           title: result.data?.title,

@@ -1,0 +1,712 @@
+bun test v1.3.14 (0d9b296a)
+
+src\theme-preload.test.ts:
+(pass) theme preload > migrates legacy oc-1 to oc-2 before mount [3.58ms]
+(pass) theme preload > keeps cached css for non-default themes [1.12ms]
+
+src\addons\serialize.test.ts:
+(pass) SerializeAddon > ANSI color preservation > should preserve text attributes (bold, italic, underline) [95.77ms]
+(pass) SerializeAddon > ANSI color preservation > should preserve basic 16-color foreground colors [15.64ms]
+(pass) SerializeAddon > ANSI color preservation > should preserve 256-color palette colors [10.33ms]
+(pass) SerializeAddon > ANSI color preservation > should preserve RGB/truecolor colors [12.34ms]
+(pass) SerializeAddon > ANSI color preservation > should preserve background colors [10.78ms]
+(pass) SerializeAddon > ANSI color preservation > should handle combined colors and attributes [10.61ms]
+(pass) SerializeAddon > round-trip serialization > should not produce ECH sequences [7.81ms]
+(pass) SerializeAddon > round-trip serialization > multi-line content should not have garbage characters [15.22ms]
+(pass) SerializeAddon > round-trip serialization > serialized output should restore after Terminal.reset() [15.94ms]
+(pass) SerializeAddon > round-trip serialization > alternate buffer should round-trip without garbage [33.85ms]
+(pass) SerializeAddon > round-trip serialization > serialized output written to new terminal should match original colors [4.33ms]
+
+src\components\dialog-custom-provider.test.ts:
+(pass) validateCustomProvider > builds trimmed config payload [0.73ms]
+(pass) validateCustomProvider > flags duplicate rows and allows reconnecting disabled providers [0.13ms]
+
+src\components\directory-picker.test.ts:
+(pass) directoryPickerKind > uses the native picker only for local desktop projects [0.11ms]
+
+src\components\file-tree.test.ts:
+(pass) file tree fetch discipline > root lists on mount unless already loaded or loading [0.14ms]
+(pass) file tree fetch discipline > nested dirs list only when expanded and stale [0.07ms]
+(pass) file tree fetch discipline > allowed auto-expand picks only collapsed dirs [0.23ms]
+
+src\components\status-popover.test.ts:
+(pass) statusDotTone > shows success when the server is healthy and no MCP issue is active [1.75ms]
+(pass) statusDotTone > shows warning and critical MCP issues only after the server is healthy [0.05ms]
+(pass) statusDotTone > shows critical when the server health check fails [0.02ms]
+(pass) statusDotTone > uses the weak state before health is known or readiness completes [0.02ms]
+
+src\components\titlebar-history.test.ts:
+(pass) titlebar history > append and trim keeps max bounded [0.27ms]
+(pass) titlebar history > back and forward indexes stay correct after trimming [0.16ms]
+(pass) titlebar history > action-driven navigation does not push duplicate history entries [0.05ms]
+
+src\components\titlebar-session-events.test.ts:
+(pass) titlebar session events > reads valid removed session tab details [0.42ms]
+(pass) titlebar session events > ignores invalid removed session tab details [0.10ms]
+
+src\components\titlebar.test.ts:
+(pass) titlebar new-session entrypoint > creates a draft instead of relying on legacy session navigation [0.66ms]
+(pass) titlebar new-session entrypoint > wires onClick to the openNewTab handler on the V2 + button [0.37ms]
+(pass) titlebar new-session entrypoint > openNewTab is defined as a real function (not a stray identifier) [0.71ms]
+(pass) titlebar new-session entrypoint > openNewTab falls back to the directory picker when no project is open [0.38ms]
+(pass) titlebar new-session entrypoint > directory-picker fallback updates the server project recency without calling a missing layout API [0.34ms]
+(pass) titlebar new-session entrypoint > does NOT navigate to the legacy /:dir/session route (which crashes on the draft page) [0.39ms]
+
+src\components\updater-action.test.ts:
+(pass) updaterAction > disables update actions when the platform has no updater [0.07ms]
+(pass) updaterAction > projects updater transitions into one settings action [0.05ms]
+
+src\context\command-keybind.test.ts:
+(pass) command keybind helpers > parseKeybind handles aliases and multiple combos [0.20ms]
+(pass) command keybind helpers > parseKeybind treats none and empty as disabled [0.03ms]
+(pass) command keybind helpers > matchKeybind normalizes punctuation keys [0.35ms]
+(pass) command keybind helpers > matchKeybind supports bracket keys [0.10ms]
+(pass) command keybind helpers > formatKeybind returns human readable output [0.22ms]
+(pass) command keybind helpers > formatKeybind prefers the first combo [0.04ms]
+
+src\context\command.test.ts:
+(pass) upsertCommandRegistration > replaces keyed registrations [0.16ms]
+(pass) upsertCommandRegistration > keeps unkeyed registrations additive [0.04ms]
+
+src\context\comments.test.ts:
+(pass) comments session indexing > keeps file list behavior and aggregate chronological order [1.08ms]
+(pass) comments session indexing > remove updates file and aggregate indexes consistently [0.23ms]
+(pass) comments session indexing > clear resets file and aggregate indexes plus focus state [0.21ms]
+(pass) comments session indexing > remove keeps focus when same comment id exists in another file [0.08ms]
+(pass) comments session indexing > setFocus and setActive updater callbacks receive current state [0.11ms]
+(pass) comments session indexing > update changes only the targeted comment body [0.10ms]
+(pass) comments session indexing > replace swaps comment state and clears focus state [0.26ms]
+
+src\context\file-content-eviction-accounting.test.ts:
+(pass) file content eviction accounting > updates byte totals incrementally for set, overwrite, remove, and reset [2.67ms]
+(pass) file content eviction accounting > evicts by entry cap using LRU order [0.31ms]
+(pass) file content eviction accounting > evicts by byte cap while preserving protected entries [0.08ms]
+
+src\context\layout-scroll.test.ts:
+(pass) createScrollPersistence > debounces persisted scroll writes [2.21ms]
+(pass) createScrollPersistence > reseeds empty cache after persisted snapshot loads [0.22ms]
+
+src\context\layout.test.ts:
+(pass) layout session-key helpers > couples touch and scroll seed in order [2.19ms]
+(pass) layout session-key helpers > reads dynamic accessor keys lazily [0.22ms]
+(pass) pruneSessionKeys > keeps active key and drops lowest-used keys [0.17ms]
+(pass) pruneSessionKeys > does not prune without keep key [0.03ms]
+
+src\context\model-variant.test.ts:
+(pass) model variant > resolves configured agent variant when model matches [0.14ms]
+(pass) model variant > ignores configured variant when model does not match [0.04ms]
+(pass) model variant > prefers selected variant over configured variant [0.08ms]
+(pass) model variant > lets an explicit default override the configured variant [0.03ms]
+(pass) model variant > cycles from configured variant to next [0.09ms]
+(pass) model variant > wraps from configured last variant to first [0.04ms]
+(pass) model variant > cycles from an explicit default to the first variant [0.03ms]
+
+src\context\permission-auto-respond.test.ts:
+(pass) autoRespondsPermission > uses a parent session's directory-scoped auto-accept [0.95ms]
+(pass) autoRespondsPermission > uses a parent session's legacy auto-accept key [0.11ms]
+(pass) autoRespondsPermission > defaults to requiring approval when no lineage override exists [0.10ms]
+(pass) autoRespondsPermission > inherits a parent session's false override [0.11ms]
+(pass) autoRespondsPermission > prefers a child override over parent override [0.14ms]
+(pass) autoRespondsPermission > falls back to directory-level auto-accept [0.05ms]
+(pass) autoRespondsPermission > session-level override takes precedence over directory-level [0.32ms]
+(pass) isDirectoryAutoAccepting > returns true when directory key is set [0.12ms]
+(pass) isDirectoryAutoAccepting > returns false when directory key is not set [0.03ms]
+(pass) isDirectoryAutoAccepting > returns false when directory key is explicitly false [0.03ms]
+
+src\context\server-sdk.test.ts:
+(pass) resumeStreamAfterPageShow > restarts a stream only after a back-forward cache restore [0.13ms]
+
+src\context\server-sync.test.ts:
+(pass) pickDirectoriesToEvict > keeps pinned stores and evicts idle stores [0.29ms]
+(pass) loadRootSessionsWithFallback > uses limited roots query when supported [0.27ms]
+(pass) loadRootSessionsWithFallback > falls back to full roots query on limited-query failure [0.16ms]
+(pass) estimateRootSessionTotal > keeps exact total for full fetches [0.05ms]
+(pass) estimateRootSessionTotal > marks has-more for full-limit limited fetches [0.02ms]
+(pass) estimateRootSessionTotal > keeps exact total when limited fetch is under limit [0.03ms]
+(pass) canDisposeDirectory > rejects pinned or inflight directories [0.08ms]
+(pass) canDisposeDirectory > accepts idle unpinned directory store [0.02ms]
+
+src\context\server.test.ts:
+(pass) resolveServerList > lets startup auth_token credentials override a persisted same-url server [0.37ms]
+(pass) resolveServerList > keeps persisted credentials when startup has no auth_token [0.07ms]
+(pass) treats WSL sidecars as remote server connections [0.28ms]
+(pass) active server removal falls back across built-in and persisted servers [0.11ms]
+(pass) createServerProjects > keeps active and explicit server buckets in one reactive store [0.38ms]
+(pass) migrateCanonicalLocalServerState > moves an existing canonical web bucket into local scope [0.19ms]
+(pass) migrateCanonicalLocalServerState > preserves existing local state while merging a canonical web bucket [0.07ms]
+
+src\context\sync-optimistic.test.ts:
+(pass) sync optimistic reducers > applyOptimisticAdd inserts message in sorted order and stores parts [0.41ms]
+(pass) sync optimistic reducers > applyOptimisticRemove removes message and part entries [0.11ms]
+(pass) sync optimistic reducers > mergeOptimisticPage keeps pending messages in fetched timelines [0.44ms]
+(pass) sync optimistic reducers > mergeOptimisticPage keeps missing optimistic parts until the server has them [0.17ms]
+(pass) sync optimistic reducers > mergeOptimisticPage confirms echoed messages once all parts arrive [0.14ms]
+
+src\context\terminal.test.ts:
+(pass) getWorkspaceTerminalCacheKey > uses workspace-only directory cache key [0.21ms]
+(pass) getWorkspaceTerminalCacheKey > can include a server scope [0.03ms]
+(pass) getLegacyTerminalStorageKeys > keeps workspace storage path when no legacy session id [0.05ms]
+(pass) getLegacyTerminalStorageKeys > includes legacy session path before workspace path [0.02ms]
+(pass) migrateTerminalState > drops invalid terminals and restores a valid active terminal [0.38ms]
+(pass) migrateTerminalState > keeps a valid active id [0.08ms]
+
+src\i18n\parity.test.ts:
+(pass) i18n parity > non-English locales translate targeted unseen session keys [0.15ms]
+
+src\pages\error-description.test.ts:
+(pass) error description > describes local server startup errors [0.13ms]
+(pass) error description > uses the generic description for other errors [0.04ms]
+
+src\pages\home.test.ts:
+(pass) home mission-control contract > defines the four mission-control status labels (routed through i18n) [1.09ms]
+(pass) home mission-control contract > defines the primary action box labels (routed through i18n) [1.06ms]
+(pass) home mission-control contract > ships the latestGoalRecord memo for the Open Goal button [1.30ms]
+(pass) home mission-control contract > ships the three dialog body components (rendered via dialog.show) [2.29ms]
+(pass) home mission-control contract > ships the three dialog launcher functions (HomeDesign-scoped) [0.46ms]
+(pass) home mission-control contract > uses the standard <Dialog> from @opencode-ai/ui/dialog [0.40ms]
+(pass) home mission-control contract > HomeMetricCard is a real button (keyboard + a11y), not a div [0.43ms]
+(pass) home mission-control contract > Needs Attention is backed by actionable session records [1.27ms]
+(pass) home mission-control contract > Live Sessions metric counts actually live records, not the recent-session limit [1.39ms]
+(pass) home mission-control contract > Active Goals metric is backed by workspace goal-state records, not titled sessions [2.67ms]
+(pass) home mission-control contract > Needs Attention dialog exposes reasoned attention records [0.70ms]
+(pass) home mission-control contract > metric cards are actually wired to the dialog launchers (not just decorative) [0.81ms]
+(pass) home mission-control contract > Projects dialog selection opens synced projects before selecting them [0.49ms]
+(pass) home mission-control contract > Projects dialog is titled as Projects, not Live Board [0.44ms]
+(pass) home mission-control contract > uses the corrected design-system scrim token, not the phantom v2-background-overlay [0.47ms]
+(pass) home mission-control contract > goal panel labels are routed through the i18n layer (not hardcoded English) [1.59ms]
+(pass) home mission-control contract > home page section headers are routed through the i18n layer (not hardcoded English) [0.98ms]
+(pass) home mission-control contract > new session falls back to project picking when no project is already selected [0.44ms]
+(pass) home mission-control contract > Live Board is a contained flex region with an internal scroll view [0.50ms]
+(pass) home mission-control contract > Projects tree is a framed navigation surface with outlined selectable rows [0.57ms]
+
+src\pages\new-session.test.ts:
+(pass) new session draft page > resets local session model state when a standalone draft route loads [0.52ms]
+
+src\utils\diffs.test.ts:
+(pass) diffs > keeps valid arrays [2.31ms]
+(pass) diffs > wraps a single diff object [0.03ms]
+(pass) diffs > reads keyed diff objects [0.07ms]
+(pass) diffs > drops invalid entries [0.06ms]
+(pass) message > normalizes user summaries with object diffs [0.14ms]
+(pass) message > drops invalid user summaries [0.03ms]
+
+src\utils\id.test.ts:
+(pass) Identifier (id.ts) > ascending uses a 3-char prefix and a 26-char body [0.64ms]
+(pass) Identifier (id.ts) > passing a given id that starts with the wrong prefix throws [0.13ms]
+(pass) Identifier (id.ts) > passing a given id with the right prefix returns it unchanged [0.02ms]
+(pass) Identifier (id.ts) > warns when getRandomValues is unavailable (fallback to Math.random) [0.11ms]
+(pass) Identifier (id.ts) > warns when crypto itself is unavailable [0.07ms]
+(pass) Identifier (id.ts) > does not warn when crypto.getRandomValues is available [0.10ms]
+
+src\utils\notification-click.test.ts:
+(pass) notification click > navigates via registered navigate function [0.12ms]
+(pass) notification click > does not navigate when href is missing [0.02ms]
+(pass) notification click > falls back to location.assign without registered navigate [3.42ms]
+
+src\utils\persist.test.ts:
+(pass) persist localStorage resilience > does not cache values as persisted when quota write and eviction fail [0.76ms]
+(pass) persist localStorage resilience > disables only the failing scope when storage throws [0.20ms]
+(pass) persist localStorage resilience > failing fallback scope does not poison direct storage scope [0.09ms]
+(pass) persist localStorage resilience > normalizer rejects malformed JSON payloads [0.09ms]
+(pass) persist localStorage resilience > workspace storage sanitizes Windows filename characters [0.19ms]
+(pass) persist localStorage resilience > workspace target keeps raw path storage as legacy fallback [0.29ms]
+(pass) persist localStorage resilience > workspace target keeps backslash storage as fallback for normalized Windows paths [0.05ms]
+(pass) persist localStorage resilience > migrates direct legacy keys into scoped storage [0.36ms]
+(pass) persist localStorage resilience > removes legacy workspace storage when removing persisted target [0.19ms]
+(pass) persist localStorage resilience > draft target isolates storage per draft and namespaces keys [0.11ms]
+(pass) persist localStorage resilience > removes draft storage when removing persisted target [0.04ms]
+(pass) persist localStorage resilience > server workspace target preserves local storage and isolates remote storage [0.10ms]
+(pass) persist localStorage resilience > server global target preserves local key and isolates remote keys [0.07ms]
+(pass) persist localStorage resilience > server global target cannot collide when scope and key contain colons [0.02ms]
+
+src\utils\prompt.test.ts:
+(pass) extractPromptFromParts > restores multiple uploaded attachments [0.50ms]
+
+src\utils\refcount.test.ts:
+(pass) createRefCountMap > removes an item after its last owner is disposed [0.31ms]
+(pass) createRefCountMap > keeps equivalent path consumers until the last owner is disposed [0.11ms]
+
+src\utils\runtime-adapters.test.ts:
+(pass) runtime adapters > detects and disposes disposable values [0.12ms]
+(pass) runtime adapters > ignores non-disposable values [0.04ms]
+(pass) runtime adapters > sets options only when setter exists [0.11ms]
+(pass) runtime adapters > reads hovered link text safely [0.05ms]
+(pass) runtime adapters > resolves speech recognition constructor with webkit precedence [0.07ms]
+(pass) runtime adapters > returns undefined when no valid speech constructor exists [0.02ms]
+
+src\utils\scoped-cache.test.ts:
+(pass) createScopedCache > evicts least-recently-used entry when max is reached [0.44ms]
+(pass) createScopedCache > disposes entries on delete and clear [0.14ms]
+(pass) createScopedCache > expires stale entries with ttl and recreates on get [0.12ms]
+
+src\utils\server-errors.test.ts:
+(pass) parseReadableConfigInvalidError > formats issues with file path [0.33ms]
+(pass) parseReadableConfigInvalidError > uses trimmed message when issues are missing [0.04ms]
+(pass) formatServerError > formats config invalid errors [0.12ms]
+(pass) formatServerError > returns error messages [0.05ms]
+(pass) formatServerError > returns provided string errors [0.01ms]
+(pass) formatServerError > uses translated unknown fallback [0.01ms]
+(pass) formatServerError > falls back for unknown error objects and names [0.02ms]
+(pass) formatServerError > formats provider model errors using provider/model [0.09ms]
+(pass) formatServerError > formats provider model suggestions [0.06ms]
+(pass) formatServerError > unwraps SDK-wrapped errors from cause.body [0.04ms]
+
+src\utils\server-health.test.ts:
+(pass) checkServerHealth > returns healthy response with version [2.68ms]
+(pass) checkServerHealth > allows slow servers thirty seconds by default [0.83ms]
+(pass) checkServerHealth > returns unhealthy when request fails [324.14ms]
+(pass) checkServerHealth > uses timeout fallback when AbortSignal.timeout is unavailable [13.22ms]
+(pass) checkServerHealth > uses provided abort signal [0.66ms]
+(pass) checkServerHealth > retries transient failures and eventually succeeds [31.44ms]
+(pass) checkServerHealth > returns unhealthy when retries are exhausted [29.55ms]
+
+src\utils\server-scope.test.ts:
+(pass) ServerScope > uses a stable local scope for the canonical sidecar [0.08ms]
+(pass) ServerScope > keeps configured loopback servers distinct from the canonical sidecar [0.01ms]
+(pass) ServerScope > uses a stable local scope for an explicit canonical web server [0.01ms]
+(pass) SessionStateKey > combines local and remote scope with route identity [0.11ms]
+(pass) SessionStateKey > extracts route keys from scoped and legacy state keys [0.07ms]
+(pass) migrateLegacySessionStateKeys > copies legacy route keys into local scope without overwriting scoped state [0.21ms]
+(pass) migrateLegacySessionStateKeys > rejects invalid identity fragments [0.05ms]
+
+src\utils\server.test.ts:
+(pass) authFromToken > decodes basic auth credentials from auth_token [2.15ms]
+(pass) authFromToken > defaults blank username to opencode [0.07ms]
+(pass) authFromToken > ignores malformed tokens [0.11ms]
+(pass) authTokenFromCredentials > encodes credentials with the default username [0.04ms]
+(pass) pickDefaultServerUrl > prefers the current loopback server over a stale saved loopback server [0.12ms]
+(pass) pickDefaultServerUrl > keeps a saved remote server selection [0.02ms]
+(pass) pickDefaultServerUrl > keeps the current server when nothing is saved [0.01ms]
+(pass) resolveCurrentServerUrl > uses the dev app origin when vite backend env is missing [0.04ms]
+(pass) resolveCurrentServerUrl > uses the configured dev backend when vite env is present [0.02ms]
+(pass) resolveCurrentServerUrl > prefers a dev override before vite env values [0.02ms]
+(pass) resolveCurrentServerUrl > keeps the desktop localhost fallback on opencode.ai hosts [0.02ms]
+
+src\utils\terminal-websocket-url.test.ts:
+(pass) terminalWebSocketURL > uses query auth without embedding credentials in websocket URL [2.18ms]
+(pass) terminalWebSocketURL > omits query auth for same-origin saved credentials [0.09ms]
+(pass) terminalWebSocketURL > uses query auth for same-origin credentials from auth_token [0.09ms]
+
+src\utils\terminal-writer.test.ts:
+(pass) terminalWriter > buffers and flushes once per schedule [2.44ms]
+(pass) terminalWriter > flush is a no-op when empty [0.07ms]
+(pass) terminalWriter > flush waits for pending write completion [0.08ms]
+
+src\utils\uuid.test.ts:
+(pass) uuid > uses randomUUID in secure contexts [0.24ms]
+(pass) uuid > falls back in insecure contexts [0.17ms]
+(pass) uuid > falls back when randomUUID throws [0.13ms]
+(pass) uuid > falls back when randomUUID is unavailable [0.07ms]
+
+src\utils\worktree.test.ts:
+(pass) Worktree > normalizes trailing slashes [0.35ms]
+(pass) Worktree > pending does not overwrite a terminal state [0.11ms]
+(pass) Worktree > wait resolves shared pending waiter when ready [0.24ms]
+(pass) Worktree > wait resolves with failure message [0.10ms]
+(pass) Worktree > isolates identical directories by server scope [0.04ms]
+
+src\wsl\settings-model.test.ts:
+(pass) WSL server settings presentation > retries only settled unsuccessful runtimes [0.16ms]
+(pass) WSL server settings presentation > offers install and update only when OpenCode needs attention [0.07ms]
+(pass) WSL server settings presentation > probes the selected distro before entering the OpenCode step [0.23ms]
+
+src\components\prompt-input\attachments.test.ts:
+(pass) attachmentMime > keeps PDFs when the browser reports the mime [0.61ms]
+(pass) attachmentMime > normalizes structured text types to text/plain [0.15ms]
+(pass) attachmentMime > accepts text files even with a misleading browser mime [0.29ms]
+(pass) attachmentMime > rejects binary files [0.17ms]
+(pass) pickAttachmentFiles > reads the current project directory for every native picker invocation [0.31ms]
+(pass) pickAttachmentFiles > uses the browser file input when no native picker exists [0.06ms]
+(pass) pickAttachmentFiles > reports native picker failures without rejecting [0.18ms]
+(pass) pasteMode > uses native paste for short single-line text [0.10ms]
+(pass) pasteMode > uses manual paste for multiline text [0.03ms]
+(pass) pasteMode > uses manual paste for large text [0.02ms]
+
+src\components\prompt-input\build-request-parts.test.ts:
+(pass) buildRequestParts > builds typed request and optimistic parts without cast path [3.50ms]
+(pass) buildRequestParts > keeps multiple uploaded attachments in order [0.15ms]
+(pass) buildRequestParts > deduplicates context files when prompt already includes same path [0.20ms]
+(pass) buildRequestParts > adds file parts for @mentions inside comment text [0.31ms]
+(pass) buildRequestParts > handles Windows paths correctly (simulated on macOS) [0.20ms]
+(pass) buildRequestParts > handles Windows absolute path with special characters [0.17ms]
+(pass) buildRequestParts > handles Linux absolute paths correctly [0.18ms]
+(pass) buildRequestParts > handles macOS paths correctly [0.12ms]
+(pass) buildRequestParts > handles context files with Windows paths [0.25ms]
+(pass) buildRequestParts > handles absolute Windows paths (user manually specifies full path) [0.15ms]
+(pass) buildRequestParts > handles selection with query parameters on Windows [0.18ms]
+(pass) buildRequestParts > handles file paths with dots and special segments on Windows [0.12ms]
+
+src\components\prompt-input\editor-dom.test.ts:
+(pass) prompt-input editor dom > createTextFragment preserves newlines with consecutive br nodes [3.08ms]
+(pass) prompt-input editor dom > createTextFragment keeps trailing newline as terminal break [0.17ms]
+(pass) prompt-input editor dom > createTextFragment avoids break-node explosion for large multiline content [0.45ms]
+(pass) prompt-input editor dom > createTextFragment keeps terminal break in large multiline fallback [0.28ms]
+(pass) prompt-input editor dom > length helpers treat breaks as one char and ignore zero-width chars [0.26ms]
+(pass) prompt-input editor dom > setCursorPosition and getCursorPosition round-trip with pills and breaks [3.98ms]
+(pass) prompt-input editor dom > setCursorPosition and getCursorPosition round-trip across blank lines [0.66ms]
+
+src\components\prompt-input\history.test.ts:
+(pass) prompt-input history > prependHistoryEntry skips empty prompt and deduplicates consecutive entries [2.67ms]
+(pass) prompt-input history > navigatePromptHistory restores saved prompt when moving down from newest [0.25ms]
+(pass) prompt-input history > navigatePromptHistory keeps entry comments when moving through history [0.10ms]
+(pass) prompt-input history > normalizePromptHistoryEntry supports legacy prompt arrays [0.05ms]
+(pass) prompt-input history > helpers clone prompt and count text content length [0.16ms]
+(pass) prompt-input history > canNavigateHistoryAtCursor only allows prompt boundaries [0.19ms]
+
+src\components\prompt-input\placeholder.test.ts:
+(pass) promptPlaceholder > returns shell placeholder in shell mode [1.80ms]
+(pass) promptPlaceholder > returns summarize placeholders for comment context [0.05ms]
+(pass) promptPlaceholder > returns default placeholder with example when suggestions enabled [0.03ms]
+(pass) promptPlaceholder > returns simple placeholder when suggestions disabled [0.03ms]
+
+src\components\prompt-input\submit.test.ts:
+(pass) prompt submit worktree selection > reads the latest worktree accessor value per submit [2.07ms]
+(pass) prompt submit worktree selection > applies auto-accept to newly created sessions [0.29ms]
+(pass) prompt submit worktree selection > includes the selected variant on optimistic prompts [1.36ms]
+(pass) prompt submit worktree selection > seeds new sessions before optimistic prompts are added [0.37ms]
+
+src\components\session\session-context-breakdown.test.ts:
+(pass) estimateSessionContextBreakdown > estimates tokens and keeps remaining tokens as other [0.57ms]
+(pass) estimateSessionContextBreakdown > scales segments when estimates exceed input [0.13ms]
+
+src\components\session\session-context-metrics.test.ts:
+(pass) getSessionContextMetrics > computes totals and usage from latest assistant with tokens [6.41ms]
+(pass) getSessionContextMetrics > preserves fallback labels and null usage when model metadata is missing [0.07ms]
+(pass) getSessionContextMetrics > recomputes when message array is mutated in place [0.07ms]
+(pass) getSessionContextMetrics > returns empty metrics when inputs are undefined [0.02ms]
+
+src\context\file\path.test.ts:
+(pass) file path helpers > normalizes file inputs against workspace root [0.58ms]
+(pass) file path helpers > normalizes Windows absolute paths with mixed separators [0.07ms]
+(pass) file path helpers > keeps query/hash stripping behavior stable [0.02ms]
+(pass) file path helpers > unquotes git escaped octal path strings [0.09ms]
+(pass) encodeFilePath > Linux/Unix paths > should handle Linux absolute path [0.08ms]
+(pass) encodeFilePath > Linux/Unix paths > should handle Linux path with special characters [0.04ms]
+(pass) encodeFilePath > Linux/Unix paths > should handle Linux relative path [0.02ms]
+(pass) encodeFilePath > Linux/Unix paths > should handle Linux root directory [0.01ms]
+(pass) encodeFilePath > Linux/Unix paths > should handle Linux path with all special chars [0.09ms]
+(pass) encodeFilePath > macOS paths > should handle macOS absolute path [0.04ms]
+(pass) encodeFilePath > macOS paths > should handle macOS path with spaces [0.03ms]
+(pass) encodeFilePath > Windows paths > should handle Windows absolute path with backslashes [0.07ms]
+(pass) encodeFilePath > Windows paths > should handle mixed separator path (Windows + Unix) [0.03ms]
+(pass) encodeFilePath > Windows paths > should handle Windows path with spaces [0.04ms]
+(pass) encodeFilePath > Windows paths > should handle Windows path with special chars in filename [0.03ms]
+(pass) encodeFilePath > Windows paths > should handle Windows root directory [0.03ms]
+(pass) encodeFilePath > Windows paths > should handle Windows relative path with backslashes [0.03ms]
+(pass) encodeFilePath > Windows paths > should NOT create invalid URL like the bug report [0.05ms]
+(pass) encodeFilePath > Windows paths > should handle lowercase drive letters [0.04ms]
+(pass) encodeFilePath > Cross-platform compatibility > should preserve Unix paths unchanged (except encoding) [0.02ms]
+(pass) encodeFilePath > Cross-platform compatibility > should normalize Windows paths for cross-platform use [0.04ms]
+(pass) encodeFilePath > Cross-platform compatibility > should handle relative paths the same on all platforms [0.05ms]
+(pass) encodeFilePath > Edge cases > should handle empty path [0.01ms]
+(pass) encodeFilePath > Edge cases > should handle path with multiple consecutive slashes [0.01ms]
+(pass) encodeFilePath > Edge cases > should encode Unicode characters [0.05ms]
+(pass) encodeFilePath > Edge cases > should handle already normalized Windows path [0.02ms]
+(pass) encodeFilePath > Edge cases > should handle just drive letter [0.04ms]
+(pass) encodeFilePath > Edge cases > should handle Windows path with trailing backslash [0.03ms]
+(pass) encodeFilePath > Edge cases > should handle very long paths [0.07ms]
+(pass) encodeFilePath > Edge cases > should handle paths with dots [0.04ms]
+(pass) encodeFilePath > Regression tests for PR #12424 > should handle file with # in name [0.03ms]
+(pass) encodeFilePath > Regression tests for PR #12424 > should handle file with ? in name [0.03ms]
+(pass) encodeFilePath > Regression tests for PR #12424 > should handle file with % in name [0.03ms]
+(pass) encodeFilePath > Integration with file:// URL construction > should work with query parameters (Linux) [0.04ms]
+(pass) encodeFilePath > Integration with file:// URL construction > should work with query parameters (Windows) [0.03ms]
+(pass) encodeFilePath > Integration with file:// URL construction > should parse correctly in URL constructor (Linux) [0.03ms]
+(pass) encodeFilePath > Integration with file:// URL construction > should parse correctly in URL constructor (Windows) [0.02ms]
+
+src\context\file\watcher.test.ts:
+(pass) file watcher invalidation > reloads open files and refreshes loaded parent on add [1.79ms]
+(pass) file watcher invalidation > reloads files that are open in tabs [0.14ms]
+(pass) file watcher invalidation > refreshes only changed loaded directory nodes [0.14ms]
+(pass) file watcher invalidation > ignores invalid or git watcher updates [0.07ms]
+
+src\context\global-sync\bootstrap.test.ts:
+(pass) bootstrapDirectory > marks a loading directory partial during bootstrap and complete after success [87.88ms]
+(pass) query keys > partitions identical directories by server scope [2.13ms]
+
+src\context\global-sync\child-store.test.ts:
+(pass) createChildStoreManager > does not evict the active directory during mark [1.41ms]
+(pass) createChildStoreManager > starts new child stores as loading and bootstraps them on first access [0.95ms]
+(pass) createChildStoreManager > provides the requested directory while the path query is pending [0.28ms]
+(pass) createChildStoreManager > enables MCP only when requested for the directory [0.46ms]
+
+src\context\global-sync\event-reducer.test.ts:
+(pass) applyGlobalEvent > upserts project.updated in sorted position [0.27ms]
+(pass) applyGlobalEvent > handles global.disposed by triggering refresh [0.04ms]
+(pass) applyGlobalEvent > handles server.connected by triggering refresh [0.03ms]
+(pass) applyDirectoryEvent > preserves a Home-specific retained session limit [1.12ms]
+(pass) applyDirectoryEvent > inserts root sessions in sorted order and updates sessionTotal [0.18ms]
+(pass) applyDirectoryEvent > cleans session caches when archived [0.35ms]
+(pass) applyDirectoryEvent > cleans session caches when deleted and decrements only root totals [0.29ms]
+(pass) applyDirectoryEvent > cleans caches for trimmed sessions on session.created [0.25ms]
+(pass) applyDirectoryEvent > cleanupDroppedSessionCaches clears part-only orphan state [0.06ms]
+(pass) applyDirectoryEvent > upserts and removes messages while clearing orphaned parts [0.42ms]
+(pass) applyDirectoryEvent > upserts and prunes message parts [0.32ms]
+(pass) applyDirectoryEvent > tracks permission and question request lifecycles [0.48ms]
+(pass) applyDirectoryEvent > updates vcs branch in store and cache [0.11ms]
+(pass) applyDirectoryEvent > routes disposal and lsp events to side-effect handlers [0.09ms]
+
+src\context\global-sync\mcp.test.ts:
+(pass) toggleMcp > runs the status action before refreshing the owning query [0.32ms]
+
+src\context\global-sync\queue.test.ts:
+(pass) createRefreshQueue > clears queued directories by normalized key [24.43ms]
+(pass) createRefreshQueue > passes the original directory to bootstrapInstance [16.15ms]
+
+src\context\global-sync\session-cache.test.ts:
+(pass) app session cache > dropSessionCaches clears orphaned parts without message rows [0.17ms]
+(pass) app session cache > dropSessionCaches clears message-backed parts [0.07ms]
+(pass) app session cache > pickSessionCacheEvictions preserves requested sessions [0.15ms]
+
+src\context\global-sync\session-prefetch.test.ts:
+(pass) session prefetch > stores and clears message metadata by directory [0.34ms]
+(pass) session prefetch > dedupes inflight work [0.31ms]
+(pass) session prefetch > clears a whole directory [0.18ms]
+(pass) session prefetch > isolates identical directories and sessions by server scope [0.05ms]
+(pass) session prefetch > refreshes stale first-page prefetched history [0.05ms]
+(pass) session prefetch > keeps deeper or complete history cached [0.03ms]
+
+src\context\global-sync\session-trim.test.ts:
+(pass) trimSessions > keeps base roots and recent roots beyond the limit [0.27ms]
+(pass) trimSessions > keeps children when root is kept, permission exists, or child is recent [0.14ms]
+
+src\context\global-sync\utils.test.ts:
+(pass) normalizeAgentList > keeps array payloads [0.10ms]
+(pass) normalizeAgentList > wraps a single agent payload [0.02ms]
+(pass) normalizeAgentList > extracts agents from keyed objects [0.03ms]
+(pass) normalizeAgentList > drops invalid payloads [0.03ms]
+(pass) directoryKey > normalizes slashes [0.05ms]
+(pass) directoryKey > preserves backslashes in posix paths [0.01ms]
+(pass) directoryKey > trims trailing slashes without breaking roots [0.07ms]
+
+src\pages\layout\helpers.test.ts:
+(pass) layout deep links > parses open-project deep links [0.14ms]
+(pass) layout deep links > ignores non-project deep links [0.04ms]
+(pass) layout deep links > ignores malformed deep links safely [0.06ms]
+(pass) layout deep links > parses links when URL.canParse is unavailable [0.10ms]
+(pass) layout deep links > ignores open-project deep links without directory [0.02ms]
+(pass) layout deep links > collects only valid open-project directories [0.07ms]
+(pass) layout deep links > parses new-session deep links with optional prompt [0.10ms]
+(pass) layout deep links > ignores new-session deep links without directory [0.03ms]
+(pass) layout deep links > collects only valid new-session deep links [0.06ms]
+(pass) layout deep links > drains global deep links once [0.05ms]
+(pass) layout workspace helpers > normalizes trailing slash in workspace key [0.03ms]
+(pass) layout workspace helpers > preserves posix and drive roots in workspace key [0.10ms]
+(pass) layout workspace helpers > keeps local first while preserving known order [0.13ms]
+(pass) layout workspace helpers > finds the latest root session across workspaces [0.22ms]
+(pass) layout workspace helpers > detects project permissions with a filter [0.08ms]
+(pass) layout workspace helpers > ignores project permissions filtered out [0.04ms]
+(pass) layout workspace helpers > ignores archived and child sessions when finding latest root session [0.06ms]
+(pass) layout workspace helpers > finds the direct child on the active session path [0.11ms]
+(pass) layout workspace helpers > formats fallback project display name [0.08ms]
+(pass) layout workspace helpers > scopes home project selection by server [0.06ms]
+(pass) layout workspace helpers > closes a home project through its server context [0.07ms]
+(pass) layout workspace helpers > defers home project navigation until its server is active [0.04ms]
+(pass) layout workspace helpers > preserves picker order when adding multiple projects [0.03ms]
+(pass) layout workspace helpers > merges backend-known projects into the home project list [0.17ms]
+(pass) layout workspace helpers > hides status derived from an inactive server [0.07ms]
+(pass) layout workspace helpers > extracts api error message and fallback [0.14ms]
+
+src\pages\session\file-tab-scroll.test.ts:
+(pass) nextTabListScrollLeft > does not scroll when width shrinks [2.01ms]
+(pass) nextTabListScrollLeft > scrolls to start when context tab opens [0.05ms]
+(pass) nextTabListScrollLeft > scrolls to right edge for new file tabs [0.03ms]
+
+src\pages\session\goal-panel-contract.test.ts:
+(pass) cleanText (sanitization for safe rendering) > returns empty string for non-string input [1.65ms]
+(pass) cleanText (sanitization for safe rendering) > returns the original string for normal text [0.21ms]
+(pass) cleanText (sanitization for safe rendering) > strips control characters and bidirectional override codepoints [0.14ms]
+(pass) cleanText (sanitization for safe rendering) > caps the result at 400 characters [0.12ms]
+(pass) isGoalStateShape (defensive shape guard for corrupted state files) > accepts a minimal valid GoalState [0.18ms]
+(pass) isGoalStateShape (defensive shape guard for corrupted state files) > rejects non-objects [0.12ms]
+(pass) isGoalStateShape (defensive shape guard for corrupted state files) > rejects objects with wrong status [0.10ms]
+(pass) isGoalStateShape (defensive shape guard for corrupted state files) > rejects objects with empty condition [0.09ms]
+(pass) readGoalFromSdk (file.read defensive layer) > returns an empty store when the file is missing [0.34ms]
+(pass) readGoalFromSdk (file.read defensive layer) > returns an empty store when read returns null [0.15ms]
+(pass) readGoalFromSdk (file.read defensive layer) > extracts content from the SDK's FileContent object form [0.16ms]
+(pass) readGoalFromSdk (file.read defensive layer) > accepts a bare string (degrades gracefully on SDK shape change) [0.13ms]
+(pass) readGoalFromSdk (file.read defensive layer) > marks store as corrupt when JSON is invalid [0.13ms]
+(pass) readGoalFromSdk (file.read defensive layer) > marks store as corrupt when JSON parses but shape is wrong [0.12ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > falls back to the built-in method prompts when the snapshot is missing/invalid [0.31ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > default built-ins are reusable coding-method prompt templates, not project-specific shortcuts [0.29ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > returns canonical method templates first and then project templates from the snapshot [0.34ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > drops older project-specific built-ins when a snapshot still includes them [0.13ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > drops entries with a malformed id and de-duplicates [0.18ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > sanitizes control characters out of labels/descriptions [0.14ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > preserves inspectable template payload fields for preview/editing [0.21ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > resolves template defaults and overrides into an editable goal draft [0.31ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > copies an action template into an independently editable chain step with budgets [0.27ms]
+(pass) templateButtonsFromSnapshot (dynamic quick-start template buttons) > summarizes chain budgets with independent master caps and sub-step totals [0.25ms]
+
+src\pages\session\goal-panel-lifecycle.test.ts:
+(pass) liveGoal > returns the state for an active goal [1.59ms]
+(pass) liveGoal > returns the state for a paused goal [0.03ms]
+(pass) liveGoal > returns null for an achieved goal (Bug B: one-turn achieve) [0.02ms]
+(pass) liveGoal > returns null for a cleared goal (Bug A: stop blanks the panel) [0.01ms]
+(pass) liveGoal > returns null for a null state [0.01ms]
+(pass) liveGoal > returns null for an undefined state [0.01ms]
+(pass) shouldShowCreateForm > shows when there is no state at all (empty workspace) [0.02ms]
+(pass) shouldShowCreateForm > shows when a cleared goal is the current state (Bug A) [0.01ms]
+(pass) shouldShowCreateForm > shows when an achieved goal is the current state (Bug B)
+(pass) shouldShowCreateForm > does NOT show when there is a live (active) goal [0.01ms]
+(pass) shouldShowCreateForm > does NOT show when there is a live (paused) goal
+(pass) shouldShowCreateForm > shows when the user explicitly asked, even with a live goal [0.02ms]
+(pass) shouldShowCreateForm > shows when the user explicitly asked, with no state at all
+(pass) STATUS_META > covers all four lifecycle statuses [0.05ms]
+(pass) STATUS_META > every status has a non-empty label, dot, text, and glyph [0.05ms]
+(pass) STATUS_META > status colors are distinct (no two statuses share a color) [0.09ms]
+(pass) STATUS_META > 'cancelled' label is used for cleared (user-facing rename) [0.02ms]
+(pass) STATUS_META > statusMeta falls back to active for unknown status [0.02ms]
+(pass) STATUS_META > statusMeta falls back to active for undefined [0.01ms]
+(pass) nodeColor > success → emerald [0.03ms]
+(pass) nodeColor > mixed → amber [0.02ms]
+(pass) nodeColor > failure → rose [0.01ms]
+(pass) nodeColor > unknown status → muted fallback (don't crash the rail) [0.02ms]
+(pass) outcomeLabel > cleared → 'Cancelled' [0.02ms]
+(pass) outcomeLabel > achieved → 'Achieved' [0.01ms]
+(pass) outcomeLabel > replaced → 'Replaced'
+(pass) outcomeLabel > unknown outcome passes through unchanged (passthrough, not crash) [0.01ms]
+(pass) pauseResumeAction > active goal → offers pause [0.03ms]
+(pass) pauseResumeAction > paused goal → offers resume
+(pass) pauseResumeAction > optimistic override wins over a stale polled status (the core fix) [0.02ms]
+(pass) pauseResumeAction > terminal / missing status → no toggle [0.02ms]
+
+src\pages\session\goal-panel.test.ts:
+(pass) goal panel mission-control contracts > keeps a persistent history drawer state instead of rendering pills only [0.76ms]
+(pass) goal panel mission-control contracts > keeps the last good archive when a polling read transiently comes back empty [0.63ms]
+(pass) goal panel mission-control contracts > stop confirmation renders in a separate callout instead of reordering the main action row [0.75ms]
+(pass) goal panel mission-control contracts > create goal starts the agent after state is written, but shared controls stay turnless [0.71ms]
+(pass) goal panel mission-control contracts > confirmed stop clears the goal and aborts the active session turn [0.71ms]
+(pass) goal panel mission-control contracts > action library selects for viewing and exposes edit/duplicate/delete actions [1.10ms]
+(pass) goal panel mission-control contracts > chain builder uses a two-column plan chain and action library instead of loose buttons [1.29ms]
+(pass) goal panel mission-control contracts > draft chain editing is local state only and start chain is the explicit run boundary [1.13ms]
+(pass) goal panel mission-control contracts > playbook workspace matches the approved session-native layout [0.94ms]
+(pass) goal panel mission-control contracts > action library rows add to the local chain without crossing the run boundary [0.49ms]
+(pass) goal panel mission-control contracts > recent runs render as a vertical listbox, not wrapping pills [0.72ms]
+(pass) goal panel mission-control contracts > recent runs auto-select a row and expose selected-run metric pillboxes [0.63ms]
+(pass) isGoalStateShape > accepts a fully-shaped valid state [0.05ms]
+(pass) isGoalStateShape > accepts a minimal state (only the required keys) [0.04ms]
+(pass) isGoalStateShape > rejects null and primitives [0.03ms]
+(pass) isGoalStateShape > rejects when id or condition are not strings [0.03ms]
+(pass) isGoalStateShape > rejects unknown status values (closed enum) [0.05ms]
+(pass) isGoalStateShape > accepts each of the four documented statuses [0.06ms]
+(pass) isGoalStateShape > rejects when turnsEvaluated or startedAt are not numbers [0.02ms]
+(pass) isGoalStateShape > rejects when constraints is missing or incomplete [0.05ms]
+(pass) cleanText > passes plain ASCII through unchanged [0.02ms]
+(pass) cleanText > strips C0 control characters [0.02ms]
+(pass) cleanText > strips DEL and C1 control characters [0.01ms]
+(pass) cleanText > strips zero-width and bidi-format characters [0.01ms]
+(pass) cleanText > truncates to 400 characters [0.03ms]
+(pass) cleanText > preserves Unicode letters and emoji [0.02ms]
+(pass) cleanText > returns empty string for non-string input (null, number, object, array) [0.05ms]
+(pass) readGoalFromSdk > returns absent store when SDK read throws (file missing) [0.18ms]
+(pass) readGoalFromSdk > returns absent store when content is empty string [0.07ms]
+(pass) readGoalFromSdk > returns absent store when content is whitespace-only [0.08ms]
+(pass) readGoalFromSdk > accepts plain-string content [0.12ms]
+(pass) readGoalFromSdk > accepts { type, content } SDK FileContent shape [0.09ms]
+(pass) readGoalFromSdk > marks content as corrupt when JSON is malformed [0.07ms]
+(pass) readGoalFromSdk > marks content as corrupt when JSON parses but shape is wrong [0.08ms]
+(pass) readGoalFromSdk > treats null data as absent, not corrupt [0.06ms]
+(pass) readGoalFromSdk > treats unexpected data shapes (e.g. number) as absent, not corrupt [0.18ms]
+(pass) readGoalFromSdk > rejects over-size state content as corrupt (defense against OOM) [1.83ms]
+(pass) readGoalFromSdk > content at the 1 MB cap is accepted (boundary check) [0.94ms]
+(pass) readGoalFromSdk > rejects huge evaluationHistory payloads via the size cap [17.63ms]
+(pass) readGoalFromSdk > deeply nested JSON payload that doesn't match shape is rejected, not crashed [0.16ms]
+(pass) readGoalFromSdk > rejects NaN in numeric fields (typeof NaN === 'number' attack) [0.09ms]
+(pass) readGoalFromSdk > rejects Infinity in numeric fields (typeof Infinity === 'number') [0.04ms]
+(pass) readGoalFromSdk > prototype-pollution-style payloads are rejected by isGoalStateShape [0.06ms]
+(pass) readGoalFromSdk > control characters in condition are stripped, not rendered [0.03ms]
+(pass) readGoalFromSdk > condition is truncated to 400 chars (defense against layout DoS) [0.13ms]
+(pass) readGoalFromSdk > NaN/Infinity in numeric fields are not representable in JSON [0.03ms]
+(pass) readGoalFromSdk > BOM-prefixed content is treated as corrupt [0.22ms]
+(pass) readGoalFromSdk > trailing garbage after valid JSON is treated as corrupt [0.10ms]
+(pass) readGoalFromSdk > duplicate JSON keys resolve to last value and validate normally [0.10ms]
+(pass) executeGoalCommand > returns true when the deterministic goal control endpoint resolves [0.29ms]
+(pass) executeGoalCommand > keeps the generated SDK tool method bound to its client [0.13ms]
+(pass) executeGoalCommand > returns false when the deterministic goal control endpoint rejects [0.13ms]
+(pass) executeGoalCommand > uses the raw SDK transport when the generated control method is unavailable [0.16ms]
+(pass) executeGoalCommand > does not fall back to session.command when the control endpoint is missing [0.07ms]
+(pass) startGoalRun > admits one async prompt so a newly-set goal starts working [0.21ms]
+(pass) startGoalRun > lets the server choose default agent/model for goal auto-start [0.09ms]
+(pass) startGoalRun > returns false when async prompt admission is unavailable [0.05ms]
+(pass) stopGoalRun > aborts the active OpenCode session turn without using chat commands [0.14ms]
+(pass) stopGoalRun > returns false when session abort is unavailable [0.06ms]
+(pass) useGoal hook > hook: starts unloaded, transitions to loaded:true after first read [0.61ms]
+(pass) useGoal hook > hook: refresh() picks up new state from the SDK [0.31ms]
+(pass) useGoal hook > hook: clearing lastEvaluation to null actually clears it (no stale merge) [0.20ms]
+(pass) useGoal hook > hook: clearing command to null actually clears it (no stale merge) [0.15ms]
+(pass) useGoal hook > hook: corrupt JSON produces corrupt=true on the store [0.11ms]
+(pass) useGoal hook > hook: SDK read throws → treated as absent (NOT corrupt) [0.13ms]
+(pass) useGoal hook > hook: onCleanup clears the setInterval timer [2545.45ms]
+(pass) useGoal hook > hook: concurrent refresh() calls do not crash or corrupt the store [0.92ms]
+
+src\pages\session\helpers.test.ts:
+(pass) shouldShowFileTree > does not reserve space for a disabled v2 file tree [0.10ms]
+(pass) toastOffsetRight > keeps permission and question toasts clear of the desktop right panel [0.35ms]
+(pass) mission-control session shell contracts > goal tab remains a first-class fixed trigger in the side panel [0.45ms]
+(pass) mission-control session shell contracts > session shell still exposes a visible ResizeHandle for the right panel [0.55ms]
+(pass) mission-control session shell contracts > session header keeps a dedicated goal toggle in the V2 action rail [0.46ms]
+(pass) mission-control session shell contracts > goal toggle closes the side panel when goal tab is already showing [0.39ms]
+(pass) mission-control session shell contracts > global toast regions use the session right-panel offset variable [0.47ms]
+(pass) shouldAutoOpenGoalTab > opens for the first visible goal [0.09ms]
+(pass) shouldAutoOpenGoalTab > does not reopen a manually dismissed goal [0.02ms]
+(pass) shouldAutoOpenGoalTab > opens again when a later goal has a different id [0.02ms]
+(pass) goalTabCloseable > a live goal (active/paused) is NOT closeable [0.03ms]
+(pass) goalTabCloseable > terminal / empty / unknown states stay closeable [0.02ms]
+(pass) createOpenReviewFile > opens and loads selected review file [0.23ms]
+(pass) createOpenSessionFileTab > activates the opened file tab [0.13ms]
+(pass) focusTerminalById > focuses textarea when present [2.30ms]
+(pass) focusTerminalById > falls back to terminal element focus [1.17ms]
+(pass) shouldFocusTerminalOnKeyDown > skips pure modifier keys [0.14ms]
+(pass) shouldFocusTerminalOnKeyDown > skips shortcut key combos [0.04ms]
+(pass) shouldFocusTerminalOnKeyDown > keeps plain typing focused on terminal [0.03ms]
+(pass) getTabReorderIndex > returns target index for valid drag reorder [0.04ms]
+(pass) getTabReorderIndex > returns undefined for unknown droppable id [0.02ms]
+(pass) createSessionTabs > normalizes the effective file tab [0.43ms]
+(pass) createSessionTabs > prefers context and review fallbacks when no file tab is active [0.28ms]
+(pass) createSessionTabs > goal tab (F-5 integration) > openedTabs excludes "goal" — it is a trigger, not a file tab [0.13ms]
+(pass) createSessionTabs > goal tab (F-5 integration) > activeTab returns "goal" when goal is the active tab [0.08ms]
+(pass) createSessionTabs > goal tab (F-5 integration) > closableTab does not expose "goal" to the generic close command [0.12ms]
+(pass) createSessionTabs > goal tab (F-5 integration) > activeTab returns "goal" when only "goal" is in the tab list [0.11ms]
+
+src\pages\session\message-gesture.test.ts:
+(pass) normalizeWheelDelta > converts line mode to px [1.96ms]
+(pass) normalizeWheelDelta > converts page mode to container height [0.05ms]
+(pass) normalizeWheelDelta > keeps pixel mode unchanged [0.02ms]
+(pass) shouldMarkBoundaryGesture > marks when nested scroller cannot scroll [0.05ms]
+(pass) shouldMarkBoundaryGesture > marks when scrolling beyond top boundary [0.02ms]
+(pass) shouldMarkBoundaryGesture > marks when scrolling beyond bottom boundary [0.01ms]
+(pass) shouldMarkBoundaryGesture > does not mark when nested scroller can consume movement [0.02ms]
+
+src\pages\session\session-model-helpers.test.ts:
+(pass) syncSessionModel > restores the last message through session state [1.85ms]
+(pass) resetSessionModel > clears draft session state [0.08ms]
+
+src\pages\session\terminal-panel.test.ts:
+(pass) terminalTabLabel > returns custom title unchanged [1.67ms]
+(pass) terminalTabLabel > normalizes default numbered title [0.06ms]
+(pass) terminalTabLabel > falls back to generic title [0.02ms]
+
+src\pages\session\use-session-hash-scroll.test.ts:
+(pass) messageIdFromHash > parses hash with leading # [1.78ms]
+(pass) messageIdFromHash > parses raw hash fragment [0.05ms]
+(pass) messageIdFromHash > ignores non-message anchors [0.02ms]
+
+src\pages\session\composer\session-composer-state.test.ts:
+(pass) sessionPermissionRequest > prefers the current session permission [2.17ms]
+(pass) sessionPermissionRequest > returns a nested child permission [0.07ms]
+(pass) sessionPermissionRequest > returns undefined without a matching tree permission [0.03ms]
+(pass) sessionPermissionRequest > skips filtered permissions in the current tree [0.08ms]
+(pass) sessionPermissionRequest > returns undefined when all tree permissions are filtered out [0.04ms]
+(pass) sessionQuestionRequest > prefers the current session question [0.07ms]
+(pass) sessionQuestionRequest > returns a nested child question [0.04ms]
+(pass) todoState > hides when there are no todos [0.04ms]
+(pass) todoState > opens while the session is still working [0.01ms]
+(pass) todoState > closes completed todos after a running turn [0.01ms]
+(pass) todoState > clears stale todos when the turn ends [0.01ms]
+(pass) todoState > clears completed todos when the session is no longer live [0.01ms]
+
+ 558 pass
+ 0 fail
+ 1430 expect() calls
+Ran 558 tests across 74 files. [4.72s]

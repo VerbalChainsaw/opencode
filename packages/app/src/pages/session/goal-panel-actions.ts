@@ -39,7 +39,7 @@ export interface GoalCommandClient {
   session?: {
     command?: (args: { sessionID: string; command: string; arguments: string }) => Promise<unknown>
     promptAsync?: (args: GoalPromptAsyncInput & { parts: Array<{ type: "text"; text: string }> }) => Promise<unknown>
-    prompt?: (args: GoalPromptAsyncInput & { parts: Array<{ type: "text"; text: string }>; noReply?: boolean }) => Promise<unknown>
+    prompt?: (args: GoalPromptAsyncInput & { parts: Array<{ type: "text"; text: string }> }) => Promise<unknown>
   }
 }
 
@@ -91,13 +91,10 @@ async function sendGoalPrompt(client: GoalCommandClient, input: GoalPromptAsyncI
     ],
   }
   try {
-    // Prefer session.prompt (host composer path) over promptAsync.
-    // promptAsync bypasses the host's message lifecycle, which can race
-    // with the auto-loop's session.prompt nudge and produce
-    // MessageAbortedError. The host composer path uses the same channel
-    // as the auto-loop, eliminating the abort conflict.
+    // Prefer session.prompt (host composer path) over promptAsync so the
+    // nudge enters the same lifecycle as a real composer send.
     if (client.session?.prompt) {
-      await client.session.prompt({ ...payload, noReply: true })
+      await client.session.prompt(payload)
       return true
     }
     if (client.session?.promptAsync) {

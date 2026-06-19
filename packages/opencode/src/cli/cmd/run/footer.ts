@@ -226,7 +226,7 @@ export class RunFooter implements FooterApi {
       onThemeRelease: (theme) => {
         void this.renderer
           .idle()
-          .catch(() => {})
+          .catch((err) => { console.error(err) })
           .finally(() => this.destroyTheme(theme))
       },
     })
@@ -588,7 +588,7 @@ export class RunFooter implements FooterApi {
         return this.idle()
       }
 
-      await this.renderer.idle().catch(() => {})
+      await this.renderer.idle().catch((err) => { console.error(err) })
     })
   }
 
@@ -860,7 +860,7 @@ export class RunFooter implements FooterApi {
           this.setNotice(result.status)
         }
       })
-      .catch(() => {})
+      .catch((err) => { console.error(err) })
   }
 
   private handleVariantSelect = (variant: string | undefined): void => {
@@ -901,7 +901,7 @@ export class RunFooter implements FooterApi {
           this.setNotice(result.status)
         }
       })
-      .catch(() => {})
+      .catch((err) => { console.error(err) })
   }
 
   private clearInterruptTimer(): void {
@@ -1055,7 +1055,7 @@ export class RunFooter implements FooterApi {
     this.renderer.clearPaletteCache()
     void this.renderer
       .getPalette({ size: 256 })
-      .catch(() => {})
+      .catch((err) => { console.error(err) })
       .finally(() => {
         this.paletteRefreshRunning = false
         if (!retry && !this.paletteRefreshQueued) {

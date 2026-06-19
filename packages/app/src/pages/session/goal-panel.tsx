@@ -725,20 +725,16 @@ function GoalConsoleSection(props: {
       <div class="shrink-0 border-b border-border-base/60 px-3 py-1.5" style={accent.headerStyle}>
         <div
           data-component="goal-console-section-title"
-          class="flex min-w-0 items-center gap-2 text-[13px] font-bold uppercase tracking-[0.04em] text-white"
+          class="flex min-w-0 items-center justify-between gap-2"
         >
-          <span class={`h-4 w-1.5 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
-          <span class="truncate">{props.title}</span>
-        </div>
-        <Show when={props.subtitle}>
-          <div
-            data-component="goal-console-section-subtitle"
-            class="mt-0.5 truncate text-[10px] font-medium leading-4 text-white/60"
-            title={props.subtitle}
-          >
-            {props.subtitle}
+          <div class="flex min-w-0 items-center gap-2">
+            <span class={`h-4 w-1.5 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
+            <Show when={props.subtitle}>
+              <span data-component="goal-console-section-subtitle" class="truncate text-[10px] font-medium text-white/50">{props.subtitle}</span>
+            </Show>
           </div>
-        </Show>
+          <span class="shrink-0 text-[13px] font-bold uppercase tracking-[0.06em] text-white">{props.title}</span>
+        </div>
       </div>
       <div data-component="goal-console-section-body" class="min-h-0 flex-1 overflow-hidden">
         {props.children}

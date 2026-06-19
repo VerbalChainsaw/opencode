@@ -72,11 +72,11 @@ export const WebCommand = effectCmd({
       }
 
       // Open localhost in browser
-      open(localhostUrl).catch(() => {})
+      open(localhostUrl).catch((err) => { console.error(err) })
     } else {
       const displayUrl = server.url.toString()
       UI.println(UI.Style.TEXT_INFO_BOLD + "  Web interface:    ", UI.Style.TEXT_NORMAL, displayUrl)
-      open(displayUrl).catch(() => {})
+      open(displayUrl).catch((err) => { console.error(err) })
     }
 
     yield* Effect.never

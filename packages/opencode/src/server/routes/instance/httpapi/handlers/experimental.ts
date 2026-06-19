@@ -7,20 +7,48 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
-import type { SessionID } from "@/session/schema"
+import { MessageID, SessionID as SessionIDSchema, type SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
+import { runGoalControlStateFile } from "@opencode-ai/autogoal/control-state"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import {
+  ConsoleSwitchPayload,
+  GoalControlPayload,
+  SessionListQuery,
+  ToolListQuery,
+  WorktreeApiError,
+} from "../groups/experimental"
+import { WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
     Effect.mapError((error) => new WorktreeApiError({ name: error._tag, data: { message: error.message } })),
   )
+}
+
+const STATE_FILE_GOAL_CONTROL_ACTIONS = new Set([
+  "set",
+  "turns",
+  "time",
+  "tokens",
+  "pause",
+  "resume",
+  "clear",
+  "restart",
+  "steer",
+  "unsteer",
+  "condition",
+  "template",
+  "chain",
+])
+
+function goalControlAction(command: string) {
+  return command.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? ""
 }
 
 export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "experimental", (handlers) =>
@@ -104,6 +132,54 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* registry.ids()
     })
 
+    const goalControlFallback = Effect.fn("ExperimentalHttpApi.goalControlFallback")(function* (
+      directory: string,
+      command: string,
+    ) {
+      return yield* Effect.tryPromise({
+        try: () => runGoalControlStateFile(directory, command),
+        catch: () => new HttpApiError.BadRequest({}),
+      })
+    })
+
+    const goalControl = Effect.fn("ExperimentalHttpApi.goalControl")(function* (ctx: {
+      params: { toolID: "goal_control" }
+      query: typeof WorkspaceRoutingQuery.Type
+      payload: typeof GoalControlPayload.Type
+    }) {
+      const instance = yield* InstanceState.context
+      const command = ctx.payload.arguments.command
+      const targetDirectory = ctx.payload.directory ?? ctx.query.directory ?? instance.directory
+      if (STATE_FILE_GOAL_CONTROL_ACTIONS.has(goalControlAction(command))) {
+        return yield* goalControlFallback(targetDirectory, command)
+      }
+
+      const tools = yield* registry.all()
+      const item = tools.find((tool) => tool.id === ctx.params.toolID)
+      if (!item || targetDirectory !== instance.directory) {
+        return yield* goalControlFallback(targetDirectory, command)
+      }
+
+      const agent = yield* agents.defaultInfo()
+      const result = yield* item
+        .execute(ctx.payload.arguments, {
+          sessionID: ctx.payload.sessionID ?? SessionIDSchema.make("ses_goal_control"),
+          messageID: MessageID.ascending(),
+          agent: agent.name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.die("goal_control does not support permission prompts"),
+        })
+        .pipe(Effect.catch(() => goalControlFallback(targetDirectory, command)))
+
+      return {
+        title: result.title,
+        output: result.output,
+        metadata: result.metadata,
+      }
+    })
+
     const worktree = Effect.fn("ExperimentalHttpApi.worktree")(function* () {
       const ctx = yield* InstanceState.context
       return yield* project.sandboxes(ctx.project.id)
@@ -176,6 +252,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("consoleSwitch", switchConsole)
       .handle("tool", tool)
       .handle("toolIDs", toolIDs)
+      .handle("goalControl", goalControl)
       .handle("worktree", worktree)
       .handle("worktreeCreate", worktreeCreate)
       .handle("worktreeRemove", worktreeRemove)

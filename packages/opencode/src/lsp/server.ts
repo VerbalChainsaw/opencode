@@ -672,7 +672,7 @@ export const Zls: Info = {
       }
 
       if (platform !== "win32") {
-        await fs.chmod(bin, 0o755).catch(() => {})
+        await fs.chmod(bin, 0o755).catch((err) => { console.error(err) })
       }
     }
 
@@ -1052,11 +1052,11 @@ export const Clangd: Info = {
     }
 
     if (platform !== "win32") {
-      await fs.chmod(bin, 0o755).catch(() => {})
+      await fs.chmod(bin, 0o755).catch((err) => { console.error(err) })
     }
 
-    await fs.unlink(path.join(Global.Path.bin, "clangd")).catch(() => {})
-    await fs.symlink(bin, path.join(Global.Path.bin, "clangd")).catch(() => {})
+    await fs.unlink(path.join(Global.Path.bin, "clangd")).catch((err) => { console.error(err) })
+    await fs.symlink(bin, path.join(Global.Path.bin, "clangd")).catch((err) => { console.error(err) })
 
     return {
       process: spawn(bin, args, {
@@ -1344,7 +1344,7 @@ export const KotlinLS: Info = {
       if (!ok) return
       await fs.rm(archivePath, { force: true })
       if (process.platform !== "win32") {
-        await fs.chmod(launcherScript, 0o755).catch(() => {})
+        await fs.chmod(launcherScript, 0o755).catch((err) => { console.error(err) })
       }
     }
     if (!(await Filesystem.exists(launcherScript))) {
@@ -1674,7 +1674,7 @@ export const TerraformLS: Info = {
       }
 
       if (platform !== "win32") {
-        await fs.chmod(bin, 0o755).catch(() => {})
+        await fs.chmod(bin, 0o755).catch((err) => { console.error(err) })
       }
     }
 
@@ -1759,7 +1759,7 @@ export const TexLab: Info = {
       }
 
       if (platform !== "win32") {
-        await fs.chmod(bin, 0o755).catch(() => {})
+        await fs.chmod(bin, 0o755).catch((err) => { console.error(err) })
       }
     }
 
@@ -1938,7 +1938,7 @@ export const Tinymist: Info = {
       }
 
       if (platform !== "win32") {
-        await fs.chmod(bin, 0o755).catch(() => {})
+        await fs.chmod(bin, 0o755).catch((err) => { console.error(err) })
       }
     }
 
