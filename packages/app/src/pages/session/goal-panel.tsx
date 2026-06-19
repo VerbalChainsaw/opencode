@@ -2906,41 +2906,38 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         >
                           <div
                             data-component="goal-running-clock"
-                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
-                            style={runningMetricTileStyle("time")}
+                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded px-2"
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-100/78">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-200/70">
                               {language.t("session.goal.metric.time")}
                             </div>
-                            <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("time")}`}>
+                            <div class="shrink-0 text-[14px] font-black leading-none tabular-nums text-blue-100">
                               {elapsedMinutes()}
-                              <span class="text-[10px] font-bold text-blue-100/58">/{running.constraints.maxTimeMinutes}m</span>
+                              <span class="text-[10px] font-bold text-blue-100/50">/{running.constraints.maxTimeMinutes}m</span>
                             </div>
                           </div>
                           <div
                             data-component="goal-running-turns"
-                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
-                            style={runningMetricTileStyle("turns")}
+                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded px-2"
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-100/78">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-200/70">
                               {language.t("session.goal.metric.turns")}
                             </div>
-                            <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("turns")}`}>
+                            <div class="shrink-0 text-[14px] font-black leading-none tabular-nums text-violet-100">
                               {running.turnsEvaluated}
-                              <span class="text-[10px] font-bold text-violet-100/58">/{running.constraints.maxTurns}</span>
+                              <span class="text-[10px] font-bold text-violet-100/50">/{running.constraints.maxTurns}</span>
                             </div>
                           </div>
                           <div
                             data-component="goal-running-step"
-                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
-                            style={runningMetricTileStyle("step")}
+                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded px-2"
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/78">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
                               {language.t("session.goal.metric.chain")}
                             </div>
-                            <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("step")}`}>
+                            <div class="shrink-0 text-[14px] font-black leading-none tabular-nums text-emerald-100">
                               {runningStepIndex() + 1}
-                              <span class="text-[10px] font-bold text-emerald-100/58">/{Math.max(visibleStepCount(), 1)}</span>
+                              <span class="text-[10px] font-bold text-emerald-100/50">/{Math.max(visibleStepCount(), 1)}</span>
                             </div>
                           </div>
                         </div>
@@ -2948,14 +2945,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       <div class="min-w-0">
                         <div
                           data-component="goal-running-progress-hero"
-                          class="rounded-md border px-2.5 py-2 text-right"
-                          style={runningMetricTileStyle("progress")}
+                          class="rounded px-2.5 py-2 text-right"
                         >
                           <div class="flex items-center justify-between gap-2">
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/78">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
                               {language.t("session.goal.progress")}
                             </div>
-                            <div class="shrink-0 text-[22px] font-black leading-none tracking-normal text-emerald-50 tabular-nums">
+                            <div class="shrink-0 text-[18px] font-black leading-none tabular-nums text-emerald-100">
                               {running.status === "achieved" ? 100 : progressPct()}%
                             </div>
                           </div>
@@ -3364,7 +3360,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   style={chainStepSoftStyle(step)}
                                   title={inferActionCategory(step)}
                                 >
-                                  {inferActionCategory(step)}
+                                  {actionCategoryShortLabel(inferActionCategory(step))}
                                 </span>
                                 <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-2 gap-1">
                                   <label
@@ -3728,7 +3724,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               >
                                 <For each={GOAL_TEMPLATE_CATEGORIES}>
                                   {(category) => (
-                                    <option value={category} class="bg-background-base text-text-base">{category}</option>
+                                    <option value={category} class="bg-background-base text-text-base">
+                                      {actionCategoryShortLabel(category)}
+                                    </option>
                                   )}
                                 </For>
                               </select>
