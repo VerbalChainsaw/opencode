@@ -1,5 +1,6 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
+import { base64Encode } from "@opencode-ai/core/util/encode"
 
 import { Button } from "@opencode-ai/ui/button"
 import { TextField } from "@opencode-ai/ui/text-field"
@@ -7,8 +8,11 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
+import { useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { setSessionHandoff } from "@/pages/session/handoff"
+import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
 
 import type { JSX } from "solid-js"
 
@@ -1415,9 +1419,11 @@ function writeStoredChainDraft(sessionID: string | undefined, draft: ChainDraftS
 
 export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Promise<void> }; sessionID?: string }) {
   const language = useLanguage()
+  const server = useServer()
   const models = useModels()
   const sdk = useSDK() as unknown as GoalActionClient
   const sync = useSync()
+  let setGoalSection: HTMLDivElement | undefined
   const state = () => props.goal.store.state
 
   const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | "template" | "chain" | null>(null)
@@ -1466,6 +1472,31 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   const [archive, setArchive] = createSignal<HistoryRun[]>([])
   const [availableSkills, setAvailableSkills] = createSignal<SkillOption[]>([])
+  const openSetGoalForm = () => {
+    setShowCreate(true)
+    window.requestAnimationFrame(() => {
+      setGoalSection?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    })
+  }
+  const structuredHandoffPrompt = (pending: NonNullable<GoalHandoffStore["handoff"]>) => {
+    const goal = pending.state
+    return [
+      "OpenGoal handoff: continue this goal in a fresh session.",
+      "",
+      `Repository: ${sdk.directory ?? "current workspace"}`,
+      `Goal ID: ${cleanText(goal.id)}`,
+      `Status at handoff: ${cleanText(goal.status)}`,
+      `Condition: ${cleanText(goal.condition)}`,
+      `Constraints: ${goal.constraints.maxTurns} turns, ${goal.constraints.maxTimeMinutes} minutes, ${goal.constraints.maxTokens} tokens.`,
+      goal.command ? `Verification command: ${cleanText(goal.command)}` : "Verification command: none recorded.",
+      pending.note ? `Operator handoff note: ${cleanText(pending.note)}` : "Operator handoff note: none.",
+      goal.lastEvaluation?.reason ? `Last evaluation: ${cleanText(goal.lastEvaluation.reason)}` : "Last evaluation: none recorded.",
+      "",
+      "Read .opencode/.goal-state.json and .opencode/.goal-handoff.json before changing code.",
+      "Treat this as a continuation from handoff, but do not rely on the previous chat context.",
+      "Continue until the goal is achieved, blocked, or the configured limits require stopping.",
+    ].join("\n")
+  }
   const [historyOpen, setHistoryOpen] = createSignal(false)
   const [selectedHistoryGoalID, setSelectedHistoryGoalID] = createSignal<string | null>(null)
 
@@ -1680,12 +1711,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (!note) return
     const sent = await sendGoalCommand("steer", `steer "${note}"`)
     if (sent) {
-      const shouldWakeRun = liveRunStatus() !== "active" || liveRunStalled()
-      if (shouldWakeRun && props.sessionID) {
-        await steerGoalRun(sdk.client, {
+      if (props.sessionID) {
+        const prompted = await steerGoalRun(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
         }, note)
+        if (!prompted) setControlError(language.t("session.goal.steer.failed"))
       }
       setSteerText("")
       setSteerOpen(false)
@@ -1702,15 +1733,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   }
 
   const claimGoalHandoff = async () => {
+    const pending = handoff().handoff
+    if (!pending) return
     const sent = await sendGoalCommand("claim", "claim")
     if (!sent) return
-    if (props.sessionID) {
-      const prompted = await startGoalRun(sdk.client, {
-        sessionID: props.sessionID,
-        directory: sdk.directory,
-      })
-      if (!prompted) await sendGoalCommand("pause", "pause")
-    }
+    const prompt = structuredHandoffPrompt(pending)
+    const slug = base64Encode(sdk.directory ?? "")
+    setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromRoute(slug)), { prompt, files: {} })
+    const href = `/${slug}/session?prompt=${encodeURIComponent(prompt)}`
+    window.history.pushState({}, "", href)
+    window.dispatchEvent(new PopStateEvent("popstate"))
   }
 
   /** Action-library entries are selectors, not launchers. The right column
@@ -2491,7 +2523,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               title={language.t("session.goal.create.title")}
               subtitle="Create one standalone goal outside the chain."
             >
-              <div data-component="goal-playbook-setup" class="min-w-0 p-3">
+              <div ref={(el) => (setGoalSection = el)} data-component="goal-playbook-setup" class="min-w-0 p-3">
                 <div class="flex justify-end">
                   <Show when={showCreate() && liveGoal()}>
                     <button
@@ -2624,6 +2656,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     </Show>
                   </div>
                   <div data-component="goal-target-toolbar" class="flex shrink-0 items-center justify-end gap-1.5">
+                    <Show when={!liveGoal()}>
+                      <ActionButton
+                        label={language.t("session.goal.create.submit")}
+                        variant="secondary"
+                        class="h-5 shrink-0 px-2.5 text-11-medium"
+                        title={language.t("session.goal.create.quickHint")}
+                        disabled={busy() !== null || !props.sessionID}
+                        onClick={openSetGoalForm}
+                      />
+                    </Show>
                     <ActionButton
                       label={liveGoal() ? "Running…" : "Start Chain"}
                       variant={liveGoal() ? "secondary" : "primary"}
@@ -3076,6 +3118,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     class="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
                     style={runningInlinePanelStyle("handoff")}
                   >
+                    <div class="basis-full text-11-regular font-semibold leading-5 text-indigo-100/72">
+                      {language.t("session.goal.handoff.explain")}
+                    </div>
                     <TextField
                       value={handoffText()}
                       onChange={setHandoffText}

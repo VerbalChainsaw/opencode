@@ -912,8 +912,9 @@ describe("goal panel mission-control contracts", () => {
     const steerGoal = src.slice(steerStart, steerEnd)
     expect(steerGoal).toContain('sendGoalCommand("steer", `steer "${note}"`)')
     expect(steerGoal).toContain("steerGoalRun")
-    expect(steerGoal).toContain('const shouldWakeRun = liveRunStatus() !== "active" || liveRunStalled()')
-    expect(steerGoal).toContain("if (shouldWakeRun && props.sessionID)")
+    expect(steerGoal).not.toContain("shouldWakeRun")
+    expect(steerGoal).toContain("if (props.sessionID)")
+    expect(steerGoal).toContain("setControlError(language.t(\"session.goal.steer.failed\"))")
     expect(steerGoal).toContain('setSteerText("")')
     expect(steerGoal).toContain("setSteerOpen(false)")
 
@@ -930,8 +931,31 @@ describe("goal panel mission-control contracts", () => {
     expect(claimStart).toBeGreaterThan(-1)
     expect(claimEnd).toBeGreaterThan(claimStart)
     const claimGoal = src.slice(claimStart, claimEnd)
+    expect(claimGoal).toContain("const pending = handoff().handoff")
     expect(claimGoal).toContain('sendGoalCommand("claim", "claim")')
-    expect(claimGoal).toContain("startGoalRun")
+    expect(claimGoal).toContain("structuredHandoffPrompt(pending)")
+    expect(claimGoal).toContain("setSessionHandoff")
+    expect(claimGoal).toContain("window.history.pushState")
+    expect(claimGoal).toContain('window.dispatchEvent(new PopStateEvent("popstate"))')
+    expect(claimGoal).not.toContain("startGoalRun")
+  })
+
+  test("chain header exposes a persistent Set Goal action that jumps to the standalone form", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const openSetGoalForm = () => {")
+    expect(src).toContain("setGoalSection?.scrollIntoView")
+    expect(src).toContain("session.goal.create.quickHint")
+    expect(src).toContain("onClick={openSetGoalForm}")
+    expect(src).toContain('ref={(el) => (setGoalSection = el)}')
+  })
+
+  test("handoff claim builds a structured fresh-session prompt instead of continuing the current thread", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("OpenGoal handoff: continue this goal in a fresh session.")
+    expect(src).toContain("Read .opencode/.goal-state.json and .opencode/.goal-handoff.json before changing code.")
+    expect(src).toContain("Treat this as a continuation from handoff, but do not rely on the previous chat context.")
+    expect(src).toContain("SessionStateKey.from(server.scope(), SessionRouteKey.fromRoute(slug))")
+    expect(src).toContain("session.goal.handoff.explain")
   })
 
   test("live run-order delete removes only pending steps through the chain command", async () => {
