@@ -90,6 +90,17 @@ export const BUILTIN_TEMPLATES: Record<string, GoalTemplate> = {
     command: "npm test",
     constraints: { maxTurns: 15, maxTimeMinutes: 20 },
   },
+  "code-review": {
+    // Heuristic mode (no `command`) — agent reviews by reading the diff
+    // and emits GOAL_COMPLETE: when the review is done. Mirrors the
+    // validate/debug pattern. Closes GAP-1 from the v0.7.0 audit
+    // (SPEC REQ-011 listed code-review as a builtin; the entry was
+    // missing from src/templates.ts).
+    description: "Review recent code changes for quality and correctness",
+    condition:
+      "Review the recent code changes in this repository. Look for correctness issues, missing test coverage on changed paths, edge cases not handled, security concerns (especially anything touching user input, paths, or eval-equivalent), and readability regressions. Report findings as a numbered list. End with `GOAL_COMPLETE: <one-line summary>` when done.",
+    constraints: { maxTurns: 5, maxTimeMinutes: 15 },
+  },
 };
 
 // ── v0.4.0+ template engine ─────────────────────────────────────────────────

@@ -220,13 +220,16 @@ describe("discoverTemplates", () => {
     const dir = freshDir();
     try {
       const list = discoverTemplates(dir);
-      // All three builtins present.
+      // All command-based builtins present (v0.4.0 set + v0.7.0 code-review).
       const names = list.map(t => t.name);
       assert.ok(names.includes("fix-lint"), `missing fix-lint in ${names.join(",")}`);
       assert.ok(names.includes("fix-types"), `missing fix-types in ${names.join(",")}`);
       assert.ok(names.includes("pass-tests"), `missing pass-tests in ${names.join(",")}`);
-      // All three are marked builtin.
-      for (const t of list.filter(t => ["fix-lint","fix-types","pass-tests"].includes(t.name))) {
+      // v0.7.0 audit GAP-1 fix: code-review was in SPEC REQ-011 but
+      // missing from src/templates.ts. Now present (heuristic mode).
+      assert.ok(names.includes("code-review"), `missing code-review in ${names.join(",")}`);
+      // All four are marked builtin.
+      for (const t of list.filter(t => ["fix-lint","fix-types","pass-tests","code-review"].includes(t.name))) {
         assert.equal(t.builtin, true);
       }
     } finally { cleanDir(dir); }

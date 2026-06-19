@@ -469,11 +469,14 @@ test("buildSidebarContent: relative time 'just now' for sub-minute", () => {
 
 test("buildSidebarFooter: returns dial command hint string", () => {
   const out = buildSidebarFooter("/tmp");
-  assert.ok(out.includes("alt+g dashboard"));
-  assert.ok(out.includes("alt+s steer"));
-  assert.ok(out.includes("alt+p pause"));
-  assert.ok(out.includes("/goal-steer"));
-  assert.ok(out.length <= 80);
+  // v0.7.0 audit GAP-3 fix: footer hint now lists all 5 registered
+  // shortcuts (alt+g dashboard · alt+s steer · alt+p pause · alt+n set ·
+  // alt+c clear). The legacy "/goal-steer" slash-command hint was
+  // dropped to make room — it was always redundant with alt+s steer.
+  for (const chord of ["alt+g dashboard", "alt+s steer", "alt+p pause", "alt+n set", "alt+c clear"]) {
+    assert.ok(out.includes(chord), `footer missing ${chord}; got: ${out}`);
+  }
+  assert.ok(out.length <= 80, `footer longer than FOOTER_MAX=80; got: ${out.length}`);
 });
 
 test("buildSidebarFooter: contains no newlines (single-line slot)", () => {
@@ -504,7 +507,10 @@ test("buildSidebarView: no state file → empty-state view", () => {
     assert.equal(view.isPaused, false);
     assert.equal(view.title, "🎯 no goal");
     assert.ok(view.content.includes("(no active goal)"));
-    assert.ok(view.footer.includes("/goal"));
+    // v0.7.0 audit GAP-3 fix: footer hints at keyboard shortcuts now, not
+    // slash commands. The original assertion checked `/goal` (a slash
+    // command prefix); the new hint uses alt+g/p/s/n/c instead.
+    assert.ok(view.footer.includes("alt+g"), `footer should hint at keyboard shortcuts; got: ${view.footer}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

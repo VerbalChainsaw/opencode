@@ -276,11 +276,20 @@ function pctPad(pct: number): string {
  * Truncated to 80 chars with "…" if the host's footer slot is narrower.
  */
 export function buildSidebarFooter(directory: string, handoff: { createdAt: string; note?: string } | null = null): string {
-  const base = "keys: alt+g dashboard · alt+s steer · alt+p pause · /goal-steer";
+  // v0.7.0 audit GAP-3 fix: was missing alt+n (set) and alt+c (clear).
+  // The actual keymap (registered in tui.tsx) has all 5; the sidebar
+  // footer hint is the user-visible surface and was 2-of-5 stale.
+  // Full form is 79 chars — fits FOOTER_MAX=80 with 1 char to spare.
+  const full = "keys: alt+g dashboard · alt+s steer · alt+p pause · alt+n set · alt+c clear";
   if (handoff) {
-    return truncate(base + " · /goal-claim", FOOTER_MAX);
+    // When a handoff is pending, surface the claim command BEFORE the
+    // full keymap (so truncate() can't strip it). Drop the per-shortcut
+    // descriptions to make room: keys without descriptions + /goal-claim
+    // is 53 chars, well within the limit.
+    const compact = "keys: alt+g · alt+s · alt+p · alt+n · alt+c";
+    return truncate(compact + " · /goal-claim", FOOTER_MAX);
   }
-  return truncate(base, FOOTER_MAX);
+  return truncate(full, FOOTER_MAX);
 }
 
 // ── Top-level view-model ────────────────────────────────────────────────────
