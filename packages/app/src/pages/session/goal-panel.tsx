@@ -361,9 +361,14 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
   try {
     const c = JSON.parse(content)
     if (!c || !Array.isArray(c.steps) || c.steps.length === 0) return null
-    const steps: ChainStep[] = c.steps
-      .filter((s: unknown) => s && typeof (s as ChainStep).condition === "string")
-      .map((s: ChainStep) => ({
+    const rawSteps: unknown[] = c.steps
+    const validSteps = rawSteps.filter((s: unknown) => s && typeof (s as ChainStep).condition === "string")
+    if (validSteps.length < rawSteps.length) {
+      console.warn(
+        `[goal-panel] readChain dropped ${rawSteps.length - validSteps.length} of ${rawSteps.length} chain step(s) — missing or invalid "condition" field`,
+      )
+    }
+    const steps: ChainStep[] = (validSteps as ChainStep[]).map((s) => ({
         condition: s.condition,
         command: s.command ?? null,
         ...(typeof (s as { maxTurns?: unknown }).maxTurns === "number"
@@ -879,16 +884,6 @@ function inferredActionTone(input: ActionDescriptor): GoalTemplateTone {
   if (/document|docs|notes/.test(text)) return "sky"
   if (/build|compile|construct/.test(text)) return "blue"
   return "violet"
-}
-
-function actionToneClass(input: ActionDescriptor) {
-  const tone = input.tone ?? inferredActionTone(input)
-  if (tone === "orange") return "border-orange-400/40 bg-orange-500/15 text-orange-200"
-  if (tone === "emerald") return "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
-  if (tone === "fuchsia") return "border-fuchsia-400/40 bg-fuchsia-500/15 text-fuchsia-200"
-  if (tone === "sky") return "border-sky-400/40 bg-sky-500/15 text-sky-200"
-  if (tone === "blue") return "border-blue-400/40 bg-blue-500/15 text-blue-200"
-  return "border-violet-400/40 bg-violet-500/15 text-violet-200"
 }
 
 function actionCategoryPalette(input: ActionDescriptor) {
@@ -1412,6 +1407,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       void readChain(sdk).then(setChain).catch(ignoreRefreshError)
       void refreshTemplates()
       refreshArchive()
+      void props.goal.refresh().catch(ignoreRefreshError)
     }
     tick()
     const timer = setInterval(tick, 2000)
@@ -1551,13 +1547,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       maxTimeMinutes: chainDraft.master.maxTimeMinutes,
     }),
   )
-  const chainVerifyCommandCount = createMemo(() => chainDraft.steps.filter((step) => hasVerificationCommand(step)).length)
-  const chainAgentCompletionCount = createMemo(() => Math.max(0, chainDraft.steps.length - chainVerifyCommandCount()))
   const chainLimitSummary = createMemo(() => `${masterTurns()} turns / ${masterMinutes()}m`)
-  const chainVerifySummary = createMemo(
-    () =>
-      `${chainDraft.steps.length} actions / ${chainVerifyCommandCount()} command-backed / ${chainAgentCompletionCount()} agent-completed`,
-  )
   const templateConstraintsLabel = (template: GoalTemplateButton) => {
     const c = template.constraints
     if (!c) return ""
@@ -1844,6 +1834,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       ...(template.model ? { model: template.model } : {}),
     }
   }
+  const [saveError, setSaveError] = createSignal("")
   const saveTemplateDraft = async () => {
     const existingID = actionDraft.id.trim()
     const id = TEMPLATE_SAVE_ID_RE.test(existingID)
@@ -1854,11 +1845,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const payload = actionDraftPayload()
     const sent = await sendGoalCommand("template", `template import ${id} ${JSON.stringify(payload)}`)
     if (sent) {
+      setSaveError("")
       const savedTemplate = { ...actionDraftTemplate(), id, actionID: id, sourceID: id, builtin: false }
       upsertLocalTemplate(savedTemplate)
       setSelectedTemplateID(id)
       setActionDraft("sourceID", id)
       setActionDraft("id", id)
+    } else {
+      setSaveError("Save failed — check session or retry")
+      setTimeout(() => setSaveError(""), 4000)
     }
   }
   const duplicateActionDraft = async () => {
@@ -2409,64 +2404,66 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     >
                     <div
                       data-component="goal-chain-compact-stats"
-                      class="grid min-w-0 grid-cols-2 gap-1.5 lg:grid-cols-[118px_128px_112px_132px]"
+                      class="grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-3"
                     >
                     <label
                       data-component="goal-chain-compact-stat"
-                      class="flex h-9 min-w-0 items-center gap-1.5 rounded-md border border-blue-400/24 bg-blue-500/[0.07] px-2"
+                      data-kind="turns"
+                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border border-blue-400/24 bg-blue-500/[0.07] px-2.5"
                       title={chainLimitSummary()}
                     >
-                      <span class="text-[9px] font-semibold uppercase tracking-[0.08em] text-blue-100/72">
+                      <span class="min-w-[54px] text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-100/78">
                         {language.t("session.goal.chainBuilder.stat.turns")}
                       </span>
                       <input
-                        aria-label="Chain turn limit"
+                        aria-label={language.t("session.goal.chainBuilder.stat.turnLimitAria")}
                         type="number"
                         min="1"
                         value={String(masterTurns())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTurns", event.currentTarget.value)}
-                        class="h-5 w-10 rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
+                        class="h-6 w-12 rounded border border-blue-200/16 bg-blue-950/20 px-1 text-center text-13-bold tabular-nums text-text-base outline-none focus:border-blue-200/45"
                       />
+                      <span class="min-w-0 truncate text-[10px] font-semibold text-blue-100/52">
+                        {language.t("session.goal.chainBuilder.stat.turnsHint")}
+                      </span>
                     </label>
                     <label
                       data-component="goal-chain-compact-stat"
-                      class="flex min-w-0 items-center gap-1"
+                      data-kind="time"
+                      class="flex h-10 min-w-0 items-center gap-2 rounded-md border border-violet-400/24 bg-violet-500/[0.07] px-2.5"
                       title={chainLimitSummary()}
                     >
-                      <span class="text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-200/72">
-                        {language.t("session.goal.chainBuilder.stat.turns")}
+                      <span class="min-w-[54px] text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-100/78">
+                        {language.t("session.goal.chainBuilder.stat.time")}
                       </span>
                       <input
-                        aria-label="Chain time limit"
+                        aria-label={language.t("session.goal.chainBuilder.stat.timeLimitAria")}
                         type="number"
                         min="1"
                         value={String(masterMinutes())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTimeMinutes", event.currentTarget.value)}
-                        class="h-5 w-10 rounded px-1 text-center text-12-medium tabular-nums text-text-base bg-transparent outline-none"
+                        class="h-6 w-12 rounded border border-violet-200/16 bg-violet-950/20 px-1 text-center text-13-bold tabular-nums text-text-base outline-none focus:border-violet-200/45"
                       />
-                      <span class="text-[10px] font-semibold text-violet-100/62">m</span>
+                      <span class="min-w-0 truncate text-[10px] font-semibold text-violet-100/52">
+                        {language.t("session.goal.chainBuilder.stat.timeHint")}
+                      </span>
                     </label>
                     <span
-                      data-component="goal-chain-compact-stat"
-                      class="flex h-9 min-w-0 items-center gap-1.5 rounded-md border border-emerald-400/22 bg-emerald-500/[0.07] px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-100/72"
+                      data-component="goal-chain-summary-line"
+                      data-kind="actions"
+                      class="flex h-10 min-w-0 items-center gap-2 overflow-hidden rounded-md border border-emerald-400/24 bg-emerald-500/[0.07] px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-100/78"
+                      title={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
+                      aria-label={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
                     >
-                      <span>{language.t("session.goal.chainBuilder.stat.actions")}</span>
-                      <strong class={numericHighlightClass()} style={numericHighlightStyle("violet")}>
+                      <span class="min-w-[54px]">{language.t("session.goal.chainBuilder.stat.actions")}</span>
+                      <strong class={numericHighlightClass()} style={numericHighlightStyle("emerald")}>
                         {visibleStepCount()}
                       </strong>
-                    </span>
-                    <span
-                      data-component="goal-chain-summary-line"
-                      class="flex h-9 min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-emerald-400/22 bg-emerald-500/[0.07] px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-100/72"
-                      title={chainVerifySummary()}
-                      aria-label={`${chainVerifyCommandCount()} command steps`}
-                    >
-                      <span>{language.t("session.goal.chainBuilder.stat.commands")}</span>
-                      <strong class={numericHighlightClass()} style={numericHighlightStyle("emerald")}>
-                        {chainVerifyCommandCount()}
-                      </strong>
+                      <span class="min-w-0 truncate text-[10px] font-semibold normal-case text-emerald-100/52 [letter-spacing:0]">
+                        {language.t("session.goal.chainBuilder.stat.actionsHint")}
+                      </span>
                     </span>
                     </div>
                     </div>
@@ -3191,6 +3188,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               }
                               onClick={() => void saveTemplateDraft()}
                             />
+                            <Show when={saveError()}>
+                              <div class="col-span-6 text-center text-[10px] text-orange-300/90">{saveError()}</div>
+                            </Show>
                             <ActionButton
                               label={
                                 editingChainStepID()
