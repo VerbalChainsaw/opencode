@@ -33,12 +33,27 @@ test("templateLabel: derives a button label from the id", () => {
 
 // ── buildTemplatesSnapshot ────────────────────────────────────────────────────
 
-test("buildTemplatesSnapshot: includes the three builtins with friendly labels", () => {
+test("buildTemplatesSnapshot: includes the shipped default action pack with friendly labels and metadata", () => {
   const dir = freshDir();
   const snap = buildTemplatesSnapshot(dir);
   assert.equal(snap.version, 1);
   const byId = Object.fromEntries(snap.templates.map((t) => [t.id, t]));
-  for (const id of ["fix-lint", "fix-types", "pass-tests"]) {
+  for (const id of [
+    "plan",
+    "build",
+    "debug",
+    "test",
+    "validate",
+    "review",
+    "docs",
+    "wire-check",
+    "adversarial-scan",
+    "typecheck",
+    "commit",
+    "fix-lint",
+    "fix-types",
+    "pass-tests",
+  ]) {
     assert.ok(byId[id], `expected builtin ${id}`);
     assert.equal(byId[id].builtin, true);
     assert.equal(byId[id].label, templateLabel(id));
@@ -46,6 +61,9 @@ test("buildTemplatesSnapshot: includes the three builtins with friendly labels",
     assert.equal(typeof byId[id].condition, "string");
     assert.equal(byId[id].condition.length > 0, true);
   }
+  assert.equal(byId["wire-check"].category, "Review");
+  assert.equal(byId["adversarial-scan"].tone, "fuchsia");
+  assert.equal(byId["adversarial-scan"].elevation, "raised");
 });
 
 test("buildTemplatesSnapshot: surfaces a valid user template as a non-builtin button", () => {

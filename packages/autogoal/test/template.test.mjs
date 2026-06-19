@@ -239,7 +239,19 @@ describe("discoverTemplates", () => {
     const dir = freshDir();
     try {
       const names = discoverTemplates(dir).map((t) => t.name);
-      for (const id of ["plan", "build", "debug", "validate", "typecheck", "commit"]) {
+      for (const id of [
+        "plan",
+        "build",
+        "debug",
+        "test",
+        "validate",
+        "review",
+        "docs",
+        "wire-check",
+        "adversarial-scan",
+        "typecheck",
+        "commit",
+      ]) {
         assert.ok(names.includes(id), `missing method builtin ${id} in ${names.join(",")}`);
       }
       // Prompt methods carry a {scope} variable and no verify command.
@@ -248,6 +260,12 @@ describe("discoverTemplates", () => {
       assert.equal(plan.command, undefined);
       assert.ok(plan.variables && plan.variables.scope, "plan should declare a {scope} variable");
       assert.ok(plan.condition.includes("{scope}"));
+      const scan = exportTemplate(dir, "adversarial-scan");
+      assert.ok(scan, "adversarial-scan template should export");
+      assert.equal(scan.category, "Review");
+      assert.equal(scan.tone, "fuchsia");
+      assert.equal(scan.elevation, "raised");
+      assert.ok(scan.condition.includes("{scope}"));
     } finally { cleanDir(dir); }
   });
 

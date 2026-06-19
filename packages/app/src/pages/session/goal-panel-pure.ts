@@ -145,7 +145,151 @@ export interface GoalTemplateVariable {
 
 /** Built-in method prompts for the dock. These are deliberately general
  *  coding-method recipes, not project-specific commands like "npm test". */
-export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = []
+export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
+  {
+    id: "plan",
+    label: "Plan",
+    description: "Map the work before editing",
+    condition:
+      "Create a concise implementation plan for {scope}. Identify the files, sequence, risks, and verification needed before changing code.",
+    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+    variables: { scope: { description: "Scope", default: "the current coding request" } },
+    category: "Planning",
+    tone: "violet",
+    elevation: "raised",
+    builtin: true,
+  },
+  {
+    id: "build",
+    label: "Build",
+    description: "Implement the planned change",
+    condition:
+      "Implement {scope} using the repository's existing patterns. Keep edits scoped, update nearby tests, and preserve unrelated work.",
+    constraints: { maxTurns: 8, maxTimeMinutes: 30 },
+    variables: { scope: { description: "Scope", default: "the planned coding change" } },
+    category: "Building",
+    tone: "blue",
+    elevation: "raised",
+    builtin: true,
+  },
+  {
+    id: "debug",
+    label: "Debug",
+    description: "Reproduce and isolate a failure",
+    condition:
+      "Debug {scope}. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
+    constraints: { maxTurns: 8, maxTimeMinutes: 30 },
+    variables: { scope: { description: "Scope", default: "the reported failure" } },
+    category: "Debugging",
+    tone: "orange",
+    elevation: "raised",
+    builtin: true,
+  },
+  {
+    id: "test",
+    label: "Test",
+    description: "Run and repair behavior tests",
+    condition:
+      "Run the relevant behavior tests for {scope}. Reproduce failures, fix the underlying issue, and re-run the focused test until it is clean.",
+    constraints: { maxTurns: 5, maxTimeMinutes: 20 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Testing",
+    tone: "emerald",
+    elevation: "flat",
+    builtin: true,
+  },
+  {
+    id: "validate",
+    label: "Validate",
+    description: "Prove the change works",
+    condition:
+      "Validate {scope}. Run the relevant tests, typechecks, builds, or UI checks; inspect failures; and fix regressions until the verification set is clean.",
+    constraints: { maxTurns: 4, maxTimeMinutes: 15 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Testing",
+    tone: "sky",
+    elevation: "flat",
+    builtin: true,
+  },
+  {
+    id: "review",
+    label: "Review",
+    description: "Review the diff for release risks",
+    condition:
+      "Review {scope}. Inspect the diff for bugs, missing tests, regressions, security issues, and operator-confusing behavior. Report concrete findings before changing code.",
+    constraints: { maxTurns: 4, maxTimeMinutes: 15 },
+    variables: { scope: { description: "Scope", default: "the current diff" } },
+    category: "Review",
+    tone: "fuchsia",
+    elevation: "flat",
+    builtin: true,
+  },
+  {
+    id: "docs",
+    label: "Docs",
+    description: "Update relevant docs or handoff notes",
+    condition:
+      "Update documentation for {scope}. Keep it concise, accurate to the implementation, and focused on commands, operator behavior, and remaining risks.",
+    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Documentation",
+    tone: "sky",
+    elevation: "flat",
+    builtin: true,
+  },
+  {
+    id: "wire-check",
+    label: "Wire check",
+    description: "Trace UI controls to runtime effects",
+    condition:
+      "Trace the wiring for {scope}. For each visible control, identify the handler, deterministic state write, model-turn boundary, error path, and verification evidence.",
+    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+    variables: { scope: { description: "Scope", default: "the current UI flow" } },
+    category: "Review",
+    tone: "blue",
+    elevation: "flat",
+    builtin: true,
+  },
+  {
+    id: "adversarial-scan",
+    label: "Adversarial scan",
+    description: "Try to break the proposed change",
+    condition:
+      "Adversarially scan {scope}. Exercise invalid inputs, stale state, missing files, repeated clicks, interrupted turns, and upstream/downstream regressions; harden the code where needed.",
+    constraints: { maxTurns: 4, maxTimeMinutes: 15 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Review",
+    tone: "fuchsia",
+    elevation: "raised",
+    builtin: true,
+  },
+  {
+    id: "typecheck",
+    label: "Typecheck",
+    description: "Run and fix type-level verification",
+    condition:
+      "Typecheck {scope}. Find the repository's relevant typecheck command, run it, fix type errors without broad refactors, and re-run until clean.",
+    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Testing",
+    tone: "emerald",
+    elevation: "flat",
+    builtin: true,
+  },
+  {
+    id: "commit",
+    label: "Commit",
+    description: "Package verified work cleanly",
+    condition:
+      "Prepare a commit for {scope}. Review the diff, ensure verification has passed, stage only relevant files, and write a concise conventional commit message.",
+    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Custom",
+    tone: "violet",
+    elevation: "flat",
+    builtin: true,
+  },
+]
 
 const DEFAULT_TEMPLATE_BY_ID = new Map(DEFAULT_TEMPLATE_BUTTONS.map((template) => [template.id, template]))
 const TEMPLATE_ID_RE = /^[A-Za-z0-9_-]+$/

@@ -260,7 +260,7 @@ Acceptance:
 
 **Status:** CONFIRMED (v0.4.0, `src/templates.ts`)
 
-Built-in templates (`fix-lint`, `fix-types`, `pass-tests`, `code-review`) plus user templates in `.opencode/goals/<name>.json`. `template list/export/import` commands. Template variables for parameterized conditions. (v0.7.0: also added 6 prompt-method templates — `plan`, `build`, `debug`, `validate`, `typecheck`, `commit` — heuristic mode, no `command`.)
+Built-in templates (`fix-lint`, `fix-types`, `pass-tests`, `code-review`) plus user templates in `.opencode/goals/<name>.json`. `template list/export/import` commands. Template variables for parameterized conditions. (v0.7.0+: also includes the Desktop default action pack — `plan`, `build`, `debug`, `test`, `validate`, `review`, `docs`, `wire-check`, `adversarial-scan`, `typecheck`, `commit` — heuristic mode, no `command`.)
 
 Acceptance:
 - AC-011.1: Built-in templates are discoverable.

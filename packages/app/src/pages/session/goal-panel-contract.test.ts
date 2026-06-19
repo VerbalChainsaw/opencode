@@ -216,13 +216,27 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     expect(templateButtonsFromSnapshot({ version: 1, templates: [] })).toEqual(DEFAULT_TEMPLATE_BUTTONS)
   })
 
-  test("default built-ins are empty — only user-created actions appear in the library", async () => {
+  test("default built-ins provide the shipped action library pack", async () => {
     const { DEFAULT_TEMPLATE_BUTTONS } = await load()
-    expect(DEFAULT_TEMPLATE_BUTTONS).toEqual([])
+    expect(DEFAULT_TEMPLATE_BUTTONS.map((t) => t.id)).toEqual([
+      "plan",
+      "build",
+      "debug",
+      "test",
+      "validate",
+      "review",
+      "docs",
+      "wire-check",
+      "adversarial-scan",
+      "typecheck",
+      "commit",
+    ])
+    expect(DEFAULT_TEMPLATE_BUTTONS.every((template) => template.builtin)).toBe(true)
+    expect(DEFAULT_TEMPLATE_BUTTONS.every((template) => template.condition?.includes("{scope}"))).toBe(true)
   })
 
-  test("returns project templates from the snapshot (no built-in defaults)", async () => {
-    const { templateButtonsFromSnapshot } = await load()
+  test("appends project templates after the shipped defaults", async () => {
+    const { templateButtonsFromSnapshot, DEFAULT_TEMPLATE_BUTTONS } = await load()
     const out = templateButtonsFromSnapshot({
       version: 1,
       templates: [
@@ -230,7 +244,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
         { id: "ship-it", label: "Ship it", description: "deploy", builtin: false },
       ],
     })
-    expect(out.map((t) => t.id)).toEqual(["ship-it"])
+    expect(out.map((t) => t.id)).toEqual([...DEFAULT_TEMPLATE_BUTTONS.map((t) => t.id), "ship-it"])
     expect(out.at(-1)).toMatchObject({ id: "ship-it", label: "Ship it", builtin: false })
   })
 
@@ -241,13 +255,13 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       templates: [{ id: "pass-tests", label: "Pass tests", description: "run tests", builtin: true }],
     })
     // old project-specific "built-in" snapshots are filtered — only
-    // user templates with `builtin: false` survive
+    // the app-owned defaults and user templates with `builtin: false` survive
     expect(out.filter((t) => !t.builtin)).toEqual([])
-    expect(DEFAULT_TEMPLATE_BUTTONS).toEqual([])
+    expect(out).toEqual(DEFAULT_TEMPLATE_BUTTONS)
   })
 
   test("drops entries with a malformed id and de-duplicates", async () => {
-    const { templateButtonsFromSnapshot } = await load()
+    const { templateButtonsFromSnapshot, DEFAULT_TEMPLATE_BUTTONS } = await load()
     const out = templateButtonsFromSnapshot({
       version: 1,
       templates: [
@@ -257,7 +271,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
         { id: "ok-one", builtin: false }, // duplicate → dropped
       ],
     })
-    expect(out.map((t) => t.id)).toEqual(["ok-one"])
+    expect(out.map((t) => t.id)).toEqual([...DEFAULT_TEMPLATE_BUTTONS.map((t) => t.id), "ok-one"])
     // A missing label defaults to the id.
     expect(out.at(-1)?.label).toBe("ok-one")
   })

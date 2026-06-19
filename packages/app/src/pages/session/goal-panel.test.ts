@@ -2,13 +2,16 @@ import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 
 import {
+  DEFAULT_TEMPLATE_BUTTONS,
   type GoalSdkClient,
   type GoalState,
+  chainStepFromTemplate,
   cleanText,
   isGoalStateShape,
   readHandoffFromSdk,
   readGoalFromSdk,
   selectRunnableChainSteps,
+  templateButtonsFromSnapshot,
 } from "./goal-panel-pure"
 import {
   executeGoalCommand,
@@ -178,6 +181,46 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("session.goal.template.apply")
     expect(src).not.toContain("setNewCondition(draft.condition)")
     expect(src).not.toMatch(/sendGoalCommand\("set",\s*`template\s+\$\{id\}`/)
+  })
+
+  test("action library ships a meaningful default action pack before a workspace snapshot exists", () => {
+    const buttons = templateButtonsFromSnapshot(null)
+    const ids = buttons.map((template) => template.id)
+
+    expect(ids).toEqual([
+      "plan",
+      "build",
+      "debug",
+      "test",
+      "validate",
+      "review",
+      "docs",
+      "wire-check",
+      "adversarial-scan",
+      "typecheck",
+      "commit",
+    ])
+    expect(DEFAULT_TEMPLATE_BUTTONS).toHaveLength(ids.length)
+    expect(buttons.every((template) => template.builtin)).toBe(true)
+    expect(buttons.every((template) => template.condition?.includes("{scope}"))).toBe(true)
+
+    const scan = buttons.find((template) => template.id === "adversarial-scan")
+    expect(scan).toMatchObject({ category: "Review", tone: "fuchsia", elevation: "raised" })
+    expect(scan?.constraints).toMatchObject({ maxTurns: 4, maxTimeMinutes: 15 })
+
+    const step = chainStepFromTemplate(scan!, { scope: "the GoalPanel handoff path" }, "scan-proof")
+    expect(step).toMatchObject({
+      id: "scan-proof",
+      actionID: "adversarial-scan",
+      label: "Adversarial scan",
+      condition: expect.stringContaining("the GoalPanel handoff path"),
+      maxTurns: 4,
+      maxTimeMinutes: 15,
+      category: "Review",
+      tone: "fuchsia",
+      elevation: "raised",
+      builtin: true,
+    })
   })
 
   test("chain builder and action library are separate workflow panels instead of loose buttons", async () => {

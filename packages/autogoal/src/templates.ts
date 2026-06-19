@@ -36,6 +36,9 @@ export const BUILTIN_TEMPLATES: Record<string, GoalTemplate> = {
       "Create a concise implementation plan for {scope}. Identify the files, sequence, risks, and verification needed before changing code.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
     variables: { scope: { description: "Scope", default: "the current coding request" } },
+    category: "Planning",
+    tone: "violet",
+    elevation: "raised",
   },
   build: {
     description: "Implement the planned change",
@@ -43,6 +46,9 @@ export const BUILTIN_TEMPLATES: Record<string, GoalTemplate> = {
       "Implement {scope} using the repository's existing patterns. Keep edits scoped, update nearby tests, and preserve unrelated work.",
     constraints: { maxTurns: 8, maxTimeMinutes: 30 },
     variables: { scope: { description: "Scope", default: "the planned coding change" } },
+    category: "Building",
+    tone: "blue",
+    elevation: "raised",
   },
   debug: {
     description: "Reproduce and isolate a failure",
@@ -50,6 +56,19 @@ export const BUILTIN_TEMPLATES: Record<string, GoalTemplate> = {
       "Debug {scope}. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
     constraints: { maxTurns: 8, maxTimeMinutes: 30 },
     variables: { scope: { description: "Scope", default: "the reported failure" } },
+    category: "Debugging",
+    tone: "orange",
+    elevation: "raised",
+  },
+  test: {
+    description: "Run and repair behavior tests",
+    condition:
+      "Run the relevant behavior tests for {scope}. Reproduce failures, fix the underlying issue, and re-run the focused test until it is clean.",
+    constraints: { maxTurns: 5, maxTimeMinutes: 20 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Testing",
+    tone: "emerald",
+    elevation: "flat",
   },
   validate: {
     description: "Prove the change works",
@@ -57,6 +76,49 @@ export const BUILTIN_TEMPLATES: Record<string, GoalTemplate> = {
       "Validate {scope}. Run the relevant tests, typechecks, builds, or UI checks; inspect failures; and fix regressions until the verification set is clean.",
     constraints: { maxTurns: 4, maxTimeMinutes: 15 },
     variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Testing",
+    tone: "sky",
+    elevation: "flat",
+  },
+  review: {
+    description: "Review the diff for release risks",
+    condition:
+      "Review {scope}. Inspect the diff for bugs, missing tests, regressions, security issues, and operator-confusing behavior. Report concrete findings before changing code.",
+    constraints: { maxTurns: 4, maxTimeMinutes: 15 },
+    variables: { scope: { description: "Scope", default: "the current diff" } },
+    category: "Review",
+    tone: "fuchsia",
+    elevation: "flat",
+  },
+  docs: {
+    description: "Update relevant docs or handoff notes",
+    condition:
+      "Update documentation for {scope}. Keep it concise, accurate to the implementation, and focused on commands, operator behavior, and remaining risks.",
+    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Documentation",
+    tone: "sky",
+    elevation: "flat",
+  },
+  "wire-check": {
+    description: "Trace UI controls to runtime effects",
+    condition:
+      "Trace the wiring for {scope}. For each visible control, identify the handler, deterministic state write, model-turn boundary, error path, and verification evidence.",
+    constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+    variables: { scope: { description: "Scope", default: "the current UI flow" } },
+    category: "Review",
+    tone: "blue",
+    elevation: "flat",
+  },
+  "adversarial-scan": {
+    description: "Try to break the proposed change",
+    condition:
+      "Adversarially scan {scope}. Exercise invalid inputs, stale state, missing files, repeated clicks, interrupted turns, and upstream/downstream regressions; harden the code where needed.",
+    constraints: { maxTurns: 4, maxTimeMinutes: 15 },
+    variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Review",
+    tone: "fuchsia",
+    elevation: "raised",
   },
   typecheck: {
     description: "Run and fix type-level verification",
@@ -64,6 +126,9 @@ export const BUILTIN_TEMPLATES: Record<string, GoalTemplate> = {
       "Typecheck {scope}. Find the repository's relevant typecheck command, run it, fix type errors without broad refactors, and re-run until clean.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
     variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Testing",
+    tone: "emerald",
+    elevation: "flat",
   },
   commit: {
     description: "Package verified work cleanly",
@@ -71,6 +136,9 @@ export const BUILTIN_TEMPLATES: Record<string, GoalTemplate> = {
       "Prepare a commit for {scope}. Review the diff, ensure verification has passed, stage only relevant files, and write a concise conventional commit message.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
     variables: { scope: { description: "Scope", default: "the current change" } },
+    category: "Custom",
+    tone: "violet",
+    elevation: "flat",
   },
   "fix-lint": {
     description: "Fix all lint errors in the project",
