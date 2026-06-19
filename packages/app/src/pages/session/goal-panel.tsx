@@ -473,61 +473,16 @@ function ActionButton(props: {
   )
 }
 
-function goalCommandButtonClass(variant: "primary" | "secondary" | "ghost", tone: "default" | "success" | "danger") {
-  const base =
-    "goal-command-button inline-flex min-h-8 items-center justify-center rounded-md border px-3 text-center font-semibold shadow-sm transition-all ring-1 ring-transparent focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-45"
-  if (tone === "danger") {
-    return `${base} goal-command-button-danger !border-orange-300/80 !bg-orange-500/85 !text-white shadow-[0_8px_18px_rgba(249,115,22,0.24)] hover:!bg-orange-400 hover:ring-orange-200/55 focus-visible:ring-orange-200/70`
-  }
-  if (tone === "success") {
-    return `${base} goal-command-button-success !border-emerald-300/70 !bg-emerald-500/85 !text-white shadow-[0_8px_18px_rgba(16,185,129,0.20)] hover:!bg-emerald-400 hover:ring-emerald-200/45 focus-visible:ring-emerald-200/65`
-  }
-  if (variant === "primary") {
-    return `${base} goal-command-button-primary !border-blue-300/75 !bg-blue-500/90 !text-white shadow-[0_8px_18px_rgba(37,99,235,0.24)] hover:!bg-blue-400 hover:ring-blue-200/50 focus-visible:ring-blue-200/70`
-  }
-  if (variant === "ghost") {
-    return `${base} goal-command-button-ghost !border-border-base !bg-background-base/65 !text-text-weak hover:!bg-white/[0.06] hover:!text-text-base hover:ring-border-strong focus-visible:ring-border-strong`
-  }
-  return `${base} goal-command-button-secondary !border-sky-300/45 !bg-sky-500/14 !text-sky-100 hover:!border-sky-200/70 hover:!bg-sky-500/22 hover:ring-sky-300/35 focus-visible:ring-sky-300/55`
+function goalCommandButtonClass(_variant: "primary" | "secondary" | "ghost", _tone: "default" | "success" | "danger") {
+  return "inline-flex items-center justify-center rounded px-2 py-1 text-11-medium font-semibold transition disabled:cursor-not-allowed disabled:opacity-30"
 }
 
 function goalCommandButtonStyle(variant: "primary" | "secondary" | "ghost", tone: "default" | "success" | "danger") {
-  if (tone === "danger") {
-    return {
-      "background-color": "rgba(249, 115, 22, 0.88)",
-      "border-color": "rgba(253, 186, 116, 0.86)",
-      color: "rgb(255, 255, 255)",
-      "box-shadow": "0 8px 18px rgba(249, 115, 22, 0.24)",
-    } satisfies JSX.CSSProperties
-  }
-  if (tone === "success") {
-    return {
-      "background-color": "rgba(16, 185, 129, 0.84)",
-      "border-color": "rgba(110, 231, 183, 0.82)",
-      color: "rgb(255, 255, 255)",
-      "box-shadow": "0 8px 18px rgba(16, 185, 129, 0.2)",
-    } satisfies JSX.CSSProperties
-  }
-  if (variant === "primary") {
-    return {
-      "background-color": "rgba(59, 130, 246, 0.9)",
-      "border-color": "rgba(147, 197, 253, 0.82)",
-      color: "rgb(255, 255, 255)",
-      "box-shadow": "0 8px 18px rgba(37, 99, 235, 0.24)",
-    } satisfies JSX.CSSProperties
-  }
-  if (variant === "ghost") {
-    return {
-      "background-color": "rgba(18, 18, 18, 0.66)",
-      "border-color": "rgba(82, 82, 82, 0.8)",
-      color: "rgb(214, 214, 214)",
-    } satisfies JSX.CSSProperties
-  }
-  return {
-    "background-color": "rgba(14, 165, 233, 0.18)",
-    "border-color": "rgba(125, 211, 252, 0.56)",
-    color: "rgb(224, 242, 254)",
-  } satisfies JSX.CSSProperties
+  if (tone === "danger") return { "background-color": "rgba(239, 68, 68, 0.12)", color: "rgb(252, 165, 165)" }
+  if (tone === "success") return { "background-color": "rgba(16, 185, 129, 0.12)", color: "rgb(167, 243, 208)" }
+  if (variant === "primary") return { "background-color": "rgba(59, 130, 246, 0.14)", color: "rgb(191, 219, 254)" }
+  if (variant === "ghost") return { color: "rgb(161, 161, 170)" }
+  return { "background-color": "rgba(14, 165, 233, 0.10)", color: "rgb(186, 230, 253)" }
 }
 
 function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
