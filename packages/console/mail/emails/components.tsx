@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 import React from "react"
 import { Font, Text as JEText, type TextProps } from "@jsx-email/all"
 import { baseText } from "./styles"
