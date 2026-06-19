@@ -26,6 +26,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { GoalState } from "./goal-state.js";
 import { writeGoalHistorySnapshot } from "./goal-history.js";
 
@@ -85,9 +86,7 @@ function trimArchive(p: string): void {
     const lines = raw.split("\n").filter((l) => l.length > 0);
     if (lines.length <= TRIM_KEEP) return;
     const kept = lines.slice(-TRIM_KEEP);
-    const tmp = `${p}.tmp.${process.pid}.${Date.now()}.${Math.random()
-      .toString(36)
-      .slice(2, 8)}`;
+    const tmp = `${p}.tmp.${process.pid}.${randomUUID()}`;
     writeFileSync(tmp, kept.join("\n") + "\n", "utf-8");
     renameSync(tmp, p);
   } catch {

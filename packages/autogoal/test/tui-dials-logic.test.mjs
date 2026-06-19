@@ -32,8 +32,8 @@ import {
   conditionPlaceholder,
   steerPlaceholder,
   handoffNotePlaceholder,
-  parsePositiveInt,
 } from "../dist/tui-dials-logic.js";
+import { parsePositiveInt } from "../dist/goal-state.js";
 import {
   setGoal,
   transitionGoal,

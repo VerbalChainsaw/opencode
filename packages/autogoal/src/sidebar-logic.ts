@@ -179,13 +179,18 @@ export function buildSidebarContent(
   const lines: string[] = [];
   lines.push(`${p.bar} ${pctPad(p.pct)}%`);
 
-  // FIX-23: stack one line per metric. The sidebar is only 42 wide
-  // (38 inside padding); the previous inline "turns: 10/20   time:
-  // 15/30m" layout wrapped messily at the constraint boundary.
-  // Stacked layout is unambiguous even when values are wide.
-  lines.push(`${padLabel("turns")}${state.turnsEvaluated}/${maxTurns}`);
-  lines.push(`${padLabel("time")}${p.elapsedMinutes}/${maxTime}m`);
-  lines.push(`${padLabel("tokens")}${formatNumber(state.tokensUsed)}/${formatNumber(maxTokens)}`);
+  // v0.7.0+ (audit fix F4.2): branch on lifecycle state so an ACHIEVED
+  // or CLEARED goal shows distinct content (spec §4.2). Without this,
+  // an achieved goal shows "turns: 5/20" as if still in progress.
+  if (state.status === "achieved") {
+    lines.push(`✓ Completed: ${state.turnsEvaluated} turn${state.turnsEvaluated === 1 ? "" : "s"}, ${p.elapsedMinutes}m`);
+  } else if (state.status === "cleared") {
+    lines.push(`✕ Cleared at: ${state.turnsEvaluated}/${maxTurns} turn${maxTurns === 1 ? "" : "s"}`);
+  } else {
+    lines.push(`${padLabel("turns")}${state.turnsEvaluated}/${maxTurns}`);
+    lines.push(`${padLabel("time")}${p.elapsedMinutes}/${maxTime}m`);
+    lines.push(`${padLabel("tokens")}${formatNumber(state.tokensUsed)}/${formatNumber(maxTokens)}`);
+  }
 
   const lastReason = state.lastEvaluation?.reason;
   if (lastReason) {

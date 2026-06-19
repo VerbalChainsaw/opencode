@@ -710,7 +710,7 @@ export function writeGoalStateAtomic(directory: string, state: GoalState): void 
   // v0.4.2 (C-3/A-4) — random suffix prevents same-process same-ms tmp
   // collisions (two writers in one tick would share pid+timestamp and
   // clobber each other's tmp). Same pattern as templates.ts.
-  const tmp = `${p}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+  const tmp = `${p}.tmp.${process.pid}.${randomUUID()}`;
   try {
     writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n", "utf-8");
     renameSync(tmp, p);
@@ -1518,7 +1518,7 @@ export function handoffPath(directory: string): string {
 function writeHandoffAtomic(path: string, payload: HandoffPayload): void {
   mkdirSync(dirname(path), { recursive: true });
   // v0.4.2 (C-3/A-4) — random suffix; see writeGoalStateAtomic.
-  const tmp = `${path}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+  const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   try {
     writeFileSync(tmp, JSON.stringify(payload, null, 2) + "\n", "utf-8");
     renameSync(tmp, path);

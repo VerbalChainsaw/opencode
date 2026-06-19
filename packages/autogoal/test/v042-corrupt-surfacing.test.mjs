@@ -157,16 +157,35 @@ test("listCorruptArtifacts: missing .opencode dir → [] (never throws)", () => 
 });
 
 // ── C-3: tmp-filename entropy (source-pattern, house style of tui-ux-fixes) ─
+// v0.7.0+ (audit fix): all atomic-write tmp sites now use `randomUUID()`
+// (cryptographic, 122 bits of entropy) for collision resistance. The
+// earlier Date.now()+Math.random() pattern was weaker; it has been
+// unified across the autogoal package (see audit Call 2 F26).
 
-test("C-3: all atomic-write tmp names carry a random suffix", () => {
+test("C-3: all atomic-write tmp names use randomUUID()", () => {
   const goalState = readFileSync(join(here, "..", "src", "goal-state.ts"), "utf-8");
   const goalChain = readFileSync(join(here, "..", "src", "goal-chain.ts"), "utf-8");
-  const pattern = /\.tmp\.\$\{process\.pid\}\.\$\{Date\.now\(\)\}\.\$\{Math\.random\(\)/g;
-  const bare = /\.tmp\.\$\{process\.pid\}\.\$\{Date\.now\(\)\}`/g;
-  assert.equal((goalState.match(pattern) ?? []).length, 2,
-    "both goal-state.ts tmp sites should have the random suffix");
-  assert.equal((goalChain.match(pattern) ?? []).length, 1,
-    "the goal-chain.ts tmp site should have the random suffix");
-  assert.equal((goalState.match(bare) ?? []).length, 0, "no bare pid+Date tmp names left in goal-state.ts");
-  assert.equal((goalChain.match(bare) ?? []).length, 0, "no bare pid+Date tmp names left in goal-chain.ts");
+  const templates = readFileSync(join(here, "..", "src", "templates.ts"), "utf-8");
+  const controlState = readFileSync(join(here, "..", "src", "control-state.ts"), "utf-8");
+  const goalArchive = readFileSync(join(here, "..", "src", "goal-archive.ts"), "utf-8");
+  const goalHistory = readFileSync(join(here, "..", "src", "goal-history.ts"), "utf-8");
+  const goalTemplatesSnapshot = readFileSync(join(here, "..", "src", "goal-templates-snapshot.ts"), "utf-8");
+  // The new pattern: pid + randomUUID (no Date.now()).
+  const newPattern = /\.tmp\.\$\{process\.pid\}\.\$\{randomUUID\(\)\}/g;
+  // The old pattern that should NOT appear: pid + Date.now() (with or without Math.random suffix).
+  const oldPattern = /\.tmp\.\$\{process\.pid\}\.\$\{Date\.now\(\)\}/g;
+  for (const [name, src] of [
+    ["goal-state.ts", goalState],
+    ["goal-chain.ts", goalChain],
+    ["templates.ts", templates],
+    ["control-state.ts", controlState],
+    ["goal-archive.ts", goalArchive],
+    ["goal-history.ts", goalHistory],
+    ["goal-templates-snapshot.ts", goalTemplatesSnapshot],
+  ]) {
+    assert.ok((src.match(newPattern) ?? []).length >= 1,
+      `${name} should use randomUUID() for tmp suffix`);
+    assert.equal((src.match(oldPattern) ?? []).length, 0,
+      `${name} should NOT use Date.now() for tmp suffix`);
+  }
 });

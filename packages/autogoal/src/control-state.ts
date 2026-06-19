@@ -497,7 +497,7 @@ async function writeGoalState(directory: string, state: GoalControlState) {
 }
 
 async function writeJsonAtomic(path: string, value: unknown) {
-  const tmp = `${path}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+  const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   await mkdir(dirname(path), { recursive: true })
   await writeFile(tmp, JSON.stringify(value, null, 2) + "\n", "utf8")
   await rename(tmp, path).catch(async (error: unknown) => {

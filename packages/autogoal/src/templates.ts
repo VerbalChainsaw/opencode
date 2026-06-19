@@ -8,6 +8,7 @@ import type { GoalPinnedModel } from "./goal-chain.js";
 import type { GoalConstraints } from "./goal-state.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, renameSync, unlinkSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 
 export interface GoalTemplate {
   description: string;
@@ -289,7 +290,7 @@ export function importTemplate(
   if (!existsSync(userDir)) mkdirSync(userDir, { recursive: true });
 
   const targetPath = join(userDir, `${name}.json`);
-  const tmp = `${targetPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+  const tmp = `${targetPath}.tmp.${process.pid}.${randomUUID()}`;
   try {
     writeFileSync(tmp, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
     renameSync(tmp, targetPath);

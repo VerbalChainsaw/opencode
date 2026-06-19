@@ -21,6 +21,7 @@
 
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { discoverTemplates, exportTemplate, type GoalTemplate } from "./templates.js";
 
 export const GOAL_TEMPLATES_FILE = ".opencode/goal-templates.json";
@@ -115,7 +116,7 @@ export function writeTemplatesSnapshot(directory: string): void {
     const hasUserTemplates = snapshot.templates.some((t) => !t.builtin);
     if (!hasUserTemplates && !existsSync(path)) return;
     mkdirSync(dirname(path), { recursive: true });
-    const tmp = `${path}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
     writeFileSync(tmp, JSON.stringify(snapshot, null, 2) + "\n", "utf-8");
     renameSync(tmp, path);
   } catch {

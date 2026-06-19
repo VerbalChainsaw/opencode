@@ -15,6 +15,7 @@ import type {
   ValidatedBlocks,
   BlockErrorCode,
 } from "./types.js";
+import { blocks as blockFactory } from "./factories.js";
 
 // ── Constants (spec §4.1) ───────────────────────────────────────────────────
 
@@ -177,17 +178,19 @@ export function validateBlocks(
     (b) => !errors.some((e) => e.key === b.key),
   );
 
-  // Never strip ALL blocks — synthesize fallback (spec §4.1 line 361-373)
+  // Never strip ALL blocks — synthesize fallback (spec §4.1 line 361-373).
+  // v0.7.0+ (audit fix): use the factory instead of hand-rolling the
+  // RenderBlock literal. Same shape (TextBlock satisfies RenderBlock),
+  // but routing through the factory keeps the producer's invariants in
+  // one place.
   if (valid.length === 0 && blocks.length > 0) {
     return {
       valid: false,
       blocks: [
-        {
+        blockFactory.text({
           key: "_fallback",
-          type: "text" as const,
-          version: 1,
           content: `Tool produced ${blocks.length} block(s), but all failed validation.`,
-        } satisfies RenderBlock,
+        }),
       ],
       errors,
     };

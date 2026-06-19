@@ -24,18 +24,24 @@ import type {
 } from "./types.js";
 
 // ── Key counter for auto-generated keys ─────────────────────────────────────
-
-let _counter = 0;
-function autoKey(prefix: string): string {
-  return `${prefix}-auto-${++_counter}`;
-}
-
-// ── Public factory API ──────────────────────────────────────────────────────
+// v0.7.0+ (audit fix): the counter is now a property of the factory bag
+// rather than a module-level mutable. In dev with Hot Module Reload, a
+// hot reload re-evaluates this module and produces a FRESH `blocks` object
+// with a fresh counter — no collision with stale auto-keys still live in
+// caller-side stores. The previous module-level `let _counter` would
+// reset on HMR and re-issue keys the caller had already seen.
 
 export const blocks = {
+  // Per-bag counter. Each `import` of factories.ts (including HMR) creates
+  // a fresh bag → a fresh counter.
+  _counter: 0,
+  autoKey(prefix: string): string {
+    return `${prefix}-auto-${++this._counter}`;
+  },
+
   text(input: { key?: string; content: string; version?: number }): TextBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("text"),
+      key: input.key ?? this.autoKey("text"),
       version: input.version ?? 1,
       type: "text" as const,
       content: input.content,
@@ -48,7 +54,7 @@ export const blocks = {
     version?: number;
   }): StatRowBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("stat"),
+      key: input.key ?? this.autoKey("stat"),
       version: input.version ?? 1,
       type: "stat-row" as const,
       stats: input.stats,
@@ -64,7 +70,7 @@ export const blocks = {
     version?: number;
   }): ProgressBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("prog"),
+      key: input.key ?? this.autoKey("prog"),
       version: input.version ?? 1,
       type: "progress" as const,
       percent: input.percent,
@@ -84,7 +90,7 @@ export const blocks = {
     version?: number;
   }): CodeBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("code"),
+      key: input.key ?? this.autoKey("code"),
       version: input.version ?? 1,
       type: "code" as const,
       language: input.language,
@@ -102,7 +108,7 @@ export const blocks = {
     version?: number;
   }): ListBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("list"),
+      key: input.key ?? this.autoKey("list"),
       version: input.version ?? 1,
       type: "list" as const,
       variant: input.variant,
@@ -118,7 +124,7 @@ export const blocks = {
     version?: number;
   }): TableBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("tbl"),
+      key: input.key ?? this.autoKey("tbl"),
       version: input.version ?? 1,
       type: "table" as const,
       columns: input.columns,
@@ -133,7 +139,7 @@ export const blocks = {
     version?: number;
   }): RowBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("row"),
+      key: input.key ?? this.autoKey("row"),
       version: input.version ?? 1,
       type: "row" as const,
       children: input.children,
@@ -148,7 +154,7 @@ export const blocks = {
     version?: number;
   }): CustomBlock & { key: string; version: number } {
     return {
-      key: input.key ?? autoKey("custom"),
+      key: input.key ?? this.autoKey("custom"),
       version: input.version ?? 1,
       type: "custom" as const,
       id: input.id,

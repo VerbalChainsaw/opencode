@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizeForPrompt, type GoalState } from "./goal-state.js";
+import { randomUUID } from "node:crypto";
 
 const ARCHIVE_FILE = ".opencode/goal-archive.jsonl";
 const MAX_ARCHIVE_SIZE = 2 * 1024 * 1024;
@@ -166,7 +167,7 @@ export function writeGoalHistorySnapshot(directory: string): void {
   const snapshot = buildGoalHistorySnapshot(readArchiveEntries(directory));
   const path = historyPath(directory);
   mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+  const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   writeFileSync(tmp, JSON.stringify(snapshot, null, 2) + "\n", "utf-8");
   renameSync(tmp, path);
 }

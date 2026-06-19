@@ -11,8 +11,8 @@ import {
   handleTurnsSubmit, handleTimeSubmit, handleTokensSubmit,
   handleConditionSubmit, handleSteerSubmit, handleClearSteeringSubmit,
   handleRestartSubmit, handleHandoffSubmit, handleClaimSubmit,
-  parsePositiveInt,
 } from "../dist/tui-dials-logic.js";
+import { parsePositiveInt } from "../dist/goal-state.js";
 import {
   readDashboardState, computeProgress, toggleGoal, clearGoal,
 } from "../dist/tui-logic.js";

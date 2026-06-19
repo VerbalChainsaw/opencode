@@ -41,11 +41,6 @@ export type DialResult =
   | { ok: true; message: string }
   | { ok: false; reason: "invalid-input" | "no-goal" | "terminal-state" | "write-failed" | "already-empty" | "current-goal" | "no-handoff" | "handoff-exists" | "handoff-pending"; message: string };
 
-// Re-export parsePositiveInt so the existing tests (which import it from
-// "../dist/tui-dials-logic.js") continue to work. The implementation lives
-// in goal-state.ts — single source of truth.
-export { parsePositiveInt } from "./goal-state.js";
-
 /** Convert a goal-state EditResult into a DialResult (the toast-equivalent shape). */
 function fromEditResult(res: EditResult): DialResult {
   if (res.ok) return { ok: true, message: res.message };
