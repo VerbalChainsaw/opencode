@@ -3609,7 +3609,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               >
                                 <For each={GOAL_TEMPLATE_CATEGORIES}>
                                   {(category) => (
-                                    <option value={category}>{category}</option>
+                                    <option value={category} class="bg-background-base text-text-base">{category}</option>
                                   )}
                                 </For>
                               </select>
@@ -3692,7 +3692,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               "border-color": "rgba(56, 189, 248, 0.12)",
                             }}
                           >
-                            <span class="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-sky-100/66">
+                            <span class="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-sky-100/82">
                               {language.t("session.goal.template.pinnedModel")}
                             </span>
                             <select
@@ -3701,11 +3701,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               aria-label={language.t("session.goal.template.pinnedModel")}
                               title={language.t("session.goal.template.pinnedModel")}
                               onChange={(event) => setActionDraft("model", event.currentTarget.value)}
-                              class="h-5 min-w-0 appearance-none truncate rounded bg-transparent px-1 text-11-medium font-semibold text-sky-100/86 outline-none transition disabled:opacity-30"
+                              class="h-5 min-w-0 truncate rounded bg-transparent px-1 text-11-medium font-semibold text-sky-100/90 outline-none transition disabled:opacity-30"
                             >
                               <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultModel")}</option>
                               <For each={modelOptionsForDraft()}>
-                                {(option) => <option value={option.key}>{option.label}</option>}
+                                {(option) => <option value={option.key} class="bg-background-base text-text-base">{option.label}</option>}
                               </For>
                             </select>
                           </div>
@@ -3718,7 +3718,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             }}
                             aria-label={language.t("session.goal.template.constraints")}
                           >
-                            <span class="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-100/58">
+                            <span class="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-100/78">
                               {language.t("session.goal.template.constraints")}
                             </span>
                             <div
@@ -3729,7 +3729,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               }}
                             >
                               <label class="flex min-w-0 flex-1 items-center gap-1" title={language.t("session.goal.chainBuilder.stat.turns")}>
-                                <span class="shrink-0 text-[9px] font-semibold text-blue-100/58">
+                                <span class="shrink-0 text-[9px] font-semibold text-blue-100/78">
                                   {language.t("session.goal.chainBuilder.stat.turns")}
                                 </span>
                                 <input
@@ -3755,7 +3755,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               }}
                             >
                               <label class="flex min-w-0 flex-1 items-center gap-1" title={language.t("session.goal.chainBuilder.stat.time")}>
-                                <span class="shrink-0 text-[9px] font-semibold text-teal-100/58">
+                                <span class="shrink-0 text-[9px] font-semibold text-teal-100/78">
                                   {language.t("session.goal.chainBuilder.stat.time")}
                                 </span>
                                 <input
@@ -3781,7 +3781,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               "border-color": "rgba(110, 231, 183, 0.11)",
                             }}
                           >
-                            <span class="text-[9px] font-bold uppercase tracking-[0.1em] text-emerald-100/62">
+                            <span class="text-[9px] font-bold uppercase tracking-[0.1em] text-emerald-100/82">
                               {language.t("session.goal.template.pinnedSkills")}
                             </span>
                             <select
@@ -3792,13 +3792,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 if (name) toggleActionSkill(name)
                                 event.currentTarget.value = ""
                               }}
-                              class="h-5 min-w-0 appearance-none truncate bg-transparent text-[10px] font-semibold text-emerald-100/72 outline-none transition disabled:opacity-35"
+                              class="h-5 min-w-0 truncate bg-transparent text-[10px] font-semibold text-emerald-100/82 outline-none transition disabled:opacity-35"
                               title={language.t("session.goal.template.addSkill")}
                               aria-label={language.t("session.goal.template.addSkill")}
                             >
                               <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.addSkill")}</option>
                               <For each={skillPickOptions()}>
-                                {(skill) => <option value={skill.name}>{skill.name}</option>}
+                                {(skill) => <option value={skill.name} class="bg-background-base text-text-base">{skill.name}</option>}
                               </For>
                             </select>
                             <span class="rounded-full border px-1 py-0.5 text-center text-[10px] font-semibold tabular-nums text-emerald-100/70"
@@ -3838,10 +3838,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                         <div
                           data-component="goal-action-editor-fields"
-                          class="flex flex-col gap-1.5 p-1"
+                          class="flex flex-col gap-2 rounded-md border p-2"
+                          style={{
+                            "background": "linear-gradient(90deg, rgba(15, 23, 42, 0.34), rgba(24, 24, 27, 0.78) 58%, rgba(148, 163, 184, 0.045))",
+                            "border-color": "rgba(148, 163, 184, 0.16)",
+                            "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.018)",
+                          }}
                         >
-                          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-weaker">
-                            Details
+                          <div class="flex items-center gap-2">
+                            <span
+                              class="h-4 w-1.5 shrink-0 rounded-sm"
+                              style={{ "background-color": "rgba(148, 163, 184, 0.55)" }}
+                              aria-hidden
+                            />
+                            <span class="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-100/78">
+                              Details
+                            </span>
                           </div>
                           <TextField
                             value={actionDraft.label}
