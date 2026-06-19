@@ -5,18 +5,72 @@
   "private": true,
   "type": "module",
   "license": "MIT",
+  "description": "First-party OpenCode goal-loop and Mission Control runtime.",
+  "main": "./dist/server.js",
+  "bin": {
+    "opencode-autogoal": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src/tui.tsx",
+    "src/tui-logic.ts",
+    "src/tui-dials-logic.ts",
+    "src/sidebar.tsx",
+    "src/sidebar-logic.ts",
+    "src/gui.ts",
+    "src/cli.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "test": "bun test --timeout 30000",
-    "typecheck": "tsgo --noEmit"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "npm run typecheck && npm run build && node --test"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./control-state": "./src/control-state.ts"
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./schema": {
+      "types": "./dist/goal-state.d.ts",
+      "import": "./dist/goal-state.js"
+    },
+    "./cli": {
+      "import": "./dist/cli.js"
+    },
+    "./control-state": "./src/control-state.ts",
+    "./tui": {
+      "import": "./src/tui.tsx"
+    },
+    "./sidebar": {
+      "import": "./src/sidebar.tsx"
+    },
+    "./gui": {
+      "types": "./dist/gui.d.ts",
+      "import": "./dist/gui.js"
+    }
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
+    "@opencode-ai/sdk": "workspace:*",
+    "@opentui/core": "catalog:",
+    "@opentui/keymap": "catalog:",
+    "@opentui/solid": "catalog:",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
-    "@typescript/native-preview": "catalog:"
+    "@typescript/native-preview": "catalog:",
+    "solid-js": "catalog:",
+    "typescript": "catalog:"
   }
 }

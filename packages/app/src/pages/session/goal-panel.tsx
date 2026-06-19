@@ -72,12 +72,12 @@ import { executeGoalCommand, startGoalRun, steerGoalRun } from "./goal-panel-act
 // annotations, which the imported type re-exports satisfy directly.
 
 /**
- * Goal tab — renders the opencode-autogoal plugin's state file
+ * Goal tab — renders the in-tree AutoGoal state file
  * (`.opencode/.goal-state.json`) in the session side panel.
  *
- * Data contract: docs/gui-integration.md in the opencode-autogoal repo.
+ * Data contract: packages/autogoal/docs/gui-integration.md.
  * The renderer polls via `sdk.client.file.read` every 2 seconds (the
- * plugin has no event-emit API; polling is the documented live-update
+ * native goal runtime has no event-emit API; polling is the documented live-update
  * mechanism). The state file is user-controlled, so everything is
  * structurally validated before rendering and string fields are
  * stripped of control characters.
@@ -2252,8 +2252,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 </div>
                 <Show when={goalCommandUnavailable()}>
                   <div class="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/8 px-3 py-2 text-11-regular text-text-weak">
-                    This workspace does not expose <code>/goal</code>. Open the session in a repo with OpenGoal enabled
-                    to set or control goals.
+                    This workspace does not expose <code>/goal</code>. Open a session with the native AutoGoal bridge
+                    available to set or control goals.
                   </div>
                 </Show>
                 <div class="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-border-base bg-background-base/60 p-2">

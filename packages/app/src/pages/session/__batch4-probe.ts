@@ -1,7 +1,8 @@
 // Batch 4: Failure-Mode Scan probe
 // Exercises the 10 failure-mode cases against the actual pure validators
-// that the GUI (goal-panel-pure.ts) and the plugin (OpenGoal/goal-chain.ts,
-// OpenGoal/templates.ts) use. Reports expected vs actual behavior.
+// that the GUI (goal-panel-pure.ts) and the in-tree AutoGoal package
+// (packages/autogoal/src/goal-chain.ts, packages/autogoal/src/templates.ts)
+// use. Reports expected vs actual behavior.
 //
 // Cases:
 //   1. Start Chain with 0 steps     -> chain.create(steps=[])
@@ -26,7 +27,7 @@ import {
   type GoalChainDraftStep,
   type GoalChainMasterBudget,
 } from "./goal-panel-pure"
-import type { GoalChain, GoalPinnedModel } from "../../../../OpenGoal/src/goal-chain"
+import type { GoalChain, GoalPinnedModel } from "../../../../autogoal/src/goal-chain"
 
 // ---------- Test 1: Start Chain with 0 steps ----------
 // The dock's startGoalChain() guards with:

@@ -162,7 +162,7 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
-  // Goal tab (opencode-autogoal plugin): shown when loaded (to display
+  // Goal tab (native AutoGoal runtime): shown when loaded (to display
   // the spinner during poll), when the state file is corrupt, when no
   // goal is set (empty state with usage hint), or when a goal is in any
   // non-cleared status. Hidden ONLY when the state is explicitly

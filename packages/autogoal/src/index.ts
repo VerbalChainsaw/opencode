@@ -1,2 +1,2 @@
-export { runGoalControlStateFile } from "./control-state"
-export type { GoalControlState, GoalControlStateFileResult } from "./control-state"
+export { runGoalControlStateFile } from "./control-state.js"
+export type { GoalControlState, GoalControlStateFileResult } from "./control-state.js"
