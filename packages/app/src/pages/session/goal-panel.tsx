@@ -2592,10 +2592,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 {(running) => (
                   <div
                     data-component="goal-chain-running-status"
-                    class="border-b px-3 py-3"
+                    class="border-b px-3 py-2"
                     style={runningStatusPanelStyle(liveRunStalled() ? "stalled" : running.status)}
                   >
-                    <div class="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_224px] xl:items-start">
+                    <div class="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_216px] xl:items-start">
                       <div class="min-w-0">
                         <div class="flex min-w-0 items-center gap-2">
                           <span
@@ -2622,53 +2622,45 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </Show>
                         <div
                           data-component="goal-running-metric-strip"
-                          class="mt-2 grid min-w-0 grid-cols-3 gap-1.5"
+                          class="mt-1.5 grid min-w-0 grid-cols-3 gap-1"
                         >
                           <div
                             data-component="goal-running-clock"
-                            class="min-w-0 rounded-lg border px-2.5 py-2"
+                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
                             style={runningMetricTileStyle("time")}
                           >
-                            <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-blue-100/70">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-100/64">
                               {language.t("session.goal.metric.time")}
                             </div>
-                            <div class={`mt-1 text-[22px] font-black leading-none tabular-nums ${runningMetricValueClass("time")}`}>
-                              {elapsedMinutes()}m
-                            </div>
-                            <div class="mt-1 truncate text-[10px] font-semibold text-blue-100/58">
-                              {language.t("session.goal.metric.of")} {running.constraints.maxTimeMinutes}m
+                            <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("time")}`}>
+                              {elapsedMinutes()}
+                              <span class="text-[10px] font-bold text-blue-100/58">/{running.constraints.maxTimeMinutes}m</span>
                             </div>
                           </div>
                           <div
                             data-component="goal-running-turns"
-                            class="min-w-0 rounded-lg border px-2.5 py-2"
+                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
                             style={runningMetricTileStyle("turns")}
                           >
-                            <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-violet-100/70">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-100/64">
                               {language.t("session.goal.metric.turns")}
                             </div>
-                            <div class={`mt-1 text-[22px] font-black leading-none tabular-nums ${runningMetricValueClass("turns")}`}>
+                            <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("turns")}`}>
                               {running.turnsEvaluated}
-                              <span class="text-[12px] font-bold text-violet-100/58">/{running.constraints.maxTurns}</span>
-                            </div>
-                            <div class="mt-1 truncate text-[10px] font-semibold text-violet-100/58">
-                              {language.t("session.goal.metric.used")}
+                              <span class="text-[10px] font-bold text-violet-100/58">/{running.constraints.maxTurns}</span>
                             </div>
                           </div>
                           <div
                             data-component="goal-running-step"
-                            class="min-w-0 rounded-lg border px-2.5 py-2"
+                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded-md border px-2"
                             style={runningMetricTileStyle("step")}
                           >
-                            <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-emerald-100/70">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/64">
                               {language.t("session.goal.metric.chain")}
                             </div>
-                            <div class={`mt-1 text-[22px] font-black leading-none tabular-nums ${runningMetricValueClass("step")}`}>
+                            <div class={`shrink-0 text-[14px] font-black leading-none tabular-nums ${runningMetricValueClass("step")}`}>
                               {runningStepIndex() + 1}
-                              <span class="text-[12px] font-bold text-emerald-100/58">/{Math.max(visibleStepCount(), 1)}</span>
-                            </div>
-                            <div class="mt-1 truncate text-[10px] font-semibold text-emerald-100/58">
-                              {language.t("session.goal.metric.current")}
+                              <span class="text-[10px] font-bold text-emerald-100/58">/{Math.max(visibleStepCount(), 1)}</span>
                             </div>
                           </div>
                         </div>
@@ -2676,17 +2668,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       <div class="min-w-0">
                         <div
                           data-component="goal-running-progress-hero"
-                          class="rounded-lg border px-3 py-2.5 text-right"
+                          class="rounded-md border px-2.5 py-2 text-right"
                           style={runningMetricTileStyle("progress")}
                         >
-                          <div class="text-[10px] font-bold uppercase tracking-[0.08em] text-emerald-100/72">
-                            {language.t("session.goal.progress")}
-                          </div>
-                          <div class="mt-1 text-[38px] font-black leading-none tracking-normal text-emerald-50 tabular-nums">
-                            {running.status === "achieved" ? 100 : progressPct()}%
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-100/64">
+                              {language.t("session.goal.progress")}
+                            </div>
+                            <div class="shrink-0 text-[22px] font-black leading-none tracking-normal text-emerald-50 tabular-nums">
+                              {running.status === "achieved" ? 100 : progressPct()}%
+                            </div>
                           </div>
                           <div
-                            class="mt-2 h-1.5 overflow-hidden rounded-full bg-background-base/70"
+                            class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-background-base/70"
                             role="progressbar"
                             aria-valuenow={running.status === "achieved" ? 100 : progressPct()}
                             aria-valuemin="0"
@@ -2700,7 +2694,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </div>
                         <div
                           data-component="goal-running-command-strip"
-                          class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg border p-1.5"
+                          class="mt-1.5 grid grid-cols-4 gap-1 rounded-md border p-1"
                           style={{
                             "background-color": "rgba(2, 6, 23, 0.30)",
                             "border-color": "rgba(148, 163, 184, 0.14)",
@@ -2717,7 +2711,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 variant="primary"
                                 busy={busy() === "pause" || busy() === "resume"}
                                 disabled={busy() !== null || goalCommandUnavailable()}
-                                class="h-7 px-3 text-12-medium"
+                                class="h-7 px-2 text-11-medium"
                                 onClick={() => {
                                   const next = action()
                                   setOptimisticStatus(next === "pause" ? "paused" : "active")
@@ -2735,7 +2729,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             variant="secondary"
                             busy={busy() === "restart"}
                             disabled={busy() !== null || goalCommandUnavailable()}
-                            class="h-8 px-3 text-12-medium"
+                            class="h-7 px-2 text-11-medium"
                             onClick={() => void runAction("restart")}
                           />
                           <ActionButton
@@ -2744,14 +2738,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             tone="danger"
                             busy={busy() === "clear" && confirmingClear()}
                             disabled={busy() !== null || goalCommandUnavailable()}
-                            class="h-8 px-3 text-12-medium"
+                            class="h-7 px-2 text-11-medium"
                             onClick={() => setConfirmingClear(true)}
                           />
                           <ActionButton
                             label={language.t("session.goal.action.steer")}
                             variant="secondary"
                             disabled={busy() !== null || goalCommandUnavailable()}
-                            class="h-8 px-3 text-12-medium"
+                            class="h-7 px-2 text-11-medium"
                             title="Inject guidance into this run without clearing or restarting the chain."
                             onClick={() => setSteerOpen((v) => !v)}
                           />
