@@ -705,8 +705,8 @@ export function dispatchGoalCommandStructured(
         const res = createGoalChain(directory, steps, { webhook: "from-state" });
         if (!res.ok) return { kind: "invalid-value", message: res.error };
         return { kind: "success", message: `Chain started with ${steps.length} step${steps.length === 1 ? "" : "s"}. Step 1/${steps.length}: ${res.state.condition.slice(0, 60)}` };
-      } catch (err: any) {
-        return { kind: "invalid-value", message: `Failed to read chain file: ${err?.message ?? err}` };
+      } catch (err: unknown) {
+        return { kind: "invalid-value", message: `Failed to read chain file: ${err instanceof Error ? err.message : String(err)}` };
       }
     }
 

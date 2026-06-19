@@ -17,28 +17,60 @@ import { createSignal } from "solid-js"
 import { buildSidebarView, sanitizeForSidebar, type SidebarView } from "./sidebar-logic.js"
 
 const sidebar: TuiPlugin = async (api) => {
-  const directory = api.state.path.directory
+  // Guard: the host MUST provide a workspace directory. If missing (e.g.,
+  // loaded in Desktop Electron which doesn't support TUI plugins), fail
+  // fast with a visible error rather than a cryptic TypeError chain.
+  const directory = api?.state?.path?.directory
+  if (!directory) {
+    try { console.warn("[autogoal/sidebar] no workspace directory — plugin will not render (loaded outside terminal?)") } catch { /* stderr unavailable */ }
+    return
+  }
+
+  const { statSync } = await import("node:fs")
+  const { join: pathJoin } = await import("node:path")
+  const STATE_PATH = pathJoin(directory, ".opencode", ".goal-state.json")
 
   // Reactive signal — same pattern as useGoalState in tui.tsx.
   // When the goal state file changes, we re-read and update the signal.
   // SolidJS tracks the signal dependency in the slot render functions
-  // and re-renders automatically — no manual cache, no requestRender.
+  // and re-renders automatically.
   const [view, setView] = createSignal<SidebarView>(buildSidebarView(directory))
 
-  // Coalesce file-watcher events (FIX-20 pattern). The auto-loop fires
-  // multiple writes per evaluation cycle; queueMicrotask batches them
-  // into a single re-read + re-render.
+  // Coalesce file-watcher events (FIX-20 pattern).
   let pending = false
   let disposed = false
+  let lastMtime = ""
+  try { lastMtime = String(statSync(STATE_PATH).mtimeMs) } catch { /* missing */ }
+
   const refresh = () => {
     if (pending || disposed) return
     pending = true
     queueMicrotask(() => {
       pending = false
       if (disposed) return
-      setView(buildSidebarView(directory))
+      const fresh = buildSidebarView(directory)
+      setView(fresh)
     })
   }
+
+  // Safety-net poll: mtime-based, only re-reads on actual file change.
+  // Avoids the I/O cost of buildSidebarView every 2s. Unref'd so it
+  // doesn't block process exit. Guarantees updates even without reactive
+  // slot context (belt to the signal's suspenders).
+  const safetyPoll = setInterval(() => {
+    if (disposed || pending) return
+    try {
+      const mtime = String(statSync(STATE_PATH).mtimeMs)
+      if (mtime !== lastMtime) {
+        lastMtime = mtime
+        const fresh = buildSidebarView(directory)
+        if (fresh.content !== view().content) {
+          setView(fresh)
+        }
+      }
+    } catch { /* file missing — keep current view */ }
+  }, 2000)
+  safetyPoll.unref?.()
 
   const { isGoalStatePath } = await import("./tui-logic.js")
   const unsub = api.event.on("file.watcher.updated", (evt) => {
@@ -123,13 +155,14 @@ const sidebar: TuiPlugin = async (api) => {
       dispose() {
         disposed = true
         unsubscribe()
+        clearInterval(safetyPoll)
       },
     })
   } catch (err: unknown) {
     try { console.warn(`[autogoal/sidebar] slot registration failed: ${err instanceof Error ? err.message : String(err)}`) } catch { /* stderr unavailable */ }
-    // Registration failed — clean up the watcher immediately. The signal
-    // still exists but no slots will ever render it.
+    // Registration failed — clean up immediately.
     unsubscribe()
+    clearInterval(safetyPoll)
     disposed = true
   }
 }

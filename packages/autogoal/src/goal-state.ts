@@ -839,8 +839,8 @@ function persistGoal(directory: string, parsed: ParsedGoal, setBy: "user" | "tem
     }
     try {
       writeGoalStateAtomic(directory, state);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
     // v0.5.0 (F-3) — archive the replaced outcome when an active/paused
     // goal was overwritten by a new `set`. The `existing` raw-reader
@@ -983,8 +983,8 @@ export function transitionGoal(directory: string, action: TransitionAction, now:
 
     try {
       writeGoalStateAtomic(directory, state);
-    } catch (err: any) {
-      return { ok: false, error: `Failed to write state: ${err?.message ?? err}`, reason: "write-failed" };
+    } catch (err: unknown) {
+      return { ok: false, error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}`, reason: "write-failed" };
     }
 
     // v0.5.0 (F-3) — archive the cleared/replaced outcome only when
@@ -1044,8 +1044,8 @@ export function atomicToggle(directory: string, now: number = Date.now()): { ok:
 
     try {
       writeGoalStateAtomic(directory, updated);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
 
     return {
@@ -1134,8 +1134,8 @@ export function editMaxTurns(directory: string, newMax: number, now: number = Da
     state.constraints.maxTurns = newMax;
     try {
       writeGoalStateAtomic(directory, state);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
     return {
       ok: true,
@@ -1159,8 +1159,8 @@ export function editMaxTime(directory: string, newMax: number, now: number = Dat
     state.constraints.maxTimeMinutes = newMax;
     try {
       writeGoalStateAtomic(directory, state);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
     return {
       ok: true,
@@ -1184,8 +1184,8 @@ export function editMaxTokens(directory: string, newMax: number, now: number = D
     state.constraints.maxTokens = newMax;
     try {
       writeGoalStateAtomic(directory, state);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
     return {
       ok: true,
@@ -1253,8 +1253,8 @@ export function editCondition(directory: string, newCondition: string, now: numb
     state.metadata.conditionEditedAt = now;
     try {
       writeGoalStateAtomic(directory, state);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
     return {
       ok: true,
@@ -1407,8 +1407,8 @@ export function restartGoal(directory: string, now: number = Date.now()): { ok: 
 
     try {
       writeGoalStateAtomic(directory, newState);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
 
     return {
@@ -1459,8 +1459,8 @@ export function appendSteering(directory: string, note: string, now: number = Da
     state.metadata.steering = next;
     try {
       writeGoalStateAtomic(directory, state);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
     return {
       ok: true,
@@ -1482,8 +1482,8 @@ export function clearSteering(directory: string, now: number = Date.now()): { ok
       delete state.metadata.steering;
       try {
         writeGoalStateAtomic(directory, state);
-      } catch (err: any) {
-        return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+      } catch (err: unknown) {
+        return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
       }
     }
     return { ok: true, cleared, message: cleared === 0 ? "No steering notes to clear." : `Cleared ${cleared} steering note${cleared === 1 ? "" : "s"}.` };
@@ -1554,8 +1554,8 @@ export function createHandoff(directory: string, note?: string, now: number = Da
 
     try {
       writeHandoffAtomic(path, payload);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write handoff: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write handoff: ${err instanceof Error ? err.message : String(err)}` };
     }
 
     return { ok: true, path, message: `Handoff written. A future session can claim it with \`/goal claim\`.` };
@@ -1706,8 +1706,8 @@ export function claimHandoff(directory: string, now: number = Date.now()): { ok:
 
     try {
       writeGoalStateAtomic(directory, resumed);
-    } catch (err: any) {
-      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err?.message ?? err}` };
+    } catch (err: unknown) {
+      return { ok: false, reason: "write-failed", error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
     }
 
     // Delete the handoff file. If this fails, log it but don't roll back —

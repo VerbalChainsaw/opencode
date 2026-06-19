@@ -325,12 +325,13 @@ function main(): number {
   let parsed: ParsedArgs | null;
   try {
     parsed = parseArgs(process.argv.slice(2));
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     if (jsonHint) {
-      emitJson({ ok: false, kind: "usage", exitCode: 1, message: String(err.message) });
+      emitJson({ ok: false, kind: "usage", exitCode: 1, message: msg });
       return 1;
     }
-    process.stderr.write(`opencode-autogoal: ${err.message}\n\n`);
+    process.stderr.write(`opencode-autogoal: ${msg}\n\n`);
     process.stderr.write(HELP);
     return 1;
   }
@@ -398,12 +399,13 @@ function main(): number {
   let dispatcherArg: string;
   try {
     dispatcherArg = buildDispatcherArg(dispatcherAction, parsed.payloadParts);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     if (parsed.json) {
-      emitJson({ ok: false, kind: "usage", exitCode: 1, message: String(err.message) });
+      emitJson({ ok: false, kind: "usage", exitCode: 1, message: msg });
       return 1;
     }
-    process.stderr.write(`opencode-autogoal: ${err.message}\n\n`);
+    process.stderr.write(`opencode-autogoal: ${msg}\n\n`);
     process.stderr.write(HELP);
     return 1;
   }
@@ -752,8 +754,8 @@ function handleTemplateImport(directory: string, parts: string[]): number {
         process.stderr.write("opencode-autogoal: stdin template must include a top-level string 'name' field.\n");
         return 1;
       }
-    } catch (err: any) {
-      process.stderr.write(`opencode-autogoal: stdin is not valid JSON: ${err?.message ?? err}\n`);
+    } catch (err: unknown) {
+      process.stderr.write(`opencode-autogoal: stdin is not valid JSON: ${err instanceof Error ? err.message : String(err)}\n`);
       return 1;
     }
   } else {

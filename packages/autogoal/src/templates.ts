@@ -358,8 +358,8 @@ export function importTemplate(
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
-  } catch (err: any) {
-    return { ok: false, error: `Invalid JSON: ${err?.message ?? err}` };
+  } catch (err: unknown) {
+    return { ok: false, error: `Invalid JSON: ${err instanceof Error ? err.message : String(err)}` };
   }
   if (!validateTemplate(parsed)) {
     return { ok: false, error: "Template must have at least a 'condition' string field, and every declared variable must be referenced in condition or command." };
@@ -373,9 +373,9 @@ export function importTemplate(
   try {
     writeFileSync(tmp, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
     renameSync(tmp, targetPath);
-  } catch (err: any) {
+  } catch (err: unknown) {
     try { unlinkSync(tmp); } catch { }
-    return { ok: false, error: `Failed to write template: ${err?.message ?? err}` };
+    return { ok: false, error: `Failed to write template: ${err instanceof Error ? err.message : String(err)}` };
   }
 
   return { ok: true, path: targetPath };
@@ -401,7 +401,7 @@ export function deleteTemplate(
   try {
     unlinkSync(targetPath);
     return { ok: true, path: targetPath };
-  } catch (err: any) {
-    return { ok: false, error: `Failed to delete template: ${err?.message ?? err}` };
+  } catch (err: unknown) {
+    return { ok: false, error: `Failed to delete template: ${err instanceof Error ? err.message : String(err)}` };
   }
 }

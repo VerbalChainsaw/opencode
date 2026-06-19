@@ -489,8 +489,8 @@ export const server: Plugin = async ({ client, directory }) => {
         }
       }
       return { met: true, reason: `HTTP ${res.status} OK`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
-    } catch (err: any) {
-      return { met: false, reason: `HTTP check failed: ${err?.message ?? err}`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
+    } catch (err: unknown) {
+      return { met: false, reason: `HTTP check failed: ${err instanceof Error ? err.message : String(err)}`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
     }
   }
 
