@@ -3211,17 +3211,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         >
                           <div
                             data-component="goal-action-editor-active-state"
-                            class="mb-2 flex min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 text-amber-100"
-                            style={{
-                              "background-color": "rgba(245, 158, 11, 0.12)",
-                              "border-color": "rgba(252, 211, 77, 0.34)",
-                            }}
+                            class="mb-2 flex min-w-0 items-center gap-2 rounded px-2 py-1 text-amber-200/70 text-[10px]"
                           >
-                            <span class="h-2 w-2 shrink-0 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.55)]" aria-hidden />
-                            <span class="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                            <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-300" aria-hidden />
+                            <span class="shrink-0 font-semibold uppercase tracking-[0.12em]">
                               {editorActiveLabel()}
                             </span>
-                            <span class="min-w-0 truncate text-[11px] text-amber-100/68">
+                            <span class="min-w-0 truncate text-amber-100/50">
                               {editorActiveHint()}
                             </span>
                           </div>
@@ -3235,7 +3231,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               </div>
                             </div>
                             <span
-                              class="ml-auto shrink-0 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                              class="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
                               style={actionCategoryPillStyle(actionDraft.category, true)}
                             >
                               {actionCategoryShortLabel(actionDraft.category)}
