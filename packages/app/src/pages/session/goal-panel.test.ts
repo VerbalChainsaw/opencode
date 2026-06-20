@@ -21,6 +21,7 @@ import {
   executeGoalCommand,
   goalSteerPrompt,
   pauseGoalRun,
+  resetGoalWorkspaceState,
   startGoalRun,
   steerGoalRun,
   stopGoalRun,
@@ -128,6 +129,17 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-terminal-summary"')
     expect(src).toContain("session.goal.lastResult")
     expect(src).toContain("archive().some((run) => run.summary.goalID === goal.id)")
+  })
+
+  test("terminal goals expose an explicit fresh-state reset instead of making last result look editable", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const resetGoalState = async")
+    expect(src).toContain("resetGoalWorkspaceState")
+    expect(src).toContain('data-component="goal-terminal-reset-state"')
+    expect(src).toContain("session.goal.action.resetState")
+    expect(src).toContain("setShowCreate(true)")
+    expect(src).toContain("setActivity([])")
+    expect(src).toContain("setOptimisticStatus(null)")
   })
 
   test("runtime detail actions share one stable tray slot instead of mounting page sections", async () => {
@@ -393,7 +405,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-method-row"')
     expect(src).not.toContain('data-component="goal-drop-zone"')
     expect(src).toContain('data-component="goal-global-budget"')
-    expect(src).toContain('data-component="goal-terminal-stat-line"')
+    expect(src).toContain('data-component="goal-terminal-banner-metrics"')
     expect(src).toContain('data-component="goal-history-panel"')
     expect(src).not.toContain("lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.72fr)_112px]")
   })
@@ -518,7 +530,6 @@ describe("goal panel mission-control contracts", () => {
     const src = await goalPanelSource()
     expect(src).toContain('data-component="goal-console-section"')
     expect(src).toContain("data-zone={props.zone}")
-    expect(src).toContain('zone="last-result"')
     expect(src).toContain('zone="set-goal"')
     expect(src).toContain('zone="chain-builder"')
     expect(src).toContain('zone="action-library"')
@@ -528,7 +539,8 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-console-section-subtitle"')
     expect(src).toContain('data-component="goal-action-editor-footer"')
     expect(src).toContain('data-component="goal-action-editor-active-state"')
-    expect(src).toContain("border-rose-400/70")
+    expect(src).not.toContain('zone="last-result"')
+    expect(src).not.toContain("border-rose-400/70")
     expect(src).toContain("border-blue-400/70")
     expect(src).toContain("border-violet-500/22")
     expect(src).toContain("border-emerald-400/70")
@@ -556,17 +568,19 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("mt-1.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto")
   })
 
-  test("last result renders as a prominent labeled output card with filled terminal states", async () => {
+  test("last result renders as a passive banner instead of an editable-looking panel", async () => {
     const src = await goalPanelSource()
     expect(src).toContain("terminalOutcomeTone")
-    expect(src).toContain('data-component="goal-terminal-output-card"')
+    expect(src).toContain('data-component="goal-terminal-result-banner"')
     expect(src).toContain('data-component="goal-terminal-outcome-badge"')
-    expect(src).toContain("Last run outcome")
-    expect(src).toContain("bg-orange-500/25")
-    expect(src).toContain("text-orange-100")
-    expect(src).toContain('"background-color": "rgba(249, 115, 22, 0.34)"')
-    expect(src).toContain("text-14-medium leading-5 text-text-base")
-    expect(src).toContain("grid grid-cols-2 gap-1.5")
+    expect(src).toContain('role="status"')
+    expect(src).toContain("Most recent completed run")
+    expect(src).toContain("border-amber-400/35")
+    expect(src).toContain("bg-amber-400/8")
+    expect(src).toContain("grid-cols-[auto_minmax(0,1fr)_auto]")
+    expect(src).toContain('data-component="goal-terminal-banner-metrics"')
+    expect(src).not.toContain('data-component="goal-terminal-output-card"')
+    expect(src).not.toContain("Last run outcome")
   })
 
   test("action library rows are compact command rows instead of tall category cards", async () => {
@@ -638,7 +652,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("items-baseline gap-2")
     expect(src).toContain("border-l border-white/16 pl-2")
     expect(src).toContain("linear-gradient(90deg")
-    expect(src).toContain("Most recent run outcome and evidence.")
+    expect(src).toContain("Most recent completed run")
     expect(src).toContain("Create one standalone goal outside the chain.")
     expect(src).toContain("session.goal.chainBuilder.planChainHint")
     expect(src).toContain("Progress, controls, and step status stay in this workspace.")
@@ -819,12 +833,24 @@ describe("goal panel mission-control contracts", () => {
     const startChain = src.slice(startChainStart, startChainEnd)
     expect(startChain).toContain("const startPayload = chainStartPayload(steps, chainDraft.master)")
     expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)')
+    expect(startChain).toContain("...(startPayload.firstStepAgent ? { agent: startPayload.firstStepAgent } : {})")
     expect(startChain).not.toContain("steps: steps.map((step) => {")
     expect(startChain).not.toContain('verification: { type: "shell"')
-    expect(startChain).not.toContain("agent:")
     expect(startChain).not.toContain("gate: step.gate")
     expect(startChain).not.toContain("sort(")
     expect(startChain).not.toContain("reverse(")
+  })
+
+  test("action editor exposes agent and subagent routing pins", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("agentRoutingOptions")
+    expect(src).toContain("const agentOptions = createMemo(() => agentRoutingOptions(sync.data.agent))")
+    expect(src).toContain('data-component="goal-action-editor-agent"')
+    expect(src).toContain('value={actionDraft.agent}')
+    expect(src).toContain('onChange={(event) => setActionDraft("agent", event.currentTarget.value)}')
+    expect(src).toContain("agentOptionsForDraft()")
+    expect(src).toContain("stepRuntimeAgentLabel(step)")
+    expect(src).toContain("session.goal.template.sessionDefaultAgent")
   })
 
   test("recovered visible chain steps stay runnable when the local draft is empty", async () => {
@@ -1706,6 +1732,40 @@ describe("executeGoalCommand", () => {
   })
 })
 
+describe("resetGoalWorkspaceState", () => {
+  test("uses the deterministic fresh-state command without aborting or creating a chat turn", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const prompt = mock(async () => {
+      throw new Error("session.prompt must not be used for fresh-state reset")
+    })
+    const abort = mock(async () => {
+      throw new Error("session.abort must not be used for fresh-state reset")
+    })
+
+    const result = await resetGoalWorkspaceState(
+      {
+        client: { post },
+        session: { prompt, abort },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project" },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(post).toHaveBeenCalledWith({
+      url: "/experimental/goal/control/{toolID}",
+      path: { toolID: "goal_control" },
+      query: { directory: "C:\\repo\\project" },
+      body: {
+        directory: "C:\\repo\\project",
+        sessionID: "session-1",
+        arguments: { command: "fresh" },
+      },
+    })
+    expect(prompt).not.toHaveBeenCalled()
+    expect(abort).not.toHaveBeenCalled()
+  })
+})
+
 describe("startGoalRun", () => {
   test("uses the host prompt path without suppressing the assistant reply", async () => {
     const prompt = mock(async () => undefined)
@@ -2186,7 +2246,7 @@ describe("useGoal hook", () => {
       Fragment: (props: { children?: unknown }) => props.children ?? null,
       createElement: (type: unknown, props: Record<string, unknown> | null | undefined, ...children: unknown[]) => {
         const normalizedChildren = children.length <= 1 ? children[0] : children
-        if (typeof type === "function") return (type as TestJsxComponent)({ ...(props ?? {}), children: normalizedChildren })
+        if (typeof type === "function") return (type as TestJsxComponent)({ ...props, children: normalizedChildren })
         return { type, props, children: normalizedChildren }
       },
     }

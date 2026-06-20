@@ -21,7 +21,6 @@ import {
   readGoalState,
   writeGoalStateAtomic,
   createGoalState,
-  parseGoalInput,
   type GoalState,
   type GoalConstraints,
   type Verification,
@@ -30,6 +29,7 @@ import {
   type CorruptReason,
   DEFAULT_CONSTRAINTS,
   MAX_CONDITION_LEN,
+  sanitizeForPrompt,
 } from "./goal-state.js";
 
 export const CHAIN_FILE = ".opencode/.goal-chain.json";
@@ -48,6 +48,7 @@ export interface GoalChainStep {
   maxMinutes?: number;
   /** v0.7.x — optional Desktop action metadata. */
   skills?: string[];
+  agent?: string;
   model?: GoalPinnedModel | string;
   category?: string;
   tone?: string;
@@ -105,7 +106,7 @@ export interface GoalChain {
     createdAt: number;
     setBy: "user" | "template" | "chain";
     sessionId?: string;
-    /** Agent name to use as fallback when a chain step has no model. */
+    /** Agent name to use as fallback when a chain step has no agent pin. */
     agentName?: string;
   };
   /**
@@ -242,6 +243,7 @@ const VALID_CHAIN_STATUSES = new Set<GoalStatus>(["active", "paused", "achieved"
 const VALID_VERIFICATION_TYPES = new Set(["shell", "http", "file", "marker"]);
 const MAX_STEP_SKILLS = 8;
 const MAX_STEP_SKILL_LEN = 80;
+const MAX_STEP_AGENT_LEN = 80;
 const MAX_STEP_MODEL_FIELD_LEN = 160;
 
 /**
@@ -313,6 +315,14 @@ function pinnedModelError(v: unknown): string | null {
   return null;
 }
 
+function stepAgentError(v: unknown): string | null {
+  if (typeof v !== "string") return "agent must be a string";
+  const agent = sanitizeForPrompt(v).trim();
+  if (!agent) return "agent cannot be empty";
+  if (agent.length > MAX_STEP_AGENT_LEN) return `agent must be ${MAX_STEP_AGENT_LEN} chars or fewer`;
+  return null;
+}
+
 function stepStringMetadataError(step: Record<string, unknown>, field: "category" | "tone" | "elevation"): string | null {
   const value = step[field];
   if (value === undefined) return null;
@@ -328,6 +338,10 @@ function stepMetadataError(step: Record<string, unknown>): string | null {
   }
   if (step.model !== undefined) {
     const reason = pinnedModelError(step.model);
+    if (reason !== null) return reason;
+  }
+  if (step.agent !== undefined) {
+    const reason = stepAgentError(step.agent);
     if (reason !== null) return reason;
   }
   return (
@@ -436,6 +450,16 @@ export interface CreateChainOpts {
   master?: { maxTurns?: number; maxMinutes?: number };
   /** Agent name to use as fallback when a chain step has no model. */
   agentName?: string;
+}
+
+function sanitizeAgentName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const agent = sanitizeForPrompt(value).trim().slice(0, MAX_STEP_AGENT_LEN);
+  return agent || undefined;
+}
+
+function agentNameForStep(step: GoalChainStep, chain: Pick<GoalChain, "metadata">): string | undefined {
+  return sanitizeAgentName(step.agent) ?? sanitizeAgentName(chain.metadata.agentName);
 }
 
 function normalizeMasterBudget(raw: CreateChainOpts["master"]): ChainMasterBudget | null {
@@ -563,19 +587,21 @@ export function createGoalChain(
   // when a chain is started from a CLI command (no `ctx.agent` available),
   // the chain picks up the agent from whatever goal was already active
   // (set via set_goal tool which captures ctx.agent).
-  let resolvedAgentName = opts.agentName ?? undefined;
+  let resolvedAgentName = sanitizeAgentName(opts.agentName);
   if (!resolvedAgentName) {
     const existingGoal = readGoalState(directory);
     const existingAgent = existingGoal?.metadata?.agentName;
-    if (typeof existingAgent === "string" && existingAgent.trim()) {
-      resolvedAgentName = existingAgent.trim();
-    }
+    resolvedAgentName = sanitizeAgentName(existingAgent);
   }
 
   const chain: GoalChain = {
     version: 1,
     id: randomUUID(),
-    steps: steps.map((s) => ({ ...s, condition: s.condition.trim() })),
+    steps: steps.map((s) => ({
+      ...s,
+      condition: s.condition.trim(),
+      ...(sanitizeAgentName(s.agent) ? { agent: sanitizeAgentName(s.agent) } : {}),
+    })),
     current: 0,
     cycles: 0,
     maxCycles: opts.maxCycles ?? 10,
@@ -595,7 +621,7 @@ export function createGoalChain(
   const constraints = constraintsForStep(step0, chain);
 
   const state = createGoalState(
-    { condition: step0.condition, command: step0.command ?? null, verification: step0.verification ?? null, constraints, custom: false, agentName: chain.metadata.agentName },
+    { condition: step0.condition, command: step0.command ?? null, verification: step0.verification ?? null, constraints, custom: false, agentName: agentNameForStep(step0, chain) },
     "chain",
     now,
   );
@@ -678,7 +704,7 @@ export function advanceGoalChain(directory: string, now: number = Date.now()): A
   const constraints = constraintsForStep(step, chain);
 
   const newState = createGoalState(
-    { condition: step.condition, command: step.command ?? null, verification: step.verification ?? null, constraints, custom: false, agentName: chain.metadata.agentName },
+    { condition: step.condition, command: step.command ?? null, verification: step.verification ?? null, constraints, custom: false, agentName: agentNameForStep(step, chain) },
     "chain",
     now,
   );
@@ -735,7 +761,7 @@ export function resetGoalChain(directory: string, now: number = Date.now()): Adv
   const constraints = constraintsForStep(step, chain);
 
   const newState = createGoalState(
-    { condition: step.condition, command: step.command ?? null, verification: step.verification ?? null, constraints, custom: false, agentName: chain.metadata.agentName },
+    { condition: step.condition, command: step.command ?? null, verification: step.verification ?? null, constraints, custom: false, agentName: agentNameForStep(step, chain) },
     "chain",
     now,
   );
@@ -792,7 +818,7 @@ export interface SetChainWebhookResult {
 export function setChainWebhook(
   directory: string,
   webhook: ChainWebhook | null,
-  now: number = Date.now(),
+  _now: number = Date.now(),
 ): SetChainWebhookResult {
   const chain = readGoalChain(directory);
   if (!chain) return { ok: false, error: "No active chain." };

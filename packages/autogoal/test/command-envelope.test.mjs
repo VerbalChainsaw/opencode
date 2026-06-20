@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -146,6 +146,45 @@ test("envelope: editMax* on terminal goal → kind='terminal-state'", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("envelope: fresh removes live goal state while preserving history and templates", () => {
+  const dir = freshDir();
+  try {
+    const opencodeDir = join(dir, ".opencode");
+    const goalsDir = join(opencodeDir, "goals");
+    mkdirSync(goalsDir, { recursive: true });
+
+    for (const file of [
+      ".goal-state.json",
+      ".goal-chain.json",
+      ".goal-handoff.json",
+      ".step-timeline.jsonl",
+      ".session-events.jsonl",
+    ]) {
+      writeFileSync(join(opencodeDir, file), "{}\n", "utf-8");
+    }
+    writeFileSync(join(opencodeDir, "goal-history.json"), '{"runs":[]}\n', "utf-8");
+    writeFileSync(join(opencodeDir, "goal-templates.json"), '{"buttons":[]}\n', "utf-8");
+    writeFileSync(join(goalsDir, "debug.json"), '{"condition":"debug"}\n', "utf-8");
+
+    const res = dispatchGoalCommandStructured(dir, "fresh");
+    assert.equal(res.kind, "success", res.message);
+    assert.match(res.message, /OpenGoal state reset/);
+
+    for (const file of [
+      ".goal-state.json",
+      ".goal-chain.json",
+      ".goal-handoff.json",
+      ".step-timeline.jsonl",
+      ".session-events.jsonl",
+    ]) {
+      assert.equal(existsSync(join(opencodeDir, file)), false, `${file} should be removed`);
+    }
+    assert.equal(existsSync(join(opencodeDir, "goal-history.json")), true, "history should be preserved");
+    assert.equal(existsSync(join(opencodeDir, "goal-templates.json")), true, "template snapshot should be preserved");
+    assert.equal(existsSync(join(goalsDir, "debug.json")), true, "user template should be preserved");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("envelope: chain start-json accepts rich steps and master budgets", () => {
   const dir = freshDir();
   try {
@@ -156,6 +195,7 @@ test("envelope: chain start-json accepts rich steps and master budgets", () => {
           condition: "Plan the change",
           maxTurns: 3,
           maxMinutes: 10,
+          agent: "explore",
           model: { providerID: "openai", modelID: "gpt-5" },
           skills: ["frontend-design", "playwright"],
         },
@@ -168,6 +208,7 @@ test("envelope: chain start-json accepts rich steps and master budgets", () => {
 
     const chain = JSON.parse(readFileSync(join(dir, ".opencode", ".goal-chain.json"), "utf-8"));
     assert.deepEqual(chain.master, { maxTurns: 9, maxMinutes: 40, turnsUsed: 0, minutesUsed: 0 });
+    assert.equal(chain.steps[0].agent, "explore");
     assert.deepEqual(chain.steps[0].model, { providerID: "openai", modelID: "gpt-5" });
     assert.deepEqual(chain.steps[0].skills, ["frontend-design", "playwright"]);
     assert.equal(chain.steps[1].command, "npm test");
@@ -178,6 +219,7 @@ test("envelope: chain start-json accepts rich steps and master budgets", () => {
     assert.equal(state.condition, "Plan the change");
     assert.equal(state.constraints.maxTurns, 3);
     assert.equal(state.constraints.maxTimeMinutes, 10);
+    assert.equal(state.metadata.agentName, "explore");
     assert.equal(state.metadata.chainTotal, 2);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

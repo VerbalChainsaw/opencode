@@ -20,7 +20,7 @@ import { tool } from "./plugin-api.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve, relative, isAbsolute } from "node:path";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import {
   readGoalState,
   readGoalStateResult,
@@ -40,7 +40,6 @@ import {
   restartGoal,
   createHandoff,
   claimHandoff,
-  parsePositiveInt,
   withStateLock,
   COMPLETE_RE,
   BLOCKED_RE,
@@ -363,6 +362,13 @@ function currentChainStepPinnedSkills(directory: string): string[] {
     if (out.length >= 8) break;
   }
   return out;
+}
+
+function currentChainStepPinnedAgent(directory: string): string | null {
+  const chain = readGoalChain(directory);
+  if (!chain || chain.current < 0 || chain.current >= chain.steps.length) return null;
+  const agent = sanitizeForPrompt(chain.steps[chain.current]?.agent ?? "").trim().slice(0, 80);
+  return agent || null;
 }
 
 function pinnedSkillPromptSuffix(skills: string[]): string {
@@ -838,6 +844,7 @@ export const server: Plugin = async ({ client, directory }) => {
       }
       const pinnedModel = currentChainStepPinnedModel(directory);
       const pinnedSkills = currentChainStepPinnedSkills(directory);
+      const pinnedAgent = currentChainStepPinnedAgent(directory) ?? snapshot.agentName;
       // Include chain position so the agent knows which step it's on.
       const chain = readGoalChain(directory);
       const chainContext =
@@ -851,7 +858,7 @@ export const server: Plugin = async ({ client, directory }) => {
           path: { id: sessionId },
           body: {
             ...(pinnedModel ? { model: pinnedModel } : {}),
-            ...(snapshot.agentName ? { agent: snapshot.agentName } : {}),
+            ...(pinnedAgent ? { agent: pinnedAgent } : {}),
             parts: [
               {
                 type: "text",

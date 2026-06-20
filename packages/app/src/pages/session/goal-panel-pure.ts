@@ -179,6 +179,7 @@ export interface GoalTemplateButton {
   command?: string
   constraints?: Partial<GoalState["constraints"]>
   variables?: Record<string, GoalTemplateVariable>
+  agent?: string
   skills?: string[]
   model?: GoalTemplateModel
   category?: GoalTemplateCategory
@@ -199,6 +200,7 @@ export interface GoalActionDraftState {
   category: GoalTemplateCategory
   tone: GoalTemplateTone
   elevation: GoalTemplateElevation
+  agent: string
   skills: string[]
   model: string
 }
@@ -208,6 +210,13 @@ export type GoalActionDraftTemplate = GoalTemplateButton & { condition: string; 
 export interface GoalTemplateVariable {
   description?: string
   default?: string
+}
+
+export interface GoalAgentRoutingOption {
+  name: string
+  mode: "primary" | "subagent"
+  label: string
+  description?: string
 }
 
 export type ActionEditorControl = "save" | "duplicate" | "delete"
@@ -412,6 +421,40 @@ export function actionIDFromLabel(label: string, fallback = "custom-action") {
 const TEMPLATE_VAR_RE = /^\w+$/
 const MAX_TEMPLATE_BUTTONS = 24
 const MAX_TEMPLATE_SKILLS = 8
+const MAX_AGENT_NAME_LEN = 80
+
+export function agentNameForRuntime(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const agent = cleanText(value).trim().slice(0, MAX_AGENT_NAME_LEN)
+  return agent ? agent : undefined
+}
+
+export function agentRoutingOptions(value: unknown): GoalAgentRoutingOption[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const primary: GoalAgentRoutingOption[] = []
+  const subagent: GoalAgentRoutingOption[] = []
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    if (record.hidden === true) continue
+    const name = agentNameForRuntime(record.name)
+    if (!name || seen.has(name)) continue
+    const rawMode = record.mode
+    if (rawMode !== "primary" && rawMode !== "subagent" && rawMode !== "all") continue
+    seen.add(name)
+    const description = cleanText(record.description).trim().slice(0, 140)
+    const option: GoalAgentRoutingOption = {
+      name,
+      mode: rawMode === "subagent" ? "subagent" : "primary",
+      label: name,
+      ...(description ? { description } : {}),
+    }
+    if (option.mode === "subagent") subagent.push(option)
+    else primary.push(option)
+  }
+  return [...primary, ...subagent]
+}
 
 function templateConstraintsFromSnapshot(value: unknown): Partial<GoalState["constraints"]> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
@@ -450,6 +493,10 @@ function templateSkillsFromSnapshot(value: unknown): string[] | undefined {
     if (out.length >= MAX_TEMPLATE_SKILLS) break
   }
   return out.length > 0 ? out : undefined
+}
+
+function templateAgentFromSnapshot(value: unknown): string | undefined {
+  return agentNameForRuntime(value)
 }
 
 export function isGoalPinnedModel(value: unknown): value is GoalPinnedModel {
@@ -522,6 +569,7 @@ export function templateButtonsFromSnapshot(parsed: unknown): GoalTemplateButton
     const command = typeof r.command === "string" ? cleanText(r.command) : fallback?.command
     const constraints = templateConstraintsFromSnapshot(r.constraints) ?? fallback?.constraints
     const variables = templateVariablesFromSnapshot(r.variables) ?? fallback?.variables
+    const agent = templateAgentFromSnapshot(r.agent) ?? fallback?.agent
     const skills = templateSkillsFromSnapshot(r.skills) ?? fallback?.skills
     const model = templateModelFromSnapshot(r.model) ?? fallback?.model
     const category = templateCategoryFromSnapshot(r.category) ?? fallback?.category
@@ -536,6 +584,7 @@ export function templateButtonsFromSnapshot(parsed: unknown): GoalTemplateButton
       command,
       constraints,
       variables,
+      ...(agent ? { agent } : {}),
       ...(skills ? { skills } : {}),
       ...(model ? { model } : {}),
       ...(category ? { category } : {}),
@@ -600,6 +649,7 @@ export function actionDraftTemplateFromState(
         ) as Record<string, GoalTemplateVariable>)
       : undefined
   const model = pinnedModelForRuntime(actionDraft.model)
+  const agent = agentNameForRuntime(actionDraft.agent)
   return {
     id,
     label,
@@ -614,6 +664,7 @@ export function actionDraftTemplateFromState(
     category: actionDraft.category,
     tone: actionDraft.tone,
     elevation: actionDraft.elevation,
+    ...(agent ? { agent } : {}),
     ...(actionDraft.skills.length > 0 ? { skills: [...actionDraft.skills] } : {}),
     ...(model ? { model } : {}),
     builtin: false,
@@ -632,6 +683,7 @@ export interface GoalChainDraftStep {
   gate?: GoalTemplateGate
   tone?: GoalTemplateTone
   elevation?: GoalTemplateElevation
+  agent?: string
   skills?: string[]
   model?: GoalTemplateModel
   builtin: boolean
@@ -664,6 +716,7 @@ export function chainStepFromTemplate(
     ...(template.gate ? { gate: template.gate } : {}),
     ...(template.tone ? { tone: template.tone } : {}),
     ...(template.elevation ? { elevation: template.elevation } : {}),
+    ...(template.agent ? { agent: template.agent } : {}),
     ...(template.skills && template.skills.length > 0 ? { skills: [...template.skills] } : {}),
     ...(template.model ? { model: template.model } : {}),
     builtin: template.builtin,
@@ -690,6 +743,7 @@ export function chainBudgetSummary(steps: GoalChainDraftStep[], master: GoalChai
 
 export interface GoalChainStartPayload {
   payload: string
+  firstStepAgent?: string
   firstStepModel?: GoalPinnedModel
   firstStepSkills?: string[]
 }
@@ -738,12 +792,14 @@ export function chainStartPayload(
   steps: GoalChainDraftStep[],
   master: GoalChainMasterBudget,
 ): GoalChainStartPayload {
+  const firstStepAgent = agentNameForRuntime(steps[0]?.agent)
   const firstStepModel = pinnedModelForRuntime(steps[0]?.model)
   const firstStepSkills = steps[0]?.skills && steps[0].skills.length > 0 ? [...steps[0].skills] : undefined
   const payload = JSON.stringify({
     master: { maxTurns: master.maxTurns, maxMinutes: master.maxTimeMinutes },
     steps: steps.map((step) => {
       const verification = chainStepVerificationContract(step.command)
+      const agent = agentNameForRuntime(step.agent)
       const model = pinnedModelForRuntime(step.model)
       return {
         condition: step.condition,
@@ -754,6 +810,7 @@ export function chainStartPayload(
         ...(step.category ? { category: step.category } : {}),
         ...(step.tone ? { tone: step.tone } : {}),
         ...(step.elevation ? { elevation: step.elevation } : {}),
+        ...(agent ? { agent } : {}),
         ...(step.skills && step.skills.length > 0 ? { skills: [...step.skills] } : {}),
         ...(model ? { model } : {}),
       }
@@ -761,6 +818,7 @@ export function chainStartPayload(
   })
   return {
     payload,
+    ...(firstStepAgent ? { firstStepAgent } : {}),
     ...(firstStepModel ? { firstStepModel } : {}),
     ...(firstStepSkills ? { firstStepSkills } : {}),
   }
@@ -826,6 +884,15 @@ export function validateChainDraft(
     }
     if (step.maxTimeMinutes < 1) {
       errors.push({ stepIndex: i, message: `${label}: time must be at least 1 minute.` })
+    }
+
+    if (step.agent !== undefined) {
+      const agent = cleanText(step.agent).trim()
+      if (!agent) {
+        errors.push({ stepIndex: i, message: `${label}: agent cannot be empty.` })
+      } else if (agent.length > MAX_AGENT_NAME_LEN) {
+        errors.push({ stepIndex: i, message: `${label}: agent must be ${MAX_AGENT_NAME_LEN} chars or fewer.` })
+      }
     }
 
     // Model validation

@@ -6,7 +6,7 @@
  * out of `server.ts` precisely so it can be tested without a running OpenCode.
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   setGoal,
@@ -26,18 +26,21 @@ import {
   claimHandoff,
   parsePositiveInt,
   unwrapQuotes,
-  sanitizeForPrompt,
+  STATE_FILE,
+  HANDOFF_FILE,
   type GoalState,
   type GoalSeed,
   type CorruptReason,
 } from "./goal-state.js";
 import { BUILTIN_TEMPLATES, type GoalTemplate, resolveTemplateVars, discoverTemplates, exportTemplate as exportTemplateFn, importTemplate as importTemplateFn, deleteTemplate as deleteTemplateFn } from "./templates.js";
-import { readGoalChain, createGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, MAX_CHAIN_SIZE, type GoalChainStep } from "./goal-chain.js";
-import { readGoalArchive, type ArchiveEntry } from "./goal-archive.js";
+import { readGoalChain, createGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, MAX_CHAIN_SIZE, CHAIN_FILE, type GoalChainStep } from "./goal-chain.js";
+import { readGoalArchive } from "./goal-archive.js";
 import { readGoalHistorySnapshot } from "./goal-history.js";
+import { SESSION_EVENTS_FILE } from "./session-events.js";
+import { STEP_TIMELINE_FILE } from "./step-timeline.js";
 
 const KNOWN_ACTIONS = new Set([
-  "set", "view", "clear", "stop", "off", "reset", "none", "cancel", "pause", "resume", "template", "use", "history",
+  "set", "view", "fresh", "reset-state", "clear", "stop", "off", "reset", "none", "cancel", "pause", "resume", "template", "use", "history",
   // v0.2.0+ dial commands
   "turns", "time", "tokens", "condition", "steer", "unsteer", "restart", "handoff", "claim",
   // v0.4.0+ chain commands
@@ -46,6 +49,13 @@ const KNOWN_ACTIONS = new Set([
   "archive", "stats",
 ]);
 const CLEAR_ALIASES = new Set(["clear", "stop", "off", "reset", "none", "cancel"]);
+const FRESH_STATE_FILES = [
+  STATE_FILE,
+  CHAIN_FILE,
+  HANDOFF_FILE,
+  STEP_TIMELINE_FILE,
+  SESSION_EVENTS_FILE,
+] as const;
 
 function parseInlineChainStartPayload(raw: string):
   | { ok: true; steps: GoalChainStep[]; master?: { maxTurns?: number; maxMinutes?: number } }
@@ -254,6 +264,32 @@ function corruptNotice(directory: string): string | null {
   return `Note: ${arts.length} quarantined corrupt file${arts.length === 1 ? "" : "s"} in .opencode/ (newest: ${arts[0]}). Delete to dismiss this notice.`;
 }
 
+function removeWorkspaceFile(directory: string, relativePath: string): boolean {
+  const target = resolve(directory, relativePath);
+  const rel = relative(directory, target);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`Refusing to reset file outside workspace: ${relativePath}`);
+  }
+  if (!existsSync(target)) return false;
+  unlinkSync(target);
+  return true;
+}
+
+function freshStateEnvelope(directory: string): GoalCommandResult {
+  try {
+    let removed = 0;
+    for (const relativePath of FRESH_STATE_FILES) {
+      if (removeWorkspaceFile(directory, relativePath)) removed++;
+    }
+    return {
+      kind: "success",
+      message: `OpenGoal state reset. Removed ${removed} live state file${removed === 1 ? "" : "s"}. Templates and history were left intact.`,
+    };
+  } catch (err: unknown) {
+    return { kind: "write-failed", message: `Failed to reset OpenGoal state: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 /** Shared by the bare `/goal` and `/goal view` paths. Threads the v0.4.1
  *  tri-state read so a corrupt state file reports as corrupt-state
  *  (CLI exit 4), not as "no active goal". */
@@ -308,6 +344,10 @@ export function dispatchGoalCommandStructured(
 
   if (action === "view") {
     return viewEnvelope(directory);
+  }
+
+  if (action === "fresh" || action === "reset-state") {
+    return freshStateEnvelope(directory);
   }
 
   if (action === "set") {

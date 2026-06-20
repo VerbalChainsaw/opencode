@@ -230,6 +230,22 @@ export async function stopGoalRun(
   }
 }
 
+export async function resetGoalWorkspaceState(
+  client: GoalCommandClient,
+  input: {
+    sessionID: string
+    directory?: string
+    workspace?: string
+  },
+) {
+  return executeGoalCommand(client, {
+    sessionID: input.sessionID,
+    arguments: "fresh",
+    directory: input.directory,
+    workspace: input.workspace,
+  })
+}
+
 /** Hard pause: set the goal to `paused` AND abort the in-flight assistant
  *  turn so the chat stops immediately. Unlike `stopGoalRun` the goal is left
  *  resumable (status `paused`, not `cleared`). Without `abortActiveTurn` it is

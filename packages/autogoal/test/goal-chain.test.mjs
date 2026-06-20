@@ -11,7 +11,7 @@ function freshDir() { return mkdtempSync(join(tmpdir(), "opengoal-chain-")); }
 function cleanDir(d) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 
 const { createGoalChain, readGoalChain, readGoalChainResult, advanceGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, validateGoalChain, CHAIN_FILE, MAX_CHAIN_SIZE } = await import("../dist/goal-chain.js");
-const { readGoalState, writeGoalStateAtomic, createGoalState, DEFAULT_CONSTRAINTS, transitionGoal, setGoal, setGoalFields, createHandoff, claimHandoff, HANDOFF_FILE } = await import("../dist/goal-state.js");
+const { readGoalState, writeGoalStateAtomic, transitionGoal, setGoal, setGoalFields, createHandoff, claimHandoff } = await import("../dist/goal-state.js");
 
 describe("createGoalChain", () => {
   it("writes chain file and sets step 0 as active goal", () => {
@@ -54,6 +54,39 @@ describe("createGoalChain", () => {
     try {
       const res = createGoalChain(dir, [{ condition: "" }]);
       assert.equal(res.ok, false);
+    } finally { cleanDir(dir); }
+  });
+
+  it("preserves per-step agent pins and projects the active step agent to goal state", () => {
+    const dir = freshDir();
+    try {
+      const res = createGoalChain(dir, [
+        { condition: "plan", agent: "explore" },
+        { condition: "build", agent: "build" },
+      ], { agentName: "default" });
+      assert.equal(res.ok, true, res.error);
+
+      const chain = readGoalChain(dir);
+      assert.equal(chain.steps[0].agent, "explore");
+      assert.equal(chain.steps[1].agent, "build");
+      assert.equal(readGoalState(dir).metadata.agentName, "explore");
+
+      const advanced = advanceGoalChain(dir);
+      assert.equal(advanced.ok, true, advanced.error);
+      assert.equal(advanced.state.metadata.agentName, "build");
+
+      const reset = resetGoalChain(dir);
+      assert.equal(reset.ok, true, reset.error);
+      assert.equal(reset.state.metadata.agentName, "explore");
+    } finally { cleanDir(dir); }
+  });
+
+  it("rejects empty per-step agent pins", () => {
+    const dir = freshDir();
+    try {
+      const res = createGoalChain(dir, [{ condition: "plan", agent: "   " }]);
+      assert.equal(res.ok, false);
+      assert.match(res.error, /agent cannot be empty/);
     } finally { cleanDir(dir); }
   });
 });
@@ -736,7 +769,7 @@ describe("Path (f): maxCycles semantics", () => {
 // tests in test/cli-e2e.test.mjs cover the binary path.
 
 describe("Path (g): chain display format", () => {
-  function buildDisplayLines(chain, state) {
+  function buildDisplayLines(chain) {
     // Mirrors src/command.ts:437-447 (chain handler). If that changes, this
     // test will fail and force a deliberate update of both.
     const lines = [

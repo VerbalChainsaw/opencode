@@ -53,6 +53,8 @@ import {
   actionEditorControlState,
   actionDraftTemplateFromState,
   actionIDFromLabel,
+  agentNameForRuntime,
+  agentRoutingOptions,
   applyArchivePoll,
   chainBudgetSummary,
   chainStartControlState,
@@ -92,7 +94,7 @@ import {
   type GoalTemplateTone,
   type SkillPickerDisabledReason,
 } from "./goal-panel-pure"
-import { executeGoalCommand, pauseGoalRun, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
+import { executeGoalCommand, pauseGoalRun, resetGoalWorkspaceState, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
 // them as locals is unnecessary because we only need them as type
 // annotations, which the imported type re-exports satisfy directly.
@@ -334,6 +336,7 @@ export interface ChainStep {
   category?: GoalTemplateCategory
   tone?: GoalTemplateTone
   elevation?: GoalTemplateElevation
+  agent?: string
   skills?: string[]
   model?: GoalTemplateModel
 }
@@ -353,6 +356,7 @@ type ActionDraftState = {
   category: GoalTemplateCategory
   tone: GoalTemplateTone
   elevation: GoalTemplateElevation
+  agent: string
   skills: string[]
   model: string
 }
@@ -388,6 +392,7 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
         ...((GOAL_TEMPLATE_ELEVATIONS as readonly string[]).includes(s.elevation ?? "")
           ? { elevation: s.elevation }
           : {}),
+        ...(agentNameForRuntime(s.agent) ? { agent: agentNameForRuntime(s.agent) } : {}),
         ...(Array.isArray(s.skills)
           ? {
               skills: [
@@ -598,7 +603,6 @@ function RunMetricPill(props: {
 
 function GoalConsoleSection(props: {
   zone:
-    | "last-result"
     | "set-goal"
     | "running-status"
     | "run-controls"
@@ -612,18 +616,6 @@ function GoalConsoleSection(props: {
   children: JSX.Element
 }) {
   const accent = {
-    "last-result": {
-      class: "border-rose-400/70",
-      style: {
-        "border-color": "rgba(251, 113, 133, 0.58)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
-      },
-      headerStyle: {
-        "background": "linear-gradient(90deg, rgba(127, 29, 29, 0.88), rgba(30, 30, 30, 0.92))",
-        "border-color": "rgba(251, 113, 133, 0.72)",
-      },
-      marker: "bg-rose-200",
-    },
     "set-goal": {
       class: "border-blue-400/70",
       style: {
@@ -1283,6 +1275,7 @@ function isStoredChainDraft(value: unknown): value is ChainDraftState {
     const category: unknown = Reflect.get(step, "category")
     const tone: unknown = Reflect.get(step, "tone")
     const elevation: unknown = Reflect.get(step, "elevation")
+    const agent: unknown = Reflect.get(step, "agent")
     const skills: unknown = Reflect.get(step, "skills")
     const model: unknown = Reflect.get(step, "model")
     const builtin: unknown = Reflect.get(step, "builtin")
@@ -1301,6 +1294,7 @@ function isStoredChainDraft(value: unknown): value is ChainDraftState {
       (tone === undefined || (typeof tone === "string" && (GOAL_TEMPLATE_TONES as readonly string[]).includes(tone))) &&
       (elevation === undefined ||
         (typeof elevation === "string" && (GOAL_TEMPLATE_ELEVATIONS as readonly string[]).includes(elevation))) &&
+      (agent === undefined || (typeof agent === "string" && agent.trim().length > 0)) &&
       (skills === undefined ||
         (Array.isArray(skills) && skills.every((skill) => typeof skill === "string" && skill.trim().length > 0))) &&
       (model === undefined || typeof model === "string" || isGoalPinnedModel(model)) &&
@@ -1328,6 +1322,7 @@ function readStoredChainDraft(sessionID?: string): ChainDraftState {
         ...(step.category ? { category: step.category } : {}),
         ...(step.tone ? { tone: step.tone } : {}),
         ...(step.elevation ? { elevation: step.elevation } : {}),
+        ...(agentNameForRuntime(step.agent) ? { agent: agentNameForRuntime(step.agent) } : {}),
         ...(step.skills && step.skills.length > 0
           ? {
               skills: [
@@ -1367,7 +1362,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   let setGoalSection: HTMLDivElement | undefined
   const state = () => props.goal.store.state
 
-  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | "template" | "chain" | null>(null)
+  const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | "template" | "chain" | "fresh" | null>(null)
   // Optimistic pause/resume: the instant the user clicks, we record the status
   // they drove the goal toward so the single toggle flips immediately, instead
   // of lagging the 2s poll (and risking a stale command). Cleared once the
@@ -1408,6 +1403,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     category: "Custom",
     tone: "violet",
     elevation: "flat",
+    agent: "",
     skills: [],
     model: "",
   })
@@ -1617,6 +1613,33 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return result.ok
   }
 
+  const resetGoalState = async () => {
+    const sessionID = props.sessionID
+    if (!sessionID || busy()) return false
+    setBusy("fresh")
+    const result = await resetGoalWorkspaceState(sdk.client, {
+      sessionID,
+      directory: sdk.directory,
+    })
+    if (result.ok) {
+      setControlError(null)
+      setShowCreate(true)
+      setOptimisticStatus(null)
+      setConfirmingClear(false)
+      setChain(null)
+      setActivity([])
+      setHandoff({ handoff: null, corrupt: false, loaded: true })
+    } else {
+      setControlError(result.error)
+    }
+    try {
+      await refreshGoalSurfaces()
+    } finally {
+      setBusy(null)
+    }
+    return result.ok
+  }
+
   /** Create a goal from the panel's form. Quotes are stripped so they can't
    *  break the `/goal set "<condition>"` quoting; the condition is required,
    *  the verify command optional. */
@@ -1762,6 +1785,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       category: template ? inferActionCategory(template) : "Custom",
       tone: template?.tone ?? inferredActionTone(template ?? {}),
       elevation: template?.elevation ?? "flat",
+      agent: template?.agent ?? "",
       skills: template?.skills ? [...template.skills] : [],
       model: modelKey(template?.model),
     })
@@ -1846,11 +1870,31 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       ...modelOptions(),
     ]
   })
+  const agentOptions = createMemo(() => agentRoutingOptions(sync.data.agent))
+  const agentOptionsForDraft = createMemo(() => {
+    const selected = actionDraft.agent.trim()
+    if (!selected || agentOptions().some((option) => option.name === selected)) return agentOptions()
+    return [
+      {
+        name: selected,
+        mode: "primary" as const,
+        label: selected,
+        description: language.t("session.goal.template.savedPin"),
+      },
+      ...agentOptions(),
+    ]
+  })
   const modelLabelByKey = createMemo(() => new Map(modelOptionsForDraft().map((option) => [option.key, option.label])))
+  const agentLabelByName = createMemo(() => new Map(agentOptionsForDraft().map((option) => [option.name, option.label])))
   const modelLabel = (model?: GoalTemplateModel) => {
     const key = modelKey(model)
     if (!key) return ""
     return modelLabelByKey().get(key) ?? (isGoalPinnedModel(model) ? `${model.providerID} / ${model.modelID}` : key)
+  }
+  const agentLabel = (agent?: string) => {
+    const clean = agentNameForRuntime(agent)
+    if (!clean) return ""
+    return agentLabelByName().get(clean) ?? clean
   }
   const sessionModelLabel = () => {
     const configured = cleanText(sync.data.config.model).trim()
@@ -1866,7 +1910,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
     return "Session default model"
   }
+  const sessionAgentLabel = () =>
+    agentOptions().find((option) => option.mode === "primary")?.label ||
+    language.t("session.goal.template.sessionDefaultAgent")
   const stepRuntimeModelLabel = (step: GoalChainDraftStep) => modelLabel(step.model) || sessionModelLabel()
+  const stepRuntimeAgentLabel = (step: GoalChainDraftStep) => agentLabel(step.agent) || sessionAgentLabel()
   const stepRuntimeSkillLabel = (step: GoalChainDraftStep) => {
     const count = step.skills?.length ?? 0
     if (count <= 0) return "No pinned skills"
@@ -1875,7 +1923,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   }
   const stepRuntimeTitle = (step: GoalChainDraftStep) => {
     const skills = step.skills?.length ? step.skills.join(", ") : "no pinned skills"
-    return `${stepRuntimeModelLabel(step)}; ${skills}; ${language.t(completionRuleKey(step))}`
+    return `${stepRuntimeAgentLabel(step)}; ${stepRuntimeModelLabel(step)}; ${skills}; ${language.t(completionRuleKey(step))}`
   }
   const skillOptionsForDraft = createMemo(() => {
     const seen = new Set<string>()
@@ -1926,6 +1974,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     category: step.category ?? inferActionCategory(step),
     tone: step.tone ?? inferredActionTone(step),
     elevation: step.elevation ?? "flat",
+    agent: step.agent ?? "",
     skills: step.skills ? [...step.skills] : [],
     model: modelKey(step.model),
   })
@@ -1990,6 +2039,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       category: template.category,
       ...(template.tone ? { tone: template.tone } : {}),
       ...(template.elevation ? { elevation: template.elevation } : {}),
+      ...(template.agent ? { agent: template.agent } : {}),
       ...(template.skills && template.skills.length > 0 ? { skills: [...template.skills] } : {}),
       ...(template.model ? { model: template.model } : {}),
     }
@@ -2153,6 +2203,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     category: inferActionCategory(template),
     ...(template.tone ? { tone: template.tone } : {}),
     ...(template.elevation ? { elevation: template.elevation } : {}),
+    ...(template.agent ? { agent: template.agent } : {}),
     ...(template.skills && template.skills.length > 0 ? { skills: [...template.skills] } : {}),
     ...(template.model ? { model: template.model } : {}),
   })
@@ -2187,6 +2238,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       tone: step.tone ?? inferredActionTone(step),
       elevation: step.elevation ?? "flat",
       builtin: false,
+      agent: agentNameForRuntime(step.agent) ?? "",
       skills: Array.isArray(step.skills)
         ? [...new Set(step.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean))].slice(0, 8)
         : [],
@@ -2245,6 +2297,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         const prompted = await startGoalRun(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
+          ...(startPayload.firstStepAgent ? { agent: startPayload.firstStepAgent } : {}),
           ...(startPayload.firstStepModel ? { model: startPayload.firstStepModel } : {}),
           ...(startPayload.firstStepSkills && startPayload.firstStepSkills.length > 0
             ? { skills: startPayload.firstStepSkills }
@@ -2456,64 +2509,73 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 data-testid="goal-status-card"
                 data-component="goal-status-card"
                 class={showForm() ? "h-fit xl:col-span-2" : "hidden"}
-              >
+            >
             <Show when={unarchivedTerminalGoal()} keyed>
               {(terminal) => (
-                <GoalConsoleSection
-                  zone="last-result"
-                  title={language.t("session.goal.lastResult")}
-                  subtitle="Most recent run outcome and evidence."
+                <div
+                  data-component="goal-terminal-result-banner"
+                  role="status"
+                  aria-live="polite"
+                  class="mb-3 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-amber-400/35 bg-amber-400/8 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
                 >
-                  <div data-component="goal-terminal-summary" class="min-w-0 p-3">
-                    <div
-                      data-component="goal-terminal-output-card"
-                      class="rounded-lg border border-border-base bg-background-base/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                    >
-                      <div class="flex flex-wrap items-center justify-between gap-2">
-                        <span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-weaker">
-                          Last run outcome
-                        </span>
-                        <span
-                          data-component="goal-terminal-outcome-badge"
-                          class={`inline-flex min-h-7 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${terminalOutcomeTone(terminal.status).class}`}
-                          style={terminalOutcomeTone(terminal.status).style}
-                        >
-                          <span aria-hidden>{statusMeta(terminal.status).glyph}</span>
-                          {statusMeta(terminal.status).label}
-                        </span>
-                      </div>
-                      <div
-                        class="mt-3 break-words text-14-medium leading-5 text-text-base"
-                        title={cleanText(terminal.condition)}
-                      >
-                        {cleanText(terminal.condition)}
-                      </div>
-                      <Show when={terminal.lastEvaluation?.reason}>
-                        <div class="mt-3 rounded-md border border-border-base bg-background-panel/80 px-2.5 py-2 text-11-regular leading-5 text-text-weak">
-                          {cleanText(terminal.lastEvaluation!.reason)}
-                        </div>
-                      </Show>
+                  <span
+                    data-component="goal-terminal-outcome-badge"
+                    class={`inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${terminalOutcomeTone(terminal.status).class}`}
+                    style={terminalOutcomeTone(terminal.status).style}
+                  >
+                    <span aria-hidden>{statusMeta(terminal.status).glyph}</span>
+                    {statusMeta(terminal.status).label}
+                  </span>
+                  <div data-component="goal-terminal-summary" class="min-w-0">
+                    <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span class="shrink-0 text-[10px] font-semibold uppercase leading-4 tracking-[0.12em] text-text-weaker">
+                        {language.t("session.goal.lastResult")}
+                      </span>
+                      <span class="min-w-0 truncate text-[11px] leading-4 text-text-weaker">
+                        Most recent completed run
+                      </span>
                     </div>
+                    <div class="truncate text-13-medium leading-5 text-text-base" title={cleanText(terminal.condition)}>
+                      {cleanText(terminal.condition)}
+                    </div>
+                    <Show when={terminal.lastEvaluation?.reason}>
+                      <div class="truncate text-11-regular leading-4 text-text-weak">
+                        {cleanText(terminal.lastEvaluation!.reason)}
+                      </div>
+                    </Show>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
                     <div
-                      data-component="goal-terminal-stat-line"
-                      class="mt-2 grid grid-cols-2 gap-1.5 rounded-md border border-border-base bg-background-base/70 p-1.5 text-11-regular text-text-weak"
+                      data-component="goal-terminal-banner-metrics"
+                      class="hidden shrink-0 grid-cols-2 gap-1.5 text-11-regular text-text-weak sm:grid"
                     >
-                      <div class="rounded border border-border-base bg-background-panel/70 px-2 py-1.5">
-                        <div class="text-[9px] uppercase tracking-[0.08em] text-text-weaker">Turns</div>
+                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-panel/60 px-2 py-1">
+                        <div class="text-[9px] uppercase leading-3 tracking-[0.08em] text-text-weaker">Turns</div>
                         <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
                           {terminal.turnsEvaluated}/{terminal.constraints.maxTurns}
                         </div>
                       </div>
-                      <div class="rounded border border-border-base bg-background-panel/70 px-2 py-1.5">
-                        <div class="text-[9px] uppercase tracking-[0.08em] text-text-weaker">Time</div>
+                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-panel/60 px-2 py-1">
+                        <div class="text-[9px] uppercase leading-3 tracking-[0.08em] text-text-weaker">Time</div>
                         <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
                           {formatElapsed((terminal.completedAt ?? Date.now()) - terminal.startedAt)}/
                           {terminal.constraints.maxTimeMinutes}m
                         </div>
                       </div>
                     </div>
+                    <div data-component="goal-terminal-reset-state" class="shrink-0">
+                      <ActionButton
+                        label={language.t("session.goal.action.resetState")}
+                        variant="ghost"
+                        busy={busy() === "fresh"}
+                        disabled={busy() !== null || !props.sessionID}
+                        class="h-7 px-2 text-11-medium"
+                        title={language.t("session.goal.action.resetStateHint")}
+                        onClick={() => void resetGoalState()}
+                      />
+                    </div>
                   </div>
-                </GoalConsoleSection>
+                </div>
               )}
             </Show>
             <GoalConsoleSection
@@ -3392,7 +3454,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       {stepRuntimeModelLabel(step)}
                                     </span>
                                     <span class="max-w-full truncate text-[9px] font-semibold uppercase leading-3 text-text-weaker">
-                                      {stepRuntimeSkillLabel(step)}
+                                      {stepRuntimeAgentLabel(step)} · {stepRuntimeSkillLabel(step)}
                                     </span>
                                   </span>
                                   <button
@@ -3786,6 +3848,35 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.018)",
                           }}
                         >
+                          <div
+                            data-component="goal-action-editor-agent"
+                            class="grid h-7 min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-1.5 rounded-md border px-1.5"
+                            style={{
+                              "background-color": "rgba(129, 140, 248, 0.04)",
+                              "border-color": "rgba(165, 180, 252, 0.14)",
+                            }}
+                          >
+                            <span class="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-indigo-100/82">
+                              {language.t("session.goal.template.pinnedAgent")}
+                            </span>
+                            <select
+                              value={actionDraft.agent}
+                              disabled={busy() !== null || !props.sessionID}
+                              aria-label={language.t("session.goal.template.pinnedAgent")}
+                              title={language.t("session.goal.template.pinnedAgent")}
+                              onChange={(event) => setActionDraft("agent", event.currentTarget.value)}
+                              class="h-5 min-w-0 truncate rounded bg-transparent px-1 text-11-medium font-semibold text-indigo-100/90 outline-none transition disabled:opacity-30"
+                            >
+                              <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultAgent")}</option>
+                              <For each={agentOptionsForDraft()}>
+                                {(option) => (
+                                  <option value={option.name} class="bg-background-base text-text-base">
+                                    {option.label}{option.mode === "subagent" ? " / subagent" : ""}
+                                  </option>
+                                )}
+                              </For>
+                            </select>
+                          </div>
                           <div
                             data-component="goal-action-editor-model"
                             class="grid h-7 min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-1.5 rounded-md border px-1.5"

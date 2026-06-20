@@ -63,7 +63,7 @@ const distServerPath = pathToFileURL(join(distDir, "server.js")).href;
 // ── Module imports ─────────────────────────────────────────────────────────
 
 const { server } = await import(distServerPath);
-const { readGoalState, writeGoalStateAtomic } = await import(
+const { readGoalState } = await import(
   "file:///" + join(distDir, "goal-state.js").replace(/\\/g, "/")
 );
 const { createGoalChain } = await import(
@@ -521,6 +521,23 @@ describe("session.error handler (defect B-3b)", () => {
     assert.equal(spies.prompts.length, 1, "expected one continue prompt");
     assert.deepEqual(spies.prompts[0].body.model, { providerID: "openai", modelID: "gpt-5" });
     assert.match(spies.prompts[0].body.parts[0].text, /^\[GOAL\] Not yet met/);
+  });
+
+  it("session.idle forwards the current chain step's agent pin to the nudge", async () => {
+    const create = createGoalChain(dir, [
+      {
+        condition: "do agent-pinned work",
+        agent: "explore",
+      },
+    ], { agentName: "build" });
+    assert.equal(create.ok, true);
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    assert.equal(spies.prompts.length, 1, "expected one continue prompt");
+    assert.equal(spies.prompts[0].body.agent, "explore");
   });
 
   it("session.idle does not forward legacy string model pins to the host prompt API", async () => {

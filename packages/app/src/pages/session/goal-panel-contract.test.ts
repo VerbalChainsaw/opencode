@@ -444,6 +444,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
         category: "Testing",
         tone: "emerald",
         elevation: "raised",
+        agent: "explore",
         skills: ["superpowers:test-driven-development"],
         model: "openai:gpt-5-codex",
       },
@@ -470,6 +471,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       category: "Testing",
       tone: "emerald",
       elevation: "raised",
+      agent: "explore",
       skills: ["superpowers:test-driven-development"],
       model: { providerID: "openai", modelID: "gpt-5-codex" },
       builtin: false,
@@ -515,6 +517,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
         gate: "pass",
         tone: "emerald",
         elevation: "raised",
+        agent: "reviewer",
         builtin: false,
       },
       {},
@@ -528,6 +531,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       gate: "pass",
       tone: "emerald",
       elevation: "raised",
+      agent: "reviewer",
     })
   })
 
@@ -599,6 +603,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
           gate: "required",
           tone: "sky",
           elevation: "raised",
+          agent: "explore",
           skills: firstStepSkills,
           model: { providerID: "openai", modelID: "gpt-5-codex" },
           builtin: true,
@@ -622,6 +627,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     )
 
     expect(start.firstStepModel).toEqual({ providerID: "openai", modelID: "gpt-5-codex" })
+    expect(start.firstStepAgent).toBe("explore")
     expect(start.firstStepSkills).toEqual(firstStepSkills)
     expect(start.firstStepSkills).not.toBe(firstStepSkills)
 
@@ -641,6 +647,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
           category: "Building",
           tone: "sky",
           elevation: "raised",
+          agent: "explore",
           skills: firstStepSkills,
           model: { providerID: "openai", modelID: "gpt-5-codex" },
         },
@@ -658,6 +665,24 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     })
     expect(parsed.steps[0]).not.toHaveProperty("gate")
     expect(parsed.steps[1]).not.toHaveProperty("command")
+  })
+
+  test("builds agent routing options from visible primary and subagent entries", async () => {
+    const { agentRoutingOptions } = await load()
+
+    expect(
+      agentRoutingOptions([
+        { name: "build", mode: "primary", description: "Default builder" },
+        { name: "explore", mode: "subagent", description: "Read-only exploration" },
+        { name: "review", mode: "all" },
+        { name: "hidden", mode: "subagent", hidden: true },
+        { name: "", mode: "primary" },
+      ]),
+    ).toEqual([
+      { name: "build", mode: "primary", label: "build", description: "Default builder" },
+      { name: "review", mode: "primary", label: "review" },
+      { name: "explore", mode: "subagent", label: "explore", description: "Read-only exploration" },
+    ])
   })
 
   test("makes chain step shell verification explicit and marker fallback structured", async () => {
@@ -801,7 +826,6 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
   })
 
   describe("validateChainDraft", () => {
-    let steps: Array<{ id: string; actionID: string; label: string; condition: string; command: string; maxTurns: number; maxTimeMinutes: number; builtin: boolean }>
     let validateChainDraft: typeof import("./goal-panel-pure").validateChainDraft
 
     test("returns empty array for a valid single-step chain", async () => {
@@ -933,6 +957,16 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       )
       expect(errors).toHaveLength(1)
       expect(errors[0].message).toContain("duplicate skill")
+    })
+
+    test("validates malformed agent pins", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 5, maxTimeMinutes: 10, builtin: false, agent: " ".repeat(2) }],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0].message).toContain("agent cannot be empty")
     })
 
     test("reports max chain steps exceeded", async () => {
