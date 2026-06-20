@@ -5,9 +5,13 @@ import {
   DEFAULT_TEMPLATE_BUTTONS,
   type GoalSdkClient,
   type GoalState,
+  type HistoryRun,
+  applyArchivePoll,
   chainStepFromTemplate,
   cleanText,
+  completionRuleTranslationKey,
   isGoalStateShape,
+  pinnedModelForRuntime,
   readHandoffFromSdk,
   readGoalFromSdk,
   selectRunnableChainSteps,
@@ -60,6 +64,25 @@ function mockSdk(overrides: Partial<GoalSdkClient["client"]["file"]> = {}): Goal
 const goalPanelSource = async () => (await Bun.file(new URL("./goal-panel.tsx", import.meta.url)).text()).toString()
 const sourceText = async (path: string) => (await Bun.file(new URL(path, import.meta.url)).text()).toString()
 
+const historyRunForTest = (goalID: string): HistoryRun => ({
+  summary: {
+    goalID,
+    title: `Goal ${goalID}`,
+    status: "success",
+    outcome: "achieved",
+    turns: 2,
+    elapsedMs: 60_000,
+    successCount: 1,
+    failureCount: 0,
+    archivedAt: 1_700_000_000_000,
+  },
+  detail: {
+    latestReason: "done",
+    cycles: [{ turn: 1, met: true, reason: "ok", at: 1_700_000_000_000 }],
+    template: { source: "manual", label: "Manual", reuseCommand: "set x", canGenerate: false },
+  },
+})
+
 describe("goal panel mission-control contracts", () => {
   test("keeps a persistent history drawer state instead of rendering pills only", async () => {
     const src = await goalPanelSource()
@@ -68,9 +91,11 @@ describe("goal panel mission-control contracts", () => {
   })
 
   test("keeps the last good archive when a polling read transiently comes back empty", async () => {
+    const previous = [historyRunForTest("a"), historyRunForTest("b")]
+    expect(applyArchivePoll(previous, [], "b")).toEqual({ runs: previous, selectedGoalID: "b" })
+
     const src = await goalPanelSource()
-    expect(src).toContain("const previous = archive()")
-    expect(src).toContain("if (runs.length === 0 && previous.length > 0) return")
+    expect(src).toContain("applyArchivePoll(archive(), runs, selectedHistoryGoalID())")
   })
 
   test("command controls contain refresh failures after command execution", async () => {
@@ -337,7 +362,9 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("startGoalChain")
     expect(src).toContain("session.goal.template.addToChain")
     expect(src).toContain("session.goal.template.prompt")
-    expect(src).toContain("completionRuleLabel")
+    expect(completionRuleTranslationKey({ command: "npm test" })).toBe("session.goal.template.completionShell")
+    expect(completionRuleTranslationKey({ command: "" })).toBe("session.goal.template.completionMarker")
+    expect(src).toContain("completionRuleTranslationKey")
     expect(src).toContain('data-component="goal-chain-step-row"')
     expect(src).not.toContain("session.goal.template.condition")
 
@@ -667,8 +694,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.template.delete")
     expect(src).toContain("session.goal.template.newDraft")
     expect(src).toContain("session.goal.template.updateRunStep")
-    expect(src).toContain("const label = actionDraft.label.trim() || id")
-    expect(src).toContain("label,")
+    expect(src).toContain("actionDraftTemplateFromState(actionDraft, selectedTemplate())")
     expect(src).toContain("actionDraftTemplate")
     expect(src).toContain("actionDraftPayload")
     expect(src).toContain("duplicateActionDraft")
@@ -699,36 +725,29 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("session.goal.template.elevation")
     expect(src).not.toContain("session.goal.template.apply")
     expect(src).not.toContain("Load goal form")
-    expect(src).toContain("category: actionDraft.category")
-    expect(src).toContain("tone: actionDraft.tone")
-    expect(src).toContain("elevation: actionDraft.elevation")
+    expect(src).toContain("actionDraftTemplateFromState(actionDraft, selectedTemplate())")
     expect(src).not.toContain("gate: actionDraft.gate")
   })
 
-  test("action editor saves only still-referenced template variables", async () => {
+  test("action editor delegates template draft construction to the pure contract", async () => {
     const src = await goalPanelSource()
-    expect(src).toContain("function referencedTemplateVariables")
-    const draftStart = src.indexOf("const actionDraftTemplate = (): ActionDraftTemplate => {")
+    const draftStart = src.indexOf("const actionDraftTemplate = (): GoalActionDraftTemplate =>")
     const draftEnd = src.indexOf("const upsertLocalTemplate =", draftStart)
     expect(draftStart).toBeGreaterThan(-1)
     expect(draftEnd).toBeGreaterThan(draftStart)
     const draft = src.slice(draftStart, draftEnd)
-    expect(draft).toContain("const referencedVars = referencedTemplateVariables(condition, command)")
-    expect(draft).toContain("Object.entries(sourceTemplate.variables).filter(([key]) => referencedVars.has(key))")
-    expect(draft).toContain("...(variables && Object.keys(variables).length > 0 ? { variables } : {})")
+    expect(draft).toContain("actionDraftTemplateFromState(actionDraft, selectedTemplate())")
+    expect(draft).not.toContain("referencedTemplateVariables")
+    expect(draft).not.toContain("Object.entries(sourceTemplate.variables).filter")
     expect(draft).not.toContain("variables: sourceTemplate.variables")
   })
 
   test("model pin keys are serialized as bounded provider/model fields", async () => {
+    expect(pinnedModelForRuntime("openai:gpt-5-codex")).toEqual({ providerID: "openai", modelID: "gpt-5-codex" })
+    expect(pinnedModelForRuntime("not-a-provider-model")).toBeUndefined()
     const src = await goalPanelSource()
-    const fnStart = src.indexOf("function pinnedModelFromKey")
-    const fnEnd = src.indexOf("function pinnedModelForRuntime", fnStart)
-    expect(fnStart).toBeGreaterThan(-1)
-    expect(fnEnd).toBeGreaterThan(fnStart)
-    const fn = src.slice(fnStart, fnEnd)
-    expect(fn).toContain("const providerID = clean.slice(0, sep).trim().slice(0, 160)")
-    expect(fn).toContain("const modelID = clean.slice(sep + 1).trim().slice(0, 160)")
-    expect(fn).not.toContain("trim().slice(0, 200)")
+    expect(src).toContain("model: modelKey(template?.model)")
+    expect(src).toContain("actionDraftTemplateFromState(actionDraft, selectedTemplate())")
   })
 
   test("action editor is draft-first without a hidden cancel or goal-form load path", async () => {
@@ -789,28 +808,21 @@ describe("goal panel mission-control contracts", () => {
     expect(src.slice(deleteStart, deleteEnd)).toContain("removeLocalTemplate(template.id)")
   })
 
-  test("start chain preserves ordered steps and explicit operator metadata", async () => {
+  test("start chain delegates payload construction to the pure contract", async () => {
     const src = await goalPanelSource()
-    const startChain = src.match(/const startGoalChain = async \(\) => \{[\s\S]*?sendGoalCommand\("chain"/)
-    expect(startChain).toBeTruthy()
-    expect(startChain![0]).toContain("const firstStepModel = pinnedModelForRuntime(steps[0]?.model)")
-    expect(startChain![0]).toContain("const firstStepSkills = steps[0]?.skills")
-    expect(startChain![0]).toContain("steps: steps.map((step) => {")
-    expect(startChain![0]).toContain("const model = pinnedModelForRuntime(step.model)")
-    expect(startChain![0]).toContain("condition: step.condition")
-    expect(startChain![0]).toContain('verification: { type: "shell", command: step.command.trim() }')
-    expect(startChain![0]).toContain('{ verification: { type: "marker" } }')
-    expect(startChain![0]).toContain("maxTurns: step.maxTurns")
-    expect(startChain![0]).toContain("maxMinutes: step.maxTimeMinutes")
-    expect(startChain![0]).toContain("category: step.category")
-    expect(startChain![0]).toContain("tone: step.tone")
-    expect(startChain![0]).toContain("elevation: step.elevation")
-    expect(startChain![0]).toContain("skills: [...step.skills]")
-    expect(startChain![0]).toContain("...(model ? { model } : {})")
-    expect(startChain![0]).not.toContain("agent:")
-    expect(startChain![0]).not.toContain("gate: step.gate")
-    expect(startChain![0]).not.toContain("sort(")
-    expect(startChain![0]).not.toContain("reverse(")
+    const startChainStart = src.indexOf("const startGoalChain = async () => {")
+    const startChainEnd = src.indexOf("const progressPct = createMemo", startChainStart)
+    expect(startChainStart).toBeGreaterThan(-1)
+    expect(startChainEnd).toBeGreaterThan(startChainStart)
+    const startChain = src.slice(startChainStart, startChainEnd)
+    expect(startChain).toContain("const startPayload = chainStartPayload(steps, chainDraft.master)")
+    expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)')
+    expect(startChain).not.toContain("steps: steps.map((step) => {")
+    expect(startChain).not.toContain('verification: { type: "shell"')
+    expect(startChain).not.toContain("agent:")
+    expect(startChain).not.toContain("gate: step.gate")
+    expect(startChain).not.toContain("sort(")
+    expect(startChain).not.toContain("reverse(")
   })
 
   test("recovered visible chain steps stay runnable when the local draft is empty", async () => {
@@ -830,7 +842,9 @@ describe("goal panel mission-control contracts", () => {
     expect(startChain).toContain("validateChainDraft(steps")
 
     expect(src).toContain("validateChainDraft(runnableChainSteps()")
-    expect(src).toContain("runnableChainSteps().length === 0")
+    expect(src).toContain("chainStartControlState")
+    expect(src).toContain("disabled={chainStartControl().disabled}")
+    expect(src).not.toContain("runnableChainSteps().length === 0")
   })
 
   test("start chain admits exactly one run after deterministic chain state write", async () => {
@@ -841,10 +855,11 @@ describe("goal panel mission-control contracts", () => {
     expect(startChainEnd).toBeGreaterThan(startChainStart)
     const startChain = src.slice(startChainStart, startChainEnd)
 
-    expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${payload}`)')
+    expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)')
     expect(startChain.match(/startGoalRun/g) ?? []).toHaveLength(1)
-    expect(startChain).toContain("...(firstStepModel ? { model: firstStepModel } : {})")
-    expect(startChain).toContain("...(firstStepSkills && firstStepSkills.length > 0 ? { skills: firstStepSkills } : {})")
+    expect(startChain).toContain("...(startPayload.firstStepModel ? { model: startPayload.firstStepModel } : {})")
+    expect(startChain).toContain("startPayload.firstStepSkills && startPayload.firstStepSkills.length > 0")
+    expect(startChain).toContain("? { skills: startPayload.firstStepSkills }")
     expect(startChain).not.toContain("promptAsync")
   })
 
@@ -905,7 +920,7 @@ describe("goal panel mission-control contracts", () => {
     expect(startChainStart).toBeGreaterThan(-1)
     expect(startChainEnd).toBeGreaterThan(startChainStart)
     const startChain = src.slice(startChainStart, startChainEnd)
-    expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${payload}`)')
+    expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)')
     expect(startChain.match(/startGoalRun/g) ?? []).toHaveLength(1)
 
     const createGoalStart = src.indexOf("const createGoal = async () => {")
@@ -1002,13 +1017,56 @@ describe("goal panel mission-control contracts", () => {
   })
 
   test("recent runs auto-select a row and expose selected-run metric pillboxes", async () => {
+    const incoming = [historyRunForTest("new")]
+    expect(applyArchivePoll([historyRunForTest("old")], incoming, "old")).toEqual({
+      runs: incoming,
+      selectedGoalID: "new",
+    })
+
     const src = await goalPanelSource()
     expect(src).toContain("RunMetricPill")
     expect(src).toContain("selectedHistoryGoalID()")
-    expect(src).toContain("setSelectedHistoryGoalID(runs[0]?.summary.goalID ?? null)")
+    expect(src).toContain("applyArchivePoll(archive(), runs, selectedHistoryGoalID())")
     expect(src).toContain("successCount")
     expect(src).toContain("failureCount")
     expect(src).toContain("latestReason")
+  })
+
+  test("recent-run history labels are routed through i18n", async () => {
+    const src = await goalPanelSource()
+    for (const key of [
+      "session.goal.history.archivedRuns",
+      "session.goal.history.details",
+      "session.goal.history.outcome",
+      "session.goal.history.turns",
+      "session.goal.history.turnCount",
+      "session.goal.history.evaluated",
+      "session.goal.history.elapsed",
+      "session.goal.history.runtime",
+      "session.goal.history.passed",
+      "session.goal.history.failed",
+      "session.goal.history.notMet",
+      "session.goal.history.latestReason",
+    ]) {
+      expect(src).toContain(key)
+    }
+
+    for (const hardcoded of [
+      "{archive().length} archived runs",
+      "Archived run details",
+      'label="Outcome"',
+      'label="Turns"',
+      'detail="evaluated"',
+      'label="Elapsed"',
+      'detail="runtime"',
+      'label="Passed"',
+      'detail="passed"',
+      'label="Failed"',
+      'detail="not met"',
+      "Latest reason",
+    ]) {
+      expect(src).not.toContain(hardcoded)
+    }
   })
 })
 
@@ -2112,13 +2170,27 @@ describe("goal panel lifecycle stalled state", () => {
 //
 describe("useGoal hook", () => {
   let useGoal: typeof import("./goal-panel").useGoal
+  let GoalPanel: typeof import("./goal-panel").GoalPanel
   let setMockResponse: (next: { data: unknown } | Error) => void
   // The mock.module closure captures `sdkRef`; we mutate it per test.
   let sdkRef: GoalSdkClient
+  type TestJsxComponent = (props: Record<string, unknown> & { children?: unknown }) => unknown
 
   beforeAll(async () => {
+    ;(globalThis as unknown as Record<string, unknown>)["React"] = {
+      Fragment: (props: { children?: unknown }) => props.children ?? null,
+      createElement: (type: unknown, props: Record<string, unknown> | null | undefined, ...children: unknown[]) => {
+        const normalizedChildren = children.length <= 1 ? children[0] : children
+        if (typeof type === "function") return (type as TestJsxComponent)({ ...(props ?? {}), children: normalizedChildren })
+        return { type, props, children: normalizedChildren }
+      },
+    }
     mock.module("@opencode-ai/ui/button", () => ({
-      Button: (props: any) => props.children ?? null,
+      Button: (props: any) => {
+        void props.disabled
+        void props.title
+        return props.children ?? null
+      },
     }))
     mock.module("@opencode-ai/ui/text-field", () => ({
       TextField: () => null,
@@ -2134,11 +2206,25 @@ describe("useGoal hook", () => {
     mock.module("@/context/sdk", () => ({
       useSDK: () => sdkRef,
     }))
+    mock.module("@/context/server", () => ({
+      useServer: () => ({
+        scope: () => "test-scope",
+      }),
+    }))
     mock.module("@/context/sync", () => ({
-      useSync: () => ({}),
+      useSync: () => ({
+        ready: true,
+        data: {
+          agent: [],
+          command: [{ name: "goal" }],
+          config: { model: "" },
+          session_working: () => false,
+        },
+      }),
     }))
     const mod = await import("./goal-panel")
     useGoal = mod.useGoal
+    GoalPanel = mod.GoalPanel
   })
 
   beforeEach(() => {
@@ -2147,15 +2233,45 @@ describe("useGoal hook", () => {
       nextResponse = r
     }
     sdkRef = {
+      directory: "C:\\Users\\zerop\\Development\\OpenGoal",
       client: {
+        app: {
+          skills: async () => ({ data: [] }),
+        },
         file: {
           read: async () => {
             if (nextResponse instanceof Error) throw nextResponse
             return nextResponse
           },
         },
+        session: {
+          abort: async () => undefined,
+          command: async () => undefined,
+        },
+        tool: {
+          control: async () => undefined,
+        },
       },
-    }
+    } as unknown as GoalSdkClient
+  })
+
+  test("active GoalPanel render evaluates disabled accessors without crashing", async () => {
+    const store = { state: validState, corrupt: false, loaded: true }
+    await new Promise<void>((resolve, reject) => {
+      createRoot((dispose) => {
+        try {
+          GoalPanel({
+            goal: { store, refresh: async () => undefined },
+            sessionID: "ses_test_goal_panel",
+          })
+          dispose()
+          resolve()
+        } catch (error) {
+          dispose()
+          reject(error)
+        }
+      })
+    })
   })
 
   // Each test runs inside a createRoot, drives the hook, asserts, and

@@ -49,31 +49,47 @@ import type { GoalState } from "./goal-panel-pure"
 // call them. The `export { ... }` block above exposes them to external
 // consumers; this import makes them available as in-scope identifiers.
 import {
+  actionEditorControlState,
+  actionDraftTemplateFromState,
+  actionIDFromLabel,
+  applyArchivePoll,
   chainBudgetSummary,
+  chainStartControlState,
+  chainStartPayload,
   chainStepFromTemplate,
   cleanText,
+  completionRuleTranslationKey,
   readHandoffFromSdk,
   readGoalFromSdk,
   selectRunnableChainSteps,
+  skillPickerControlState,
   templateButtonsFromSnapshot,
   templateVariableDefaults,
   validateChainDraft,
+  ACTION_CATEGORIES,
   DEFAULT_TEMPLATE_BUTTONS,
   GOAL_TEMPLATE_CATEGORIES,
   GOAL_TEMPLATE_ELEVATIONS,
   GOAL_TEMPLATE_TONES,
+  actionCategoryShortLabel,
+  handoffPanelMode,
   isGoalPinnedModel,
+  steerDraftDisposition,
   templateModelFromSnapshot,
+  type ActionCategory,
+  type ActionEditorDisabledReason,
   type ChainValidationError,
   type GoalSdkClient,
   type GoalHandoffStore,
+  type GoalActionDraftTemplate,
   type GoalChainDraftStep,
-  type GoalPinnedModel,
+  type HistoryRun,
   type GoalTemplateButton,
   type GoalTemplateCategory,
   type GoalTemplateElevation,
   type GoalTemplateModel,
   type GoalTemplateTone,
+  type SkillPickerDisabledReason,
 } from "./goal-panel-pure"
 import { executeGoalCommand, pauseGoalRun, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
@@ -98,6 +114,7 @@ import { executeGoalCommand, pauseGoalRun, startGoalRun, steerGoalRun, stopGoalR
  */
 
 const POLL_MS = 2000
+const ACTION_SKILL_LIMIT = 8
 
 // GoalStore is the public type for the goal panel's store snapshot.
 // Aliased to the pure module's GoalStore so consumers using either
@@ -339,30 +356,6 @@ type ActionDraftState = {
   model: string
 }
 
-interface HistoryRun {
-  summary: {
-    goalID: string
-    title: string
-    status: "success" | "failure" | "mixed"
-    outcome: "achieved" | "cleared" | "replaced"
-    turns: number
-    elapsedMs: number
-    successCount: number
-    failureCount: number
-    archivedAt: number
-  }
-  detail: {
-    latestReason: string
-    cycles: Array<{ turn: number; met: boolean; reason: string; at: number }>
-    template: {
-      source: "template" | "manual"
-      label: string
-      reuseCommand: string
-      canGenerate: boolean
-    }
-  }
-}
-
 /** Read the engine's `.opencode/.goal-chain.json` so the panel can show
  *  sub-goal steps. Returns null when there's no chain (single goal). */
 async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
@@ -413,15 +406,6 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
 
 const TEMPLATES_PATH = ".opencode/goal-templates.json"
 const TEMPLATE_SAVE_ID_RE = /^[A-Za-z0-9_-]+$/
-
-function actionIDFromLabel(label: string, fallback = "custom-action") {
-  const id = cleanText(label)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-  return TEMPLATE_SAVE_ID_RE.test(id) && id.length > 0 ? id : fallback
-}
 
 /** Read the plugin's `.opencode/goal-templates.json` snapshot (builtins +
  *  user `.opencode/goals/*.json`) so the dock's quick-start buttons reflect
@@ -757,20 +741,6 @@ function GoalConsoleSection(props: {
   )
 }
 
-const ACTION_CATEGORIES = ["All", ...GOAL_TEMPLATE_CATEGORIES] as const
-
-type ActionCategory = (typeof ACTION_CATEGORIES)[number]
-
-function actionCategoryShortLabel(category: ActionCategory) {
-  if (category === "Planning") return "Plan"
-  if (category === "Building") return "Build"
-  if (category === "Debugging") return "Debug"
-  if (category === "Testing") return "Verify"
-  if (category === "Review") return "Review"
-  if (category === "Documentation") return "Docs"
-  return category
-}
-
 function concreteActionCategory(category: ActionCategory): GoalTemplateCategory {
   return category === "All" ? "Custom" : category
 }
@@ -816,8 +786,6 @@ interface ActionDescriptor {
 type ChainStepRunState = "draft" | "done" | "running" | "paused" | "stalled" | "queued"
 type ChainBudgetStatus = "ready" | "turns" | "time" | "both"
 
-type ActionDraftTemplate = GoalTemplateButton & { condition: string; builtin: false }
-
 function actionLabelText(input: ActionDescriptor) {
   return `${input.label ?? ""} ${input.id ?? ""} ${input.actionID ?? ""}`.toLowerCase()
 }
@@ -830,35 +798,6 @@ function modelKey(model?: GoalTemplateModel): string {
   if (!model) return ""
   if (typeof model === "string") return cleanText(model).trim().slice(0, 200)
   return `${cleanText(model.providerID).trim()}:${cleanText(model.modelID).trim()}`
-}
-
-function pinnedModelFromKey(key: string): GoalPinnedModel | undefined {
-  const clean = cleanText(key).trim()
-  const sep = clean.indexOf(":")
-  if (sep <= 0 || sep === clean.length - 1) return undefined
-  const providerID = clean.slice(0, sep).trim().slice(0, 160)
-  const modelID = clean.slice(sep + 1).trim().slice(0, 160)
-  return providerID && modelID ? { providerID, modelID } : undefined
-}
-
-function referencedTemplateVariables(condition: string, command: string) {
-  const out = new Set<string>()
-  for (const text of [condition, command]) {
-    for (const match of text.matchAll(/\{(\w+)\}/g)) {
-      if (match[1]) out.add(match[1])
-    }
-  }
-  return out
-}
-
-function pinnedModelForRuntime(model?: GoalTemplateModel): GoalPinnedModel | undefined {
-  if (!model) return undefined
-  if (isGoalPinnedModel(model)) {
-    const providerID = cleanText(model.providerID).trim().slice(0, 160)
-    const modelID = cleanText(model.modelID).trim().slice(0, 160)
-    return providerID && modelID ? { providerID, modelID } : undefined
-  }
-  return pinnedModelFromKey(model)
 }
 
 function inferActionCategory(template: ActionDescriptor): GoalTemplateCategory {
@@ -1259,8 +1198,8 @@ function hasVerificationCommand(input: ActionDescriptor) {
   return typeof input.command === "string" && input.command.trim().length > 0
 }
 
-function completionRuleLabel(input: ActionDescriptor) {
-  return hasVerificationCommand(input) ? "Completes after the verify command succeeds" : "Completes after the agent reports completion"
+function completionRuleKey(input: ActionDescriptor) {
+  return completionRuleTranslationKey(input)
 }
 
 function completionRuleClass(input: ActionDescriptor) {
@@ -1515,15 +1454,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const refreshArchive = () =>
     void readArchive(sdk)
       .then((runs) => {
-        const previous = archive()
-        // goal-history.json is append-only in normal operation. If a poll lands
-        // while the file is being rewritten and momentarily reads back empty,
-        // keep the last good archive so the drawer doesn't disappear or collapse.
-        if (runs.length === 0 && previous.length > 0) return
-        setArchive(runs)
-        if (!selectedHistoryGoalID() || !runs.some((run) => run.summary.goalID === selectedHistoryGoalID())) {
-          setSelectedHistoryGoalID(runs[0]?.summary.goalID ?? null)
-        }
+        const next = applyArchivePoll(archive(), runs, selectedHistoryGoalID())
+        setArchive(next.runs)
+        setSelectedHistoryGoalID(next.selectedGoalID)
       })
       .catch(ignoreRefreshError)
   const mergeTemplates = (
@@ -1710,16 +1643,21 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const note = steerText().trim().replace(/"/g, "")
     if (!note) return
     const sent = await sendGoalCommand("steer", `steer "${note}"`)
+    let promptAttempted = false
+    let promptAdmitted = false
     if (sent) {
       if (props.sessionID) {
-        const prompted = await steerGoalRun(sdk.client, {
+        promptAttempted = true
+        promptAdmitted = await steerGoalRun(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
         }, note)
-        if (!prompted) setControlError(language.t("session.goal.steer.failed"))
+        if (!promptAdmitted) setControlError(language.t("session.goal.steer.failed"))
       }
-      setSteerText("")
-      setSteerOpen(false)
+      if (steerDraftDisposition({ commandSaved: sent, promptAttempted, promptAdmitted }) === "clear") {
+        setSteerText("")
+        setSteerOpen(false)
+      }
     }
   }
 
@@ -1936,7 +1874,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   }
   const stepRuntimeTitle = (step: GoalChainDraftStep) => {
     const skills = step.skills?.length ? step.skills.join(", ") : "no pinned skills"
-    return `${stepRuntimeModelLabel(step)}; ${skills}; ${completionRuleLabel(step)}`
+    return `${stepRuntimeModelLabel(step)}; ${skills}; ${language.t(completionRuleKey(step))}`
   }
   const skillOptionsForDraft = createMemo(() => {
     const seen = new Set<string>()
@@ -1962,7 +1900,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (!clean) return
     setActionDraft("skills", (current) => {
       if (current.includes(clean)) return current.filter((skill) => skill !== clean)
-      return [...current, clean].slice(0, 8)
+      return [...current, clean].slice(0, ACTION_SKILL_LIMIT)
     })
   }
   const openActionEditor = (template?: GoalTemplateButton) => {
@@ -1997,37 +1935,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     setEditingChainStepID(step.id)
     setActionDraft(draftFromChainStep(step))
   }
-  const actionDraftTemplate = (): ActionDraftTemplate => {
-    const id = actionDraft.id.trim() || actionIDFromLabel(actionDraft.label)
-    const label = actionDraft.label.trim() || id
-    const condition = actionDraft.prompt.trim()
-    const command = actionDraft.command.trim()
-    const sourceTemplate = selectedTemplate()
-    const pinnedModel = pinnedModelFromKey(actionDraft.model)
-    const referencedVars = referencedTemplateVariables(condition, command)
-    const variables =
-      sourceTemplate?.variables && referencedVars.size > 0
-        ? Object.fromEntries(Object.entries(sourceTemplate.variables).filter(([key]) => referencedVars.has(key)))
-        : undefined
-    return {
-      id,
-      label,
-      description: label || (condition.length > 80 ? `${condition.slice(0, 77)}...` : condition),
-      condition,
-      ...(command ? { command } : {}),
-      constraints: {
-        maxTurns: Math.max(1, Math.round(actionDraft.turns)),
-        maxTimeMinutes: Math.max(1, Math.round(actionDraft.minutes)),
-      },
-      ...(variables && Object.keys(variables).length > 0 ? { variables } : {}),
-      category: actionDraft.category,
-      tone: actionDraft.tone,
-      elevation: actionDraft.elevation,
-      ...(actionDraft.skills.length > 0 ? { skills: [...actionDraft.skills] } : {}),
-      ...(pinnedModel ? { model: pinnedModel } : {}),
-      builtin: false,
-    }
-  }
+  const actionDraftTemplate = (): GoalActionDraftTemplate =>
+    actionDraftTemplateFromState(actionDraft, selectedTemplate())
   const actionEditorDescriptor = createMemo<ActionDescriptor>(() => {
     return actionDraftTemplate()
   })
@@ -2085,6 +1994,74 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
   }
   const [saveError, setSaveError] = createSignal("")
+  const actionEditorReasonText = (reason: ActionEditorDisabledReason | null) => {
+    if (reason === "busy") return language.t("session.goal.template.disabled.busy")
+    if (reason === "missing-session") return language.t("session.goal.template.disabled.missingSession")
+    if (reason === "missing-prompt") return language.t("session.goal.template.disabled.missingPrompt")
+    if (reason === "no-template") return language.t("session.goal.template.disabled.noTemplate")
+    if (reason === "builtin-template") return language.t("session.goal.template.disabled.builtinTemplate")
+    return ""
+  }
+  const skillPickerReasonText = (reason: SkillPickerDisabledReason | null) => {
+    if (reason === "busy") return language.t("session.goal.template.disabled.busy")
+    if (reason === "missing-session") return language.t("session.goal.template.disabled.missingSession")
+    if (reason === "no-skills") return language.t("session.goal.template.skillPicker.noSkills")
+    if (reason === "max-skills") return language.t("session.goal.template.skillPicker.maxSkills", { count: ACTION_SKILL_LIMIT })
+    return ""
+  }
+  const saveActionControl = createMemo(() =>
+    actionEditorControlState({
+      control: "save",
+      busy: busy() !== null,
+      hasSession: !!props.sessionID,
+      prompt: actionDraft.prompt,
+      selectedTemplate: selectedTemplate(),
+    }),
+  )
+  const duplicateActionControl = createMemo(() =>
+    actionEditorControlState({
+      control: "duplicate",
+      busy: busy() !== null,
+      hasSession: !!props.sessionID,
+      prompt: actionDraft.prompt,
+      selectedTemplate: selectedTemplate(),
+    }),
+  )
+  const deleteActionControl = createMemo(() =>
+    actionEditorControlState({
+      control: "delete",
+      busy: busy() !== null,
+      hasSession: !!props.sessionID,
+      prompt: actionDraft.prompt,
+      selectedTemplate: selectedTemplate(),
+    }),
+  )
+  const addSkillControl = createMemo(() =>
+    skillPickerControlState({
+      busy: busy() !== null,
+      hasSession: !!props.sessionID,
+      availableSkillCount: skillPickOptions().length,
+      selectedSkillCount: actionDraft.skills.length,
+      maxSkills: ACTION_SKILL_LIMIT,
+    }),
+  )
+  const addSkillStatus = createMemo(() => {
+    const reason = addSkillControl().reason
+    if (reason === "max-skills") return skillPickerReasonText(reason)
+    if (reason === "no-skills" && skillOptionsForDraft().length > 0) return skillPickerReasonText(reason)
+    return ""
+  })
+  const actionEditorStatus = createMemo(() => {
+    if (saveError()) return saveError()
+    const saveReason = saveActionControl().reason
+    if (saveReason) return actionEditorReasonText(saveReason)
+    const duplicateReason = duplicateActionControl().reason
+    if (duplicateReason) return actionEditorReasonText(duplicateReason)
+    const deleteReason = deleteActionControl().reason
+    if (deleteReason === "no-template") return ""
+    if (deleteReason) return actionEditorReasonText(deleteReason)
+    return ""
+  })
   const saveTemplateDraft = async () => {
     const existingID = actionDraft.id.trim()
     const id = TEMPLATE_SAVE_ID_RE.test(existingID)
@@ -2215,51 +2192,62 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       model: templateModelFromSnapshot(step.model) ?? "",
     }))
   }
+  // ── Lifecycle model ──────────────────────────────────────────────────────
+  // The panel renders strictly by STATUS, not by "is there a state object?".
+  // The pure accessors live in `./goal-panel-lifecycle`; the createMemo
+  // wrappers below memoize on the state signal so the render is stable
+  // when the underlying JSON hasn't changed.
+  //
+  // This model makes the two failure modes structurally impossible:
+  //   - a goal achieved in one turn never shows a hollow "active" card —
+  //     `liveGoal` returns null and the empty + history view renders.
+  //   - clearing a goal doesn't blank the panel — `liveGoal` returns
+  //     null and the run is already in the history timeline.
+  const liveGoal = createMemo(() => liveGoalOf(state()))
+  const pendingHandoffMode = createMemo(() => handoffPanelMode(liveGoal(), handoff()))
+  const terminalGoal = createMemo(() => terminalGoalOf(state()))
   const runnableChainSteps = () => {
     if (liveGoal()) return []
     return selectRunnableChainSteps(chainDraft.steps, chainSnapshotSteps())
   }
+  const chainStartControl = createMemo(() =>
+    chainStartControlState({
+      busy: busy() !== null,
+      hasLiveGoal: !!liveGoal(),
+      hasSession: !!props.sessionID,
+    }),
+  )
+  const chainStartTitle = () => {
+    switch (chainStartControl().reason) {
+      case "busy":
+        return language.t("session.goal.template.disabled.busy")
+      case "live-goal":
+        return chainRunStateSubtitle()
+      case "missing-session":
+        return language.t("session.goal.chainBuilder.disabled.missingSession")
+      default:
+        return language.t("session.goal.chainBuilder.startTitle")
+    }
+  }
   const startGoalChain = async () => {
     const steps = runnableChainSteps()
-    if (steps.length === 0) return
     const errors = validateChainDraft(steps, {
       maxTurns: chainDraft.master.maxTurns,
       maxTimeMinutes: chainDraft.master.maxTimeMinutes,
     })
     setChainErrors(errors)
     if (errors.length > 0) return
-    const firstStepModel = pinnedModelForRuntime(steps[0]?.model)
-    const firstStepSkills = steps[0]?.skills
-    const payload = JSON.stringify({
-      master: { maxTurns: chainDraft.master.maxTurns, maxMinutes: chainDraft.master.maxTimeMinutes },
-      steps: steps.map((step) => {
-        const model = pinnedModelForRuntime(step.model)
-        return {
-          condition: step.condition,
-          ...(step.command.trim()
-            ? {
-                command: step.command.trim(),
-                verification: { type: "shell", command: step.command.trim() },
-              }
-            : { verification: { type: "marker" } }),
-          maxTurns: step.maxTurns,
-          maxMinutes: step.maxTimeMinutes,
-          ...(step.category ? { category: step.category } : {}),
-          ...(step.tone ? { tone: step.tone } : {}),
-          ...(step.elevation ? { elevation: step.elevation } : {}),
-          ...(step.skills && step.skills.length > 0 ? { skills: [...step.skills] } : {}),
-          ...(model ? { model } : {}),
-        }
-      }),
-    })
-    const sent = await sendGoalCommand("chain", `chain start-json ${payload}`)
+    const startPayload = chainStartPayload(steps, chainDraft.master)
+    const sent = await sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)
     if (sent) {
       if (props.sessionID) {
         const prompted = await startGoalRun(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
-          ...(firstStepModel ? { model: firstStepModel } : {}),
-          ...(firstStepSkills && firstStepSkills.length > 0 ? { skills: firstStepSkills } : {}),
+          ...(startPayload.firstStepModel ? { model: startPayload.firstStepModel } : {}),
+          ...(startPayload.firstStepSkills && startPayload.firstStepSkills.length > 0
+            ? { skills: startPayload.firstStepSkills }
+            : {}),
         })
         if (!prompted) await sendGoalCommand("pause", "pause")
       }
@@ -2315,19 +2303,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
   const reuseHistoryRun = (command: string) => sendGoalCommand("set", command)
 
-  // ── Lifecycle model ──────────────────────────────────────────────────────
-  // The panel renders strictly by STATUS, not by "is there a state object?".
-  // The pure accessors live in `./goal-panel-lifecycle`; the createMemo
-  // wrappers below memoize on the state signal so the render is stable
-  // when the underlying JSON hasn't changed.
-  //
-  // This model makes the two failure modes structurally impossible:
-  //   - a goal achieved in one turn never shows a hollow "active" card —
-  //     `liveGoal` returns null and the empty + history view renders.
-  //   - clearing a goal doesn't blank the panel — `liveGoal` returns
-  //     null and the run is already in the history timeline.
-  const liveGoal = createMemo(() => liveGoalOf(state()))
-  const terminalGoal = createMemo(() => terminalGoalOf(state()))
   const visibleChainSteps = createMemo<GoalChainDraftStep[]>(() => {
     const live = liveGoal()
     if (!live && chainDraft.steps.length > 0) return chainDraft.steps
@@ -2689,12 +2664,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       variant={liveGoal() ? "secondary" : "primary"}
                       class="h-5 shrink-0 px-2.5 text-11-medium"
                       busy={busy() === "chain"}
-                      disabled={
-                        !!liveGoal() ||
-                        busy() !== null ||
-                        !props.sessionID ||
-                        runnableChainSteps().length === 0
-                      }
+                      disabled={chainStartControl().disabled}
+                      title={chainStartTitle()}
                       onClick={() => void startGoalChain()}
                     />
                     <Show when={!liveGoal()}>
@@ -3185,11 +3156,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 )}
               </Show>
 
-              <Show when={!liveGoal() && handoff().handoff}>
+              <Show when={pendingHandoffMode() !== "hidden" ? handoff().handoff : null}>
                 {(pending) => (
                   <div class="border-b px-3 py-2">
                     <div
                       data-component="goal-handoff-claim-panel"
+                      data-mode={pendingHandoffMode()}
                       class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2"
                       style={runningInlinePanelStyle("handoff")}
                     >
@@ -3204,14 +3176,23 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           {(note) => <div class="mt-1 truncate text-11-regular text-indigo-100/62">{note()}</div>}
                         </Show>
                       </div>
-                      <ActionButton
-                        label={language.t("session.goal.action.claim")}
-                        variant="primary"
-                        busy={busy() === "claim"}
-                        disabled={busy() !== null || !props.sessionID}
-                        class="h-8 shrink-0 px-3"
-                        onClick={() => void claimGoalHandoff()}
-                      />
+                      <Show
+                        when={pendingHandoffMode() === "claim"}
+                        fallback={
+                          <div class="max-w-[220px] text-right text-11-regular leading-4 text-indigo-100/62">
+                            {language.t("session.goal.handoff.liveRunPending")}
+                          </div>
+                        }
+                      >
+                        <ActionButton
+                          label={language.t("session.goal.action.claim")}
+                          variant="primary"
+                          busy={busy() === "claim"}
+                          disabled={busy() !== null || !props.sessionID}
+                          class="h-8 shrink-0 px-3"
+                          onClick={() => void claimGoalHandoff()}
+                        />
+                      </Show>
                     </div>
                   </div>
                 )}
@@ -3757,11 +3738,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               tone="success"
                               class="h-6 flex-1 px-2 text-11-medium"
                               busy={busy() === "template"}
-                              disabled={
-                                busy() !== null ||
-                                !props.sessionID ||
-                                !actionDraft.prompt.trim()
-                              }
+                              disabled={saveActionControl().disabled}
+                              title={actionEditorReasonText(saveActionControl().reason) || undefined}
                               onClick={() => void saveTemplateDraft()}
                             />
                             <ActionButton
@@ -3769,9 +3747,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               variant="secondary"
                               class="h-6 flex-1 px-2 text-11-medium"
                               busy={busy() === "template"}
-                              disabled={
-                                busy() !== null || !props.sessionID || !actionDraft.prompt.trim()
-                              }
+                              disabled={duplicateActionControl().disabled}
+                              title={actionEditorReasonText(duplicateActionControl().reason) || undefined}
                               onClick={() => void duplicateActionDraft()}
                             />
                             <ActionButton
@@ -3780,15 +3757,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               tone="danger"
                               class="h-6 flex-1 px-2 text-11-medium"
                               busy={busy() === "template"}
-                              disabled={busy() !== null || !props.sessionID || !selectedTemplate() || !!selectedTemplate()?.builtin}
+                              disabled={deleteActionControl().disabled}
+                              title={actionEditorReasonText(deleteActionControl().reason) || undefined}
                               onClick={() => {
                                 const template = selectedTemplate()
                                 if (template) void deleteActionTemplate(template)
                               }}
                             />
                           </div>
-                          <Show when={saveError()}>
-                            <div class="mt-1 text-center text-[10px] text-orange-300/90">{saveError()}</div>
+                          <Show when={actionEditorStatus()}>
+                            <div data-component="goal-action-editor-status" class="mt-1 text-center text-[10px] text-orange-300/90">
+                              {actionEditorStatus()}
+                            </div>
                           </Show>
                         </div>
 
@@ -3903,14 +3883,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             </span>
                             <select
                               value=""
-                              disabled={busy() !== null || !props.sessionID || skillPickOptions().length === 0 || actionDraft.skills.length >= 8}
+                              disabled={addSkillControl().disabled}
                               onChange={(event) => {
                                 const name = event.currentTarget.value
                                 if (name) toggleActionSkill(name)
                                 event.currentTarget.value = ""
                               }}
                               class="h-5 min-w-0 truncate bg-transparent text-[10px] font-semibold text-emerald-100/82 outline-none transition disabled:opacity-35"
-                              title={language.t("session.goal.template.addSkill")}
+                              title={skillPickerReasonText(addSkillControl().reason) || language.t("session.goal.template.addSkill")}
                               aria-label={language.t("session.goal.template.addSkill")}
                             >
                               <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.addSkill")}</option>
@@ -3924,8 +3904,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 "border-color": "rgba(110, 231, 183, 0.12)",
                               }}
                             >
-                              {actionDraft.skills.length}/8
+                              {actionDraft.skills.length}/{ACTION_SKILL_LIMIT}
                             </span>
+                            <Show when={addSkillStatus()}>
+                              <div class="col-span-3 rounded-md border border-emerald-200/14 bg-emerald-500/8 px-2 py-1 text-[10px] font-medium text-emerald-100/76">
+                                {addSkillStatus()}
+                              </div>
+                            </Show>
                             <Show when={skillOptionsForDraft().length > 0} fallback={
                               <div class="col-span-3 rounded-md border border-dashed border-border-base bg-background-base/35 px-2 py-1.5 text-11-regular text-text-weak">
                                 {language.t("session.goal.template.noSkills")}
@@ -4038,7 +4023,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   {language.t("session.goal.history.title")}
                 </div>
                 <div class="mt-1 text-12-regular text-text-weaker">
-                  {language.t("session.goal.recentRuns")} · {archive().length} archived runs
+                  {language.t("session.goal.recentRuns")} ·{" "}
+                  {language.t("session.goal.history.archivedRuns", { count: archive().length })}
                 </div>
               </div>
               <span class="shrink-0 text-text-weaker" aria-hidden>
@@ -4073,7 +4059,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             {cleanText(h.summary.title)}
                           </div>
                           <div class="mt-0.5 truncate text-[11px] tabular-nums text-text-weaker">
-                            {outcomeLabel(h.summary.outcome)} · {h.summary.turns} turns ·{" "}
+                            {outcomeLabel(h.summary.outcome)} ·{" "}
+                            {language.t("session.goal.history.turnCount", { count: h.summary.turns })} ·{" "}
                             {formatElapsed(h.summary.elapsedMs)}
                           </div>
                         </div>
@@ -4105,7 +4092,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               {cleanText(run().summary.title)}
                             </div>
                           </div>
-                          <div class="mt-1 text-11-regular text-text-weaker">Archived run details</div>
+                          <div class="mt-1 text-11-regular text-text-weaker">
+                            {language.t("session.goal.history.details")}
+                          </div>
                         </div>
                         <ActionButton
                           label={language.t("session.goal.history.reuse")}
@@ -4117,7 +4106,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                       <div class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-5">
                         <RunMetricPill
-                          label="Outcome"
+                          label={language.t("session.goal.history.outcome")}
                           value={outcomeLabel(run().summary.outcome)}
                           detail={run().summary.status}
                           tone={
@@ -4128,22 +4117,26 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 : "warning"
                           }
                         />
-                        <RunMetricPill label="Turns" value={String(run().summary.turns)} detail="evaluated" />
                         <RunMetricPill
-                          label="Elapsed"
-                          value={formatElapsed(run().summary.elapsedMs)}
-                          detail="runtime"
+                          label={language.t("session.goal.history.turns")}
+                          value={String(run().summary.turns)}
+                          detail={language.t("session.goal.history.evaluated")}
                         />
                         <RunMetricPill
-                          label="Passed"
+                          label={language.t("session.goal.history.elapsed")}
+                          value={formatElapsed(run().summary.elapsedMs)}
+                          detail={language.t("session.goal.history.runtime")}
+                        />
+                        <RunMetricPill
+                          label={language.t("session.goal.history.passed")}
                           value={String(run().summary.successCount)}
-                          detail="passed"
+                          detail={language.t("session.goal.history.passed")}
                           tone={run().summary.successCount > 0 ? "success" : "default"}
                         />
                         <RunMetricPill
-                          label="Failed"
+                          label={language.t("session.goal.history.failed")}
                           value={String(run().summary.failureCount)}
-                          detail="not met"
+                          detail={language.t("session.goal.history.notMet")}
                           tone={run().summary.failureCount > 0 ? "danger" : "default"}
                         />
                       </div>
@@ -4151,7 +4144,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       <Show when={run().detail.latestReason}>
                         <div class="mt-3 rounded-xl border border-border-base bg-background-panel/70 px-3 py-2.5">
                           <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                            Latest reason
+                            {language.t("session.goal.history.latestReason")}
                           </div>
                           <div class="mt-1 text-12-regular leading-5 text-text-weak">
                             {cleanText(run().detail.latestReason)}

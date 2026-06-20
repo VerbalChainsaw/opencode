@@ -1,4 +1,4 @@
-import type { PermissionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
 import { batch, createEffect, createMemo, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createStore } from "solid-js/store"
@@ -27,7 +27,7 @@ import { ServerConnection, useServer } from "@/context/server"
 import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { useNotification, type Notification } from "@/context/notification"
+import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import {
   closeHomeProject,
@@ -49,8 +49,19 @@ import { useSettings } from "@/context/settings"
 import { ServerRowMenu } from "@/components/server/server-row-menu"
 import { ServerHealthIndicator } from "@/components/server/server-row"
 import { type ServerHealth } from "@/utils/server-health"
-import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
-import { cleanText, readGoalFromSdk, type GoalSdkClient, type GoalState } from "@/pages/session/goal-panel-pure"
+import { readGoalFromSdk, type GoalSdkClient } from "@/pages/session/goal-panel-pure"
+import {
+  buildHomeAttentionRecords,
+  buildHomeGoalAttentionRecords,
+  buildHomeGoalRecords,
+  groupSessions,
+  isHomeSessionLive,
+  mergeHomeAttentionRecords,
+  type HomeAttentionRecord,
+  type HomeGoalRecord,
+  type HomeSessionGroup,
+  type HomeSessionRecord,
+} from "./home-pure"
 
 const HOME_SESSION_LIMIT = 64
 const HOME_ROW_LAYOUT =
@@ -60,44 +71,6 @@ const HOME_ROW = `${HOME_ROW_BASE} [font-weight:530] text-v2-text-text-muted hov
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
 const HOME_PROJECT_NAV_ROW = `${HOME_ROW_LAYOUT} h-8 gap-2 border border-transparent px-2 [font-weight:440] text-v2-text-text-muted hover:border-v2-border-border-muted hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base data-[selected]:border-v2-border-border-base data-[selected]:border-l-sky-400 data-[selected]:bg-v2-background-bg-layer-02 data-[selected]:text-v2-text-text-base data-[selected]:hover:bg-v2-background-bg-layer-02 focus-visible:border-v2-border-border-base focus-visible:bg-v2-background-bg-layer-01 focus-visible:text-v2-text-text-base focus-visible:outline-none`
 const HOME_SECTION_LABEL = "text-[11px] uppercase tracking-[0.08em] text-v2-text-text-muted [font-weight:530]"
-
-type HomeSessionRecord = {
-  session: Session
-  project: LocalProject
-  projectName: string
-}
-
-type HomeGoalRecord = {
-  id: string
-  project: LocalProject
-  projectName: string
-  directory: string
-  status: GoalState["status"]
-  condition: string
-  updated: number
-}
-
-type HomeAttentionKind = "permission" | "question" | "retry" | "error" | "response" | "project"
-
-type HomeAttentionRecord = {
-  id: string
-  kind: HomeAttentionKind
-  project: LocalProject
-  projectName: string
-  directory: string
-  session?: Session
-  reason: string
-  detail?: string
-  count: number
-  time: number
-  clearable: boolean
-}
-
-type HomeSessionGroup = {
-  id: "today" | "yesterday" | "older"
-  title: string
-  sessions: HomeSessionRecord[]
-}
 
 const HOME_SESSION_SEARCH_RESULTS_ID = "home-session-search-results"
 const HOME_SEARCH_RESULT_ROW =
@@ -135,258 +108,12 @@ function buildHomeSessionRecords(input: {
     })
 }
 
-function homeProjectForDirectory(
-  directory: string,
-  projects: LocalProject[],
-  directories: (project: LocalProject) => string[],
-) {
-  return projects.find((project) => directories(project).some((candidate) => pathKey(candidate) === pathKey(directory)))
-}
-
-async function buildHomeGoalRecords(input: {
-  projectDirectories: string[]
-  projects: LocalProject[]
-  directories: (project: LocalProject) => string[]
-  readGoal: (directory: string) => Promise<Awaited<ReturnType<typeof readGoalFromSdk>>>
-}) {
-  const loaded = await Promise.all(
-    input.projectDirectories.map(async (directory): Promise<HomeGoalRecord | null> => {
-      const project = homeProjectForDirectory(directory, input.projects, input.directories)
-      if (!project) return null
-
-      const store = await input.readGoal(directory)
-      if (!store.state) return null
-      if (!(store.state.status === "active" || store.state.status === "paused")) return null
-
-      return {
-        id: store.state.id,
-        project,
-        projectName: displayName(project),
-        directory,
-        status: store.state.status,
-        condition: cleanText(store.state.condition),
-        updated: store.state.lastEvaluation?.timestamp ?? store.state.startedAt,
-      }
-    }),
-  )
-
-  return loaded
-    .filter((record): record is HomeGoalRecord => !!record)
-    .sort((a, b) => b.updated - a.updated)
-}
-
 function matchesHomeSessionSearch(record: HomeSessionRecord, query: string) {
   return `${record.session.title} ${record.projectName}`.toLowerCase().includes(query)
 }
 
 function homeSessionSearchKey(record: HomeSessionRecord) {
   return `${pathKey(record.session.directory)}:${record.session.id}`
-}
-
-type HomeSyncReader = Pick<ReturnType<typeof useServerSync>, "child">
-
-type HomeNotificationReader = {
-  session: Pick<ReturnType<typeof useNotification>["session"], "unseen">
-  project: Pick<ReturnType<typeof useNotification>["project"], "unseen">
-}
-
-type HomePermissionReader = {
-  autoResponds: (item: PermissionRequest, directory: string) => boolean
-}
-
-function latestNotificationTime(notifications: Notification[]) {
-  return notifications.reduce((latest, notification) => Math.max(latest, notification.time), 0)
-}
-
-function notificationErrorDetail(notification: Notification | undefined) {
-  if (!notification || notification.type !== "error") return undefined
-  const error = notification.error
-  if (typeof error === "string") return error
-  if (error && typeof error === "object" && "message" in error) return String(error.message)
-  return "Session error"
-}
-
-function isHomeSessionLive(input: {
-  record: HomeSessionRecord
-  sync: HomeSyncReader
-  permission: HomePermissionReader
-}) {
-  const [store] = input.sync.child(input.record.session.directory, { bootstrap: false })
-  if (store.session_working(input.record.session.id)) return true
-  if (
-    sessionPermissionRequest(store.session, store.permission, input.record.session.id, (item) => {
-      return !input.permission.autoResponds(item, input.record.session.directory)
-    })
-  ) {
-    return true
-  }
-  return !!sessionQuestionRequest(store.session, store.question, input.record.session.id)
-}
-
-function homeAttentionPriority(kind: HomeAttentionKind) {
-  switch (kind) {
-    case "permission":
-      return 0
-    case "question":
-      return 1
-    case "retry":
-      return 2
-    case "error":
-      return 3
-    case "response":
-      return 4
-    case "project":
-      return 5
-  }
-}
-
-function buildHomeAttentionRecords(input: {
-  records: HomeSessionRecord[]
-  projects: LocalProject[]
-  directories: (project: LocalProject) => string[]
-  sync: HomeSyncReader
-  permission: HomePermissionReader
-  notification: HomeNotificationReader
-  notificationActive: boolean
-}) {
-  const seenSessions = new Set(input.records.map((record) => record.session.id))
-  const sessionRecords = input.records.flatMap((record): HomeAttentionRecord[] => {
-    const [store] = input.sync.child(record.session.directory, { bootstrap: false })
-    const permissionRequest = sessionPermissionRequest(store.session, store.permission, record.session.id, (item) => {
-      return !input.permission.autoResponds(item, record.session.directory)
-    })
-    const questionRequest = sessionQuestionRequest(store.session, store.question, record.session.id)
-    const status = store.session_status[record.session.id] as SessionStatus | undefined
-    const unseen = input.notificationActive ? input.notification.session.unseen(record.session.id) : []
-    const updated = record.session.time.updated ?? record.session.time.created
-    const base = {
-      project: record.project,
-      projectName: record.projectName,
-      directory: record.session.directory,
-      session: record.session,
-    }
-
-    if (permissionRequest) {
-      return [
-        {
-          ...base,
-          id: `permission:${record.session.id}:${permissionRequest.id}`,
-          kind: "permission",
-          reason: "Permission needed",
-          detail: permissionRequest.permission,
-          count: 1,
-          time: updated,
-          clearable: false,
-        },
-      ]
-    }
-
-    if (questionRequest) {
-      const question = questionRequest.questions[0]
-      return [
-        {
-          ...base,
-          id: `question:${record.session.id}:${questionRequest.id}`,
-          kind: "question",
-          reason: "Question waiting",
-          detail: question?.question ?? question?.header,
-          count: questionRequest.questions.length,
-          time: updated,
-          clearable: false,
-        },
-      ]
-    }
-
-    if (status?.type === "retry") {
-      return [
-        {
-          ...base,
-          id: `retry:${record.session.id}:${status.attempt}`,
-          kind: "retry",
-          reason: "Retrying",
-          detail: status.message,
-          count: 1,
-          time: status.next,
-          clearable: false,
-        },
-      ]
-    }
-
-    const error = unseen.findLast((notification) => notification.type === "error")
-    if (error) {
-      return [
-        {
-          ...base,
-          id: `error:${record.session.id}`,
-          kind: "error",
-          reason: "Session error",
-          detail: notificationErrorDetail(error),
-          count: unseen.filter((notification) => notification.type === "error").length,
-          time: latestNotificationTime(unseen),
-          clearable: true,
-        },
-      ]
-    }
-
-    if (unseen.length > 0) {
-      return [
-        {
-          ...base,
-          id: `response:${record.session.id}`,
-          kind: "response",
-          reason: unseen.length === 1 ? "Response ready" : `${unseen.length} unread updates`,
-          count: unseen.length,
-          time: latestNotificationTime(unseen),
-          clearable: true,
-        },
-      ]
-    }
-
-    return []
-  })
-
-  if (!input.notificationActive) return sessionRecords.sort(sortHomeAttentionRecords)
-
-  const orphanProjectRecords = input.projects.flatMap((project): HomeAttentionRecord[] => {
-    const unseenByDirectory = input
-      .directories(project)
-      .map((directory) => {
-        const unseen = input.notification.project
-          .unseen(directory)
-          .filter((notification) => !notification.session || !seenSessions.has(notification.session))
-        return { directory, unseen }
-      })
-      .filter((item) => item.unseen.length > 0)
-    const unseen = unseenByDirectory.flatMap((item) => item.unseen)
-    if (unseen.length === 0) return []
-
-    const hasError = unseen.some((notification) => notification.type === "error")
-    const directoryCount = unseenByDirectory.length
-    const detail =
-      directoryCount === 1
-        ? `${unseen.length} alert${unseen.length === 1 ? "" : "s"}`
-        : `${unseen.length} alerts across ${directoryCount} directories`
-    return [
-      {
-        id: `project:${project.id ?? pathKey(project.worktree)}`,
-        kind: "project",
-        project,
-        projectName: displayName(project),
-        directory: unseenByDirectory[0]?.directory ?? project.worktree,
-        reason: hasError ? "Project error" : unseen.length === 1 ? "Unread project alert" : "Unread project alerts",
-        detail,
-        count: unseen.length,
-        time: latestNotificationTime(unseen),
-        clearable: true,
-      },
-    ]
-  })
-
-  return [...sessionRecords, ...orphanProjectRecords].sort(sortHomeAttentionRecords)
-}
-
-function sortHomeAttentionRecords(a: HomeAttentionRecord, b: HomeAttentionRecord) {
-  return homeAttentionPriority(a.kind) - homeAttentionPriority(b.kind) || b.time - a.time
 }
 
 export default function Home() {
@@ -459,16 +186,27 @@ function HomeDesign() {
     queryKey: ["home", "goals", state.selection.server, ...projectDirectories()] as const,
     queryFn: async () => {
       const ctx = focusedServerCtx()
-      if (!ctx) return []
-      return buildHomeGoalRecords({
+      if (!ctx) return { goals: [], attention: [] }
+      const goalReadCache = new Map<string, ReturnType<typeof readGoalFromSdk>>()
+      const readGoal = (directory: string) => {
+        const cached = goalReadCache.get(directory)
+        if (cached) return cached
+        const client = ctx.sdk.createClient({ directory, throwOnError: true })
+        const next = readGoalFromSdk({ client: { file: client.file } } satisfies GoalSdkClient)
+        goalReadCache.set(directory, next)
+        return next
+      }
+      const goalInput = {
         projectDirectories: projectDirectories(),
         projects: projects(),
         directories,
-        readGoal: async (directory) => {
-          const client = ctx.sdk.createClient({ directory, throwOnError: true })
-          return readGoalFromSdk({ client: { file: client.file } } satisfies GoalSdkClient)
-        },
-      })
+        readGoal,
+      }
+      const [goals, attention] = await Promise.all([
+        buildHomeGoalRecords(goalInput),
+        buildHomeGoalAttentionRecords({ ...goalInput, now: Date.now(), stalledAfterMinutes: 10 }),
+      ])
+      return { goals, attention }
     },
   }))
 
@@ -508,20 +246,24 @@ function HomeDesign() {
       }),
     ).length,
   )
-  const activeGoalRecords = createMemo(() => goalLoad.data ?? [])
+  const activeGoalRecords = createMemo(() => goalLoad.data?.goals ?? [])
   const activeGoalCount = createMemo(() => activeGoalRecords().length)
+  const goalAttentionRecords = createMemo(() => goalLoad.data?.attention ?? [])
   const attentionRecords = createMemo(() => {
     const conn = focusedServer()
     if (!conn) return []
-    return buildHomeAttentionRecords({
-      records: allRecords(),
-      projects: projects(),
-      directories,
-      sync: focusedSync(),
-      permission,
-      notification,
-      notificationActive: ServerConnection.key(conn) === server.key,
-    })
+    return mergeHomeAttentionRecords(
+      buildHomeAttentionRecords({
+        records: allRecords(),
+        projects: projects(),
+        directories,
+        sync: focusedSync(),
+        permission,
+        notification,
+        notificationActive: ServerConnection.key(conn) === server.key,
+      }),
+      goalAttentionRecords(),
+    )
   })
   const latestRecord = createMemo(() => records()[0])
   const latestGoalRecord = createMemo(() => activeGoalRecords()[0] ?? null)
@@ -1914,37 +1656,6 @@ function HomeSessionSkeleton(props: { label: string }) {
       </div>
     </div>
   )
-}
-
-function groupSessions(
-  records: HomeSessionRecord[],
-  language: ReturnType<typeof useLanguage>,
-  projectName?: string,
-): HomeSessionGroup[] {
-  const now = DateTime.local()
-  const yesterday = now.minus({ days: 1 })
-  const todaySessions = records.filter((record) =>
-    DateTime.fromMillis(record.session.time.updated ?? record.session.time.created).hasSame(now, "day"),
-  )
-  const yesterdaySessions = records.filter((record) =>
-    DateTime.fromMillis(record.session.time.updated ?? record.session.time.created).hasSame(yesterday, "day"),
-  )
-  const olderSessions = records.filter((record) => {
-    const time = DateTime.fromMillis(record.session.time.updated ?? record.session.time.created)
-    return !time.hasSame(now, "day") && !time.hasSame(yesterday, "day")
-  })
-  const olderTitle =
-    todaySessions.length === 0 && yesterdaySessions.length === 0
-      ? projectName
-        ? language.t("home.sessions.group.project", { project: projectName })
-        : language.t("sidebar.project.recentSessions")
-      : language.t("home.sessions.group.older")
-
-  return [
-    { id: "today" as const, title: language.t("home.sessions.group.today"), sessions: todaySessions },
-    { id: "yesterday" as const, title: language.t("home.sessions.group.yesterday"), sessions: yesterdaySessions },
-    { id: "older" as const, title: olderTitle, sessions: olderSessions },
-  ].filter((group) => group.sessions.length > 0)
 }
 
 function LegacyHome() {

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
+import type { GoalHandoffStore, GoalState } from "./goal-panel-pure"
+
 /**
  * Real behavior tests for the mission-control goal dock.
  *
@@ -23,6 +25,60 @@ const load = async () => {
   const mod = await import("./goal-panel-pure")
   return mod
 }
+
+describe("archive poll retention", () => {
+  const run = (goalID: string) => ({
+    summary: {
+      goalID,
+      title: `Goal ${goalID}`,
+      status: "success" as const,
+      outcome: "achieved" as const,
+      turns: 3,
+      elapsedMs: 60_000,
+      successCount: 1,
+      failureCount: 0,
+      archivedAt: 1_700_000_000_000,
+    },
+    detail: {
+      latestReason: "done",
+      cycles: [{ turn: 1, met: true, reason: "ok", at: 1_700_000_000_000 }],
+      template: {
+        source: "manual" as const,
+        label: "Manual",
+        reuseCommand: "set x",
+        canGenerate: false,
+      },
+    },
+  })
+
+  test("keeps the last good archive on a transient empty poll and preserves valid selection", async () => {
+    const { applyArchivePoll } = await load()
+    const previous = [run("a"), run("b")]
+
+    expect(applyArchivePoll(previous, [], "b")).toEqual({
+      runs: previous,
+      selectedGoalID: "b",
+    })
+  })
+
+  test("uses the incoming archive when present and selects a valid fallback row", async () => {
+    const { applyArchivePoll } = await load()
+    const incoming = [run("new"), run("older")]
+
+    expect(applyArchivePoll([run("stale")], incoming, "older")).toEqual({
+      runs: incoming,
+      selectedGoalID: "older",
+    })
+    expect(applyArchivePoll([run("stale")], incoming, "missing")).toEqual({
+      runs: incoming,
+      selectedGoalID: "new",
+    })
+    expect(applyArchivePoll([], [], "missing")).toEqual({
+      runs: [],
+      selectedGoalID: null,
+    })
+  })
+})
 
 describe("cleanText (sanitization for safe rendering)", () => {
   let cleanText: typeof import("./goal-panel-pure").cleanText
@@ -369,6 +425,58 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     })
   })
 
+  test("builds action preset drafts with only variables still referenced by condition or command", async () => {
+    const { actionDraftTemplateFromState, referencedTemplateVariables } = await load()
+    expect([...referencedTemplateVariables("Deploy {branch} from {scope}", "npm test -- --branch {branch}")]).toEqual([
+      "branch",
+      "scope",
+    ])
+
+    const template = actionDraftTemplateFromState(
+      {
+        sourceID: "ship-template",
+        id: "",
+        label: " Ship Release ",
+        prompt: " Deploy {branch} from {scope} ",
+        command: " npm test -- --branch {branch} ",
+        turns: 2.6,
+        minutes: 9.2,
+        category: "Testing",
+        tone: "emerald",
+        elevation: "raised",
+        skills: ["superpowers:test-driven-development"],
+        model: "openai:gpt-5-codex",
+      },
+      {
+        variables: {
+          branch: { description: "Target branch", default: "main" },
+          scope: { description: "Release scope", default: "desktop app" },
+          stale: { description: "Previously used but no longer referenced", default: "old" },
+        },
+      },
+    )
+
+    expect(template).toEqual({
+      id: "ship-release",
+      label: "Ship Release",
+      description: "Ship Release",
+      condition: "Deploy {branch} from {scope}",
+      command: "npm test -- --branch {branch}",
+      constraints: { maxTurns: 3, maxTimeMinutes: 9 },
+      variables: {
+        branch: { description: "Target branch", default: "main" },
+        scope: { description: "Release scope", default: "desktop app" },
+      },
+      category: "Testing",
+      tone: "emerald",
+      elevation: "raised",
+      skills: ["superpowers:test-driven-development"],
+      model: { providerID: "openai", modelID: "gpt-5-codex" },
+      builtin: false,
+    })
+    expect(template.variables).not.toHaveProperty("stale")
+  })
+
   test("copies an action template into an independently editable chain step with budgets", async () => {
     const { chainStepFromTemplate } = await load()
     const step = chainStepFromTemplate(
@@ -474,6 +582,224 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     })
   })
 
+  test("builds chain start payload with ordered steps and operator metadata", async () => {
+    const { chainStartPayload } = await load()
+    const firstStepSkills = ["superpowers:test-driven-development", "build-web-apps:frontend-testing-debugging"]
+    const start = chainStartPayload(
+      [
+        {
+          id: "build-1",
+          actionID: "build",
+          label: "Build",
+          condition: "Implement the GoalPanel payload builder",
+          command: "  bun test --preload ./happydom.ts src/pages/session/goal-panel-contract.test.ts  ",
+          maxTurns: 8,
+          maxTimeMinutes: 30,
+          category: "Building",
+          gate: "required",
+          tone: "sky",
+          elevation: "raised",
+          skills: firstStepSkills,
+          model: { providerID: "openai", modelID: "gpt-5-codex" },
+          builtin: true,
+        },
+        {
+          id: "verify-1",
+          actionID: "verify",
+          label: "Verify",
+          condition: "Confirm the refactor did not change runtime flow",
+          command: "   ",
+          maxTurns: 3,
+          maxTimeMinutes: 12,
+          category: "Testing",
+          tone: "emerald",
+          elevation: "flat",
+          model: "anthropic:claude-sonnet-4",
+          builtin: false,
+        },
+      ],
+      { maxTurns: 11, maxTimeMinutes: 42 },
+    )
+
+    expect(start.firstStepModel).toEqual({ providerID: "openai", modelID: "gpt-5-codex" })
+    expect(start.firstStepSkills).toEqual(firstStepSkills)
+    expect(start.firstStepSkills).not.toBe(firstStepSkills)
+
+    const parsed = JSON.parse(start.payload)
+    expect(parsed).toEqual({
+      master: { maxTurns: 11, maxMinutes: 42 },
+      steps: [
+        {
+          condition: "Implement the GoalPanel payload builder",
+          command: "bun test --preload ./happydom.ts src/pages/session/goal-panel-contract.test.ts",
+          verification: {
+            type: "shell",
+            command: "bun test --preload ./happydom.ts src/pages/session/goal-panel-contract.test.ts",
+          },
+          maxTurns: 8,
+          maxMinutes: 30,
+          category: "Building",
+          tone: "sky",
+          elevation: "raised",
+          skills: firstStepSkills,
+          model: { providerID: "openai", modelID: "gpt-5-codex" },
+        },
+        {
+          condition: "Confirm the refactor did not change runtime flow",
+          verification: { type: "marker" },
+          maxTurns: 3,
+          maxMinutes: 12,
+          category: "Testing",
+          tone: "emerald",
+          elevation: "flat",
+          model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+        },
+      ],
+    })
+    expect(parsed.steps[0]).not.toHaveProperty("gate")
+    expect(parsed.steps[1]).not.toHaveProperty("command")
+  })
+
+  test("makes chain step shell verification explicit and marker fallback structured", async () => {
+    const { chainStepVerificationContract, completionRuleTranslationKey } = await load()
+
+    expect(chainStepVerificationContract("  npm test -- --runInBand  ")).toEqual({
+      mode: "shell",
+      command: "npm test -- --runInBand",
+      verification: { type: "shell", command: "npm test -- --runInBand" },
+    })
+    expect(chainStepVerificationContract("   ")).toEqual({
+      mode: "marker",
+      verification: { type: "marker" },
+    })
+    expect(completionRuleTranslationKey({ command: " npm test " })).toBe("session.goal.template.completionShell")
+    expect(completionRuleTranslationKey({ command: "" })).toBe("session.goal.template.completionMarker")
+  })
+
+  test("classifies action editor controls with operator-visible disabled reasons", async () => {
+    const { actionEditorControlState } = await load()
+    const customTemplate = { builtin: false }
+    const builtinTemplate = { builtin: true }
+
+    expect(
+      actionEditorControlState({
+        control: "save",
+        busy: false,
+        hasSession: true,
+        prompt: "",
+        selectedTemplate: customTemplate,
+      }),
+    ).toEqual({ disabled: true, reason: "missing-prompt" })
+    expect(
+      actionEditorControlState({
+        control: "duplicate",
+        busy: false,
+        hasSession: true,
+        prompt: "  Run the test suite  ",
+        selectedTemplate: customTemplate,
+      }),
+    ).toEqual({ disabled: false, reason: null })
+    expect(
+      actionEditorControlState({
+        control: "delete",
+        busy: false,
+        hasSession: true,
+        prompt: "anything",
+        selectedTemplate: builtinTemplate,
+      }),
+    ).toEqual({ disabled: true, reason: "builtin-template" })
+    expect(
+      actionEditorControlState({
+        control: "delete",
+        busy: false,
+        hasSession: true,
+        prompt: "anything",
+        selectedTemplate: null,
+      }),
+    ).toEqual({ disabled: true, reason: "no-template" })
+    expect(
+      actionEditorControlState({
+        control: "delete",
+        busy: false,
+        hasSession: true,
+        prompt: "anything",
+        selectedTemplate: customTemplate,
+      }),
+    ).toEqual({ disabled: false, reason: null })
+    expect(
+      actionEditorControlState({
+        control: "save",
+        busy: true,
+        hasSession: true,
+        prompt: "ready",
+        selectedTemplate: customTemplate,
+      }),
+    ).toEqual({ disabled: true, reason: "busy" })
+    expect(
+      actionEditorControlState({
+        control: "save",
+        busy: false,
+        hasSession: false,
+        prompt: "ready",
+        selectedTemplate: customTemplate,
+      }),
+    ).toEqual({ disabled: true, reason: "missing-session" })
+  })
+
+  test("classifies action skill picker controls with operator-visible disabled reasons", async () => {
+    const { skillPickerControlState } = await load()
+
+    expect(
+      skillPickerControlState({
+        busy: false,
+        hasSession: true,
+        availableSkillCount: 2,
+        selectedSkillCount: 7,
+      }),
+    ).toEqual({ disabled: false, reason: null })
+    expect(
+      skillPickerControlState({
+        busy: true,
+        hasSession: true,
+        availableSkillCount: 2,
+        selectedSkillCount: 0,
+      }),
+    ).toEqual({ disabled: true, reason: "busy" })
+    expect(
+      skillPickerControlState({
+        busy: false,
+        hasSession: false,
+        availableSkillCount: 2,
+        selectedSkillCount: 0,
+      }),
+    ).toEqual({ disabled: true, reason: "missing-session" })
+    expect(
+      skillPickerControlState({
+        busy: false,
+        hasSession: true,
+        availableSkillCount: 3,
+        selectedSkillCount: 8,
+      }),
+    ).toEqual({ disabled: true, reason: "max-skills" })
+    expect(
+      skillPickerControlState({
+        busy: false,
+        hasSession: true,
+        availableSkillCount: 0,
+        selectedSkillCount: 3,
+      }),
+    ).toEqual({ disabled: true, reason: "no-skills" })
+    expect(
+      skillPickerControlState({
+        busy: false,
+        hasSession: true,
+        availableSkillCount: 0,
+        selectedSkillCount: 4,
+        maxSkills: 4,
+      }),
+    ).toEqual({ disabled: true, reason: "max-skills" })
+  })
+
   describe("validateChainDraft", () => {
     let steps: Array<{ id: string; actionID: string; label: string; condition: string; command: string; maxTurns: number; maxTimeMinutes: number; builtin: boolean }>
     let validateChainDraft: typeof import("./goal-panel-pure").validateChainDraft
@@ -494,6 +820,30 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       const errors = validateChainDraft([], { maxTurns: 20, maxTimeMinutes: 60 })
       expect(errors).toHaveLength(1)
       expect(errors[0].message).toContain("Add at least one action")
+    })
+
+    test("keeps Start Chain clickable for empty drafts so validation can explain the rejection", async () => {
+      const { chainStartControlState, validateChainDraft } = await load()
+
+      expect(chainStartControlState({ busy: false, hasLiveGoal: false, hasSession: true })).toEqual({
+        disabled: false,
+        reason: null,
+      })
+      expect(validateChainDraft([], { maxTurns: 20, maxTimeMinutes: 60 })[0]?.message).toContain(
+        "Add at least one action",
+      )
+      expect(chainStartControlState({ busy: true, hasLiveGoal: false, hasSession: true })).toEqual({
+        disabled: true,
+        reason: "busy",
+      })
+      expect(chainStartControlState({ busy: false, hasLiveGoal: true, hasSession: true })).toEqual({
+        disabled: true,
+        reason: "live-goal",
+      })
+      expect(chainStartControlState({ busy: false, hasLiveGoal: false, hasSession: false })).toEqual({
+        disabled: true,
+        reason: "missing-session",
+      })
     })
 
     test("reports error for empty condition", async () => {
@@ -595,5 +945,77 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       expect(errors[0].stepIndex).toBe(-1)
       expect(errors[0].message).toContain("Chain cannot have more than")
     })
+  })
+})
+
+describe("actionCategoryShortLabel (compact routing labels)", () => {
+  test("maps action categories to the short labels shown in rows and pickers", async () => {
+    const { ACTION_CATEGORIES, actionCategoryShortLabel } = await load()
+    expect(ACTION_CATEGORIES).toEqual([
+      "All",
+      "Planning",
+      "Building",
+      "Debugging",
+      "Testing",
+      "Review",
+      "Documentation",
+      "Custom",
+    ])
+    expect(ACTION_CATEGORIES.map(actionCategoryShortLabel)).toEqual([
+      "All",
+      "Plan",
+      "Build",
+      "Debug",
+      "Verify",
+      "Review",
+      "Docs",
+      "Custom",
+    ])
+  })
+})
+
+describe("handoffPanelMode (pending handoff visibility)", () => {
+  test("keeps a pending handoff visible while a live goal is running, but only allows claim when idle", async () => {
+    const { handoffPanelMode } = await load()
+    const liveGoal: GoalState = {
+      id: "live",
+      condition: "Finish current run",
+      status: "active",
+      startedAt: 1,
+      completedAt: null,
+      turnsEvaluated: 0,
+      tokensUsed: 0,
+      lastEvaluation: null,
+      evaluationHistory: [],
+      constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
+    }
+    const pendingHandoff: GoalHandoffStore = {
+      handoff: {
+        createdAt: "2026-06-19T12:00:00.000Z",
+        state: {
+          ...liveGoal,
+          id: "handoff",
+          condition: "Continue handed-off run",
+          status: "paused",
+        },
+      },
+      corrupt: false,
+      loaded: true,
+    }
+
+    expect(handoffPanelMode(liveGoal, pendingHandoff)).toBe("pending")
+    expect(handoffPanelMode(null, pendingHandoff)).toBe("claim")
+    expect(handoffPanelMode(liveGoal, { handoff: null, corrupt: false, loaded: true })).toBe("hidden")
+  })
+})
+
+describe("steerDraftDisposition (prompt admission failure)", () => {
+  test("retains the steer draft when the note saves but prompt admission fails", async () => {
+    const { steerDraftDisposition } = await load()
+
+    expect(steerDraftDisposition({ commandSaved: true, promptAttempted: true, promptAdmitted: false })).toBe("retain")
+    expect(steerDraftDisposition({ commandSaved: true, promptAttempted: true, promptAdmitted: true })).toBe("clear")
+    expect(steerDraftDisposition({ commandSaved: true, promptAttempted: false, promptAdmitted: false })).toBe("clear")
+    expect(steerDraftDisposition({ commandSaved: false, promptAttempted: true, promptAdmitted: false })).toBe("retain")
   })
 })

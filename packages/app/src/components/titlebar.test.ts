@@ -1,65 +1,30 @@
 import { describe, expect, test } from "bun:test"
 
 /**
- * Real behavior tests for the titlebar's new-session entrypoint.
- *
- * The earlier version only asserted the file contained two literal strings.
- * That would pass with zero code at all. These tests use a lightweight
- * regex parse to verify that the *named handlers and call sites* the
- * implementation claims to ship actually exist.
+ * Thin TSX wiring smoke for the titlebar.
+ * Behavior lives in titlebar-pure.test.ts; these checks only cover component
+ * seams that are not meaningful to assert without rendering the full app shell.
  */
 
 const titlebar = async () =>
   (await Bun.file(new URL("./titlebar.tsx", import.meta.url)).text()).toString()
 
-/** Top-level declaration: function NAME(... or const NAME = or similar. */
-async function hasTopLevel(name: string): Promise<boolean> {
-  const src = await titlebar()
-  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, "")
-  const noLine = noBlock.replace(/^\s*\/\/.*$/gm, "")
-  const re = new RegExp(`^\\s*(export\\s+)?(function|const|class)\\s+${name}\\b`, "m")
-  return re.test(noLine)
-}
-
-describe("titlebar new-session entrypoint", () => {
-  test("creates a draft instead of relying on legacy session navigation", async () => {
-    const src = await titlebar()
-    // The new-session entrypoint must call tabs.newDraft with the right
-    // server+directory pair — that's the fix for the "Failed to fetch
-    // dynamically imported module: new-session.tsx" crash.
-    expect(src).toMatch(/tabs\.newDraft\(\{\s*server:\s*server\.key,\s*directory\s*\}\)/)
-  })
-
+describe("titlebar TSX wiring", () => {
   test("wires onClick to the openNewTab handler on the V2 + button", async () => {
     const src = await titlebar()
-    // The V2 IconButtonV2 must call openNewTab on click. The bare
-    // string "onClick={openNewTab}" would also match a hand-rolled div;
-    // require the IconButtonV2 prefix to ensure it's wired through the
-    // official button component.
     expect(src).toMatch(/IconButtonV2[\s\S]{0,400}onClick=\{openNewTab\}/)
   })
 
-  test("openNewTab is defined as a real function (not a stray identifier)", async () => {
-    expect(await hasTopLevel("openNewTab")).toBe(true)
-  })
-
-  test("openNewTab falls back to the directory picker when no project is open", async () => {
+  test("wires new-tab handlers through titlebar pure helpers", async () => {
     const src = await titlebar()
-    const openNewTab = src.match(/const openNewTab = \(\) => \{([\s\S]*?)\n  \}/)
-    expect(openNewTab).toBeTruthy()
-    expect(openNewTab![1]).toContain("pickProjectForNewTab()")
-  })
-
-  test("directory-picker fallback updates the server project recency without calling a missing layout API", async () => {
-    const src = await titlebar()
+    expect(src).toContain("resolveTitlebarNewSessionDirectory")
+    expect(src).toContain("readTitlebarDirectoryPickerSelection(result)")
+    expect(src.match(/tabs\.newDraft\(titlebarDraftRequest\(server\.key, directory\)\)/g)?.length).toBe(2)
     expect(src).toContain("server.projects.touch(directory)")
     expect(src).not.toContain("layout.projects.touch(directory)")
   })
 
   test("does NOT navigate to the legacy /:dir/session route (which crashes on the draft page)", async () => {
-    // The whole point of the refactor was to stop hitting the
-    // /:dir/session route (which dynamically imports new-session.tsx
-    // and crashes). Titlebar.tsx should never reference that route.
     const src = await titlebar()
     expect(src).not.toMatch(/\$\{params\.dir\}\/session[^?]/i)
   })
@@ -77,10 +42,7 @@ describe("titlebar new-session entrypoint", () => {
 
   test("Electron Windows titlebar width is clamped to the viewport", async () => {
     const src = await titlebar()
-    const widthHelper = src.match(/const electronTitlebarWidth = \(\) =>\s*`([^`]+)`/)
-    expect(widthHelper).toBeTruthy()
-    expect(widthHelper![1]).toContain("min(env(titlebar-area-width")
-    expect(widthHelper![1]).toContain("calc(100vw - ${windowsControlsWidth()})")
+    expect(src).toContain("electronTitlebarWidthCSS(windowsControlsWidth())")
     expect(src).toContain("width: electronWindows() ? electronTitlebarWidth() : undefined")
     expect(src).toContain('"max-width": electronWindows() ? electronTitlebarWidth() : undefined')
   })

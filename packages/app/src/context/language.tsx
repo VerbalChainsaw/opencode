@@ -30,6 +30,16 @@ type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
 type Source = { dict: Record<string, string> }
 
+export function mergeDictionaryWithFallback(
+  fallback: Record<string, string>,
+  ...sources: Array<Record<string, string>>
+) {
+  return {
+    ...i18n.flatten(fallback),
+    ...i18n.flatten(Object.assign({}, ...sources)),
+  } as Record<string, string>
+}
+
 function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
@@ -97,11 +107,11 @@ const LABEL_KEY: Record<Locale, keyof Dictionary> = {
   tr: "language.tr",
 }
 
-const base = i18n.flatten({ ...en, ...uiEn })
+const base = mergeDictionaryWithFallback(en, uiEn) as Dictionary
 const dicts = new Map<Locale, Dictionary>([["en", base]])
 
 const merge = (app: Promise<Source>, ui: Promise<Source>) =>
-  Promise.all([app, ui]).then(([a, b]) => ({ ...base, ...i18n.flatten({ ...a.dict, ...b.dict }) }) as Dictionary)
+  Promise.all([app, ui]).then(([a, b]) => mergeDictionaryWithFallback(base, a.dict, b.dict) as Dictionary)
 
 const loaders: Record<Exclude<Locale, "en">, () => Promise<Dictionary>> = {
   zh: () => merge(import("@/i18n/zh"), import("@opencode-ai/ui/i18n/zh")),

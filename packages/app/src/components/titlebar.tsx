@@ -34,6 +34,14 @@ import { displayName, getProjectAvatarSource, projectForSession } from "@/pages/
 import { useSessionTabAvatarState } from "@/pages/layout/project-avatar-state"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/components/titlebar-session-events"
+import {
+  electronTitlebarWidthCSS,
+  MIN_TITLEBAR_ZOOM,
+  readTitlebarDirectoryPickerSelection,
+  resolveTitlebarNewSessionDirectory,
+  titlebarDraftRequest,
+  windowsControlsWidthCSS,
+} from "@/components/titlebar-pure"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { useGlobal } from "@/context/global"
 import { decode64 } from "@/utils/base64"
@@ -63,8 +71,6 @@ const currentDesktopWindow = () => tauriApi()?.window?.getCurrentWindow?.()
 const currentThemeWindow = () => tauriApi()?.webviewWindow?.getCurrentWebviewWindow?.()
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 36
-const minTitlebarZoom = 0.25
-const windowsControlsBaseWidth = 138 // 3 native Windows caption buttons at 46px each.
 
 export type TitlebarUpdate = {
   version: () => string | undefined
@@ -93,7 +99,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const web = createMemo(() => platform.platform === "web")
   const zoom = () => platform.webviewZoom?.() ?? 1
-  const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
+  const titlebarZoom = () => (windows() ? Math.max(zoom(), MIN_TITLEBAR_ZOOM) : zoom())
   const counterZoom = () => (windows() && titlebarZoom() < 1 ? 1 / titlebarZoom() : 1)
   const minHeight = () => {
     const height = useV2Titlebar() ? v2TitlebarHeight : legacyTitlebarHeight
@@ -101,9 +107,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     if (windows()) return `${height / Math.min(titlebarZoom(), 1)}px`
     return undefined
   }
-  const windowsControlsWidth = () => `${windowsControlsBaseWidth / Math.max(titlebarZoom(), 1)}px`
-  const electronTitlebarWidth = () =>
-    `min(env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()})), calc(100vw - ${windowsControlsWidth()}))`
+  const windowsControlsWidth = () => windowsControlsWidthCSS(titlebarZoom())
+  const electronTitlebarWidth = () => electronTitlebarWidthCSS(windowsControlsWidth())
 
   const [history, setHistory] = createStore({
     stack: [] as string[],
@@ -119,9 +124,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     return parts.at(-1) === "session"
   })
   const newSessionDirectory = () => {
-    const current = decode64(params.dir)
-    if (current) return current
-    return layout.projects.list()[0]?.worktree
+    return resolveTitlebarNewSessionDirectory({
+      currentDirectory: decode64(params.dir),
+      projectWorktrees: layout.projects.list().map((project) => project.worktree),
+    })
   }
   const pickProjectForNewTab = () => {
     const connection = server.current
@@ -131,11 +137,11 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       title: language.t("command.project.open"),
       multiple: false,
       onSelect: (result) => {
-        const directory = typeof result === "string" ? result : Array.isArray(result) ? result[0] : null
+        const directory = readTitlebarDirectoryPickerSelection(result)
         if (!directory) return
         layout.projects.open(directory)
         server.projects.touch(directory)
-        tabs.newDraft({ server: server.key, directory })
+        tabs.newDraft(titlebarDraftRequest(server.key, directory))
       },
     })
   }
@@ -145,7 +151,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       pickProjectForNewTab()
       return
     }
-    tabs.newDraft({ server: server.key, directory })
+    tabs.newDraft(titlebarDraftRequest(server.key, directory))
   }
 
   createEffect(() => {

@@ -13,9 +13,10 @@ import { describe, expect, test } from "bun:test"
  * If someone deletes one of these (e.g. "latestGoalRecord"), the test
  * fails with a precise message.
  *
- * Pure-function tests for the *behavior* of these helpers live in
- * `layout/helpers.test.ts`. The point of THIS file is to ensure the
- * mission-control wiring on top of those helpers didn't get deleted.
+ * Pure-function tests for the *behavior* of extracted Home data builders
+ * live in `home-pure.test.ts`. The point of THIS file is to ensure the
+ * mission-control wiring on top of those helpers and UI markers didn't get
+ * deleted.
  */
 
 const home = async () => (await Bun.file(new URL("./home.tsx", import.meta.url)).text()).toString()
@@ -156,7 +157,7 @@ describe("home mission-control contract", () => {
     // count. The home board needs queue-style records with reasons so the
     // button can answer "which session needs me, and why?"
     const src = await home()
-    expect(await hasTopLevel("buildHomeAttentionRecords")).toBe(true)
+    expect(src).toContain("buildHomeAttentionRecords")
     expect(src).toContain("type HomeAttentionRecord")
     expect(src).toContain("attentionRecords")
 
@@ -172,7 +173,7 @@ describe("home mission-control contract", () => {
 
   test("Live Sessions metric counts actually live records, not the recent-session limit", async () => {
     const src = await home()
-    expect(await hasTopLevel("isHomeSessionLive")).toBe(true)
+    expect(src).toContain("isHomeSessionLive")
     const liveMetric = src.match(/const liveSessionCount = createMemo\([\s\S]{0,300}\)/)
     expect(liveMetric).toBeTruthy()
     expect(liveMetric![0]).toContain("isHomeSessionLive")
@@ -181,10 +182,10 @@ describe("home mission-control contract", () => {
 
   test("Active Goals metric is backed by workspace goal-state records, not titled sessions", async () => {
     const src = await home()
+    expect(src).toContain("buildHomeGoalRecords")
     expect(src).toContain("type HomeGoalRecord")
     expect(src).toContain("readGoalFromSdk")
     expect(src).toContain("activeGoalRecords")
-    expect(src).toContain('status === "active" || store.state.status === "paused"')
 
     const activeMetric = src.match(/const activeGoalCount = createMemo\([\s\S]{0,240}\)/)
     expect(activeMetric).toBeTruthy()
@@ -257,11 +258,7 @@ describe("home mission-control contract", () => {
 
   test("older session grouping uses the selected project name before falling back to recent sessions", async () => {
     const src = await home()
-    const groupSessions = src.match(/function groupSessions\([\s\S]*?\n}\n\nfunction LegacyHome/)
-    expect(groupSessions).toBeTruthy()
-    expect(groupSessions![0]).toContain("projectName?: string")
-    expect(groupSessions![0]).toContain('language.t("home.sessions.group.project", { project: projectName })')
-    expect(groupSessions![0]).toContain('language.t("sidebar.project.recentSessions")')
+    expect(src).toContain("groupSessions(records(), language, selectedProjectName())")
   })
 
   test("Projects dialog is titled as Projects, not Live Board", async () => {

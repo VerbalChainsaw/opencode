@@ -31,6 +31,7 @@ opencode-dev
 UPCOMING_CHANGELOG.md
 logs/
 .hermes/runtime-logs/
+output/playwright/
 *.bun-build
 tsconfig.tsbuildinfo
 .aider*

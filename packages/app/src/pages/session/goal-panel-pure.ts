@@ -52,6 +52,43 @@ export interface GoalState {
   }
 }
 
+export interface HistoryRun {
+  summary: {
+    goalID: string
+    title: string
+    status: "success" | "failure" | "mixed"
+    outcome: "achieved" | "cleared" | "replaced"
+    turns: number
+    elapsedMs: number
+    successCount: number
+    failureCount: number
+    archivedAt: number
+  }
+  detail: {
+    latestReason: string
+    cycles: Array<{ turn: number; met: boolean; reason: string; at: number }>
+    template: {
+      source: "template" | "manual"
+      label: string
+      reuseCommand: string
+      canGenerate: boolean
+    }
+  }
+}
+
+export function applyArchivePoll(
+  previousRuns: HistoryRun[],
+  incomingRuns: HistoryRun[],
+  selectedGoalID: string | null,
+): { runs: HistoryRun[]; selectedGoalID: string | null } {
+  const runs = incomingRuns.length === 0 && previousRuns.length > 0 ? previousRuns : incomingRuns
+  const selectedStillExists = selectedGoalID !== null && runs.some((run) => run.summary.goalID === selectedGoalID)
+  return {
+    runs,
+    selectedGoalID: selectedStillExists ? selectedGoalID : runs[0]?.summary.goalID ?? null,
+  }
+}
+
 const GOAL_STATUSES = new Set(["active", "paused", "achieved", "cleared"])
 
 /** Structural gate for a parsed goal-state payload. Exported for unit
@@ -111,6 +148,19 @@ export const GOAL_TEMPLATE_CATEGORIES = [
 ] as const
 export type GoalTemplateCategory = (typeof GOAL_TEMPLATE_CATEGORIES)[number]
 
+export const ACTION_CATEGORIES = ["All", ...GOAL_TEMPLATE_CATEGORIES] as const
+export type ActionCategory = (typeof ACTION_CATEGORIES)[number]
+
+export function actionCategoryShortLabel(category: ActionCategory) {
+  if (category === "Planning") return "Plan"
+  if (category === "Building") return "Build"
+  if (category === "Debugging") return "Debug"
+  if (category === "Testing") return "Verify"
+  if (category === "Review") return "Review"
+  if (category === "Documentation") return "Docs"
+  return category
+}
+
 export const GOAL_TEMPLATE_GATES = ["required", "pass", "verify", "review"] as const
 export type GoalTemplateGate = (typeof GOAL_TEMPLATE_GATES)[number]
 
@@ -138,9 +188,66 @@ export interface GoalTemplateButton {
   builtin: boolean
 }
 
+export interface GoalActionDraftState {
+  sourceID: string
+  id: string
+  label: string
+  prompt: string
+  command: string
+  turns: number
+  minutes: number
+  category: GoalTemplateCategory
+  tone: GoalTemplateTone
+  elevation: GoalTemplateElevation
+  skills: string[]
+  model: string
+}
+
+export type GoalActionDraftTemplate = GoalTemplateButton & { condition: string; builtin: false }
+
 export interface GoalTemplateVariable {
   description?: string
   default?: string
+}
+
+export type ActionEditorControl = "save" | "duplicate" | "delete"
+export type ActionEditorDisabledReason = "busy" | "missing-session" | "missing-prompt" | "no-template" | "builtin-template"
+
+export function actionEditorControlState(input: {
+  control: ActionEditorControl
+  busy: boolean
+  hasSession: boolean
+  prompt: string
+  selectedTemplate?: Pick<GoalTemplateButton, "builtin"> | null
+}): { disabled: boolean; reason: ActionEditorDisabledReason | null } {
+  if (input.busy) return { disabled: true, reason: "busy" }
+  if (!input.hasSession) return { disabled: true, reason: "missing-session" }
+  if (input.control === "delete") {
+    if (!input.selectedTemplate) return { disabled: true, reason: "no-template" }
+    if (input.selectedTemplate.builtin) return { disabled: true, reason: "builtin-template" }
+    return { disabled: false, reason: null }
+  }
+  if (!cleanText(input.prompt).trim()) return { disabled: true, reason: "missing-prompt" }
+  return { disabled: false, reason: null }
+}
+
+export type SkillPickerDisabledReason = "busy" | "missing-session" | "max-skills" | "no-skills"
+
+export function skillPickerControlState(input: {
+  busy: boolean
+  hasSession: boolean
+  availableSkillCount: number
+  selectedSkillCount: number
+  maxSkills?: number
+}): { disabled: boolean; reason: SkillPickerDisabledReason | null } {
+  const maxSkills = Math.max(1, Math.round(Number.isFinite(input.maxSkills) ? input.maxSkills ?? 8 : 8))
+  const selectedSkillCount = Math.max(0, Math.round(Number.isFinite(input.selectedSkillCount) ? input.selectedSkillCount : 0))
+  const availableSkillCount = Math.max(0, Math.round(Number.isFinite(input.availableSkillCount) ? input.availableSkillCount : 0))
+  if (input.busy) return { disabled: true, reason: "busy" }
+  if (!input.hasSession) return { disabled: true, reason: "missing-session" }
+  if (selectedSkillCount >= maxSkills) return { disabled: true, reason: "max-skills" }
+  if (availableSkillCount === 0) return { disabled: true, reason: "no-skills" }
+  return { disabled: false, reason: null }
 }
 
 /** Built-in method prompts for the dock. These are deliberately general
@@ -293,6 +400,15 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
 
 const DEFAULT_TEMPLATE_BY_ID = new Map(DEFAULT_TEMPLATE_BUTTONS.map((template) => [template.id, template]))
 const TEMPLATE_ID_RE = /^[A-Za-z0-9_-]+$/
+
+export function actionIDFromLabel(label: string, fallback = "custom-action") {
+  const id = cleanText(label)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return TEMPLATE_ID_RE.test(id) && id.length > 0 ? id : fallback
+}
 const TEMPLATE_VAR_RE = /^\w+$/
 const MAX_TEMPLATE_BUTTONS = 24
 const MAX_TEMPLATE_SKILLS = 8
@@ -458,6 +574,52 @@ export function templateDraftFromButton(
   }
 }
 
+export function referencedTemplateVariables(condition: string, command: string) {
+  const out = new Set<string>()
+  for (const text of [condition, command]) {
+    for (const match of text.matchAll(/\{(\w+)\}/g)) {
+      if (match[1]) out.add(match[1])
+    }
+  }
+  return out
+}
+
+export function actionDraftTemplateFromState(
+  actionDraft: GoalActionDraftState,
+  sourceTemplate?: Pick<GoalTemplateButton, "variables"> | null,
+): GoalActionDraftTemplate {
+  const id = actionDraft.id.trim() || actionIDFromLabel(actionDraft.label)
+  const label = actionDraft.label.trim() || id
+  const condition = actionDraft.prompt.trim()
+  const command = actionDraft.command.trim()
+  const referencedVars = referencedTemplateVariables(condition, command)
+  const variables =
+    sourceTemplate?.variables && referencedVars.size > 0
+      ? (Object.fromEntries(
+          Object.entries(sourceTemplate.variables).filter(([key]) => referencedVars.has(key)),
+        ) as Record<string, GoalTemplateVariable>)
+      : undefined
+  const model = pinnedModelForRuntime(actionDraft.model)
+  return {
+    id,
+    label,
+    description: label || (condition.length > 80 ? `${condition.slice(0, 77)}...` : condition),
+    condition,
+    ...(command ? { command } : {}),
+    constraints: {
+      maxTurns: Math.max(1, Math.round(actionDraft.turns)),
+      maxTimeMinutes: Math.max(1, Math.round(actionDraft.minutes)),
+    },
+    ...(variables && Object.keys(variables).length > 0 ? { variables } : {}),
+    category: actionDraft.category,
+    tone: actionDraft.tone,
+    elevation: actionDraft.elevation,
+    ...(actionDraft.skills.length > 0 ? { skills: [...actionDraft.skills] } : {}),
+    ...(model ? { model } : {}),
+    builtin: false,
+  }
+}
+
 export interface GoalChainDraftStep {
   id: string
   actionID: string
@@ -523,6 +685,84 @@ export function chainBudgetSummary(steps: GoalChainDraftStep[], master: GoalChai
     effectiveTimeMinutes: steps.length === 0 ? 0 : Math.min(masterTimeMinutes, ultimateTimeMinutes),
     masterTurnsIsCap: steps.length > 0 && masterTurns < ultimateTurns,
     masterTimeIsCap: steps.length > 0 && masterTimeMinutes < ultimateTimeMinutes,
+  }
+}
+
+export interface GoalChainStartPayload {
+  payload: string
+  firstStepModel?: GoalPinnedModel
+  firstStepSkills?: string[]
+}
+
+export type ChainStepVerificationContract =
+  | { mode: "shell"; command: string; verification: { type: "shell"; command: string } }
+  | { mode: "marker"; verification: { type: "marker" } }
+
+export function pinnedModelForRuntime(model?: GoalTemplateModel): GoalPinnedModel | undefined {
+  if (!model) return undefined
+  if (isGoalPinnedModel(model)) {
+    const providerID = cleanText(model.providerID).trim().slice(0, 160)
+    const modelID = cleanText(model.modelID).trim().slice(0, 160)
+    return providerID && modelID ? { providerID, modelID } : undefined
+  }
+  const clean = cleanText(model).trim()
+  const sep = clean.indexOf(":")
+  if (sep <= 0 || sep === clean.length - 1) return undefined
+  const providerID = clean.slice(0, sep).trim().slice(0, 160)
+  const modelID = clean.slice(sep + 1).trim().slice(0, 160)
+  return providerID && modelID ? { providerID, modelID } : undefined
+}
+
+export function chainStepVerificationContract(commandInput: string | null | undefined): ChainStepVerificationContract {
+  const command = (commandInput ?? "").trim()
+  if (command) {
+    return {
+      mode: "shell",
+      command,
+      verification: { type: "shell", command },
+    }
+  }
+  return {
+    mode: "marker",
+    verification: { type: "marker" },
+  }
+}
+
+export function completionRuleTranslationKey(input: { command?: string | null }) {
+  return chainStepVerificationContract(input.command).mode === "shell"
+    ? "session.goal.template.completionShell"
+    : "session.goal.template.completionMarker"
+}
+
+export function chainStartPayload(
+  steps: GoalChainDraftStep[],
+  master: GoalChainMasterBudget,
+): GoalChainStartPayload {
+  const firstStepModel = pinnedModelForRuntime(steps[0]?.model)
+  const firstStepSkills = steps[0]?.skills && steps[0].skills.length > 0 ? [...steps[0].skills] : undefined
+  const payload = JSON.stringify({
+    master: { maxTurns: master.maxTurns, maxMinutes: master.maxTimeMinutes },
+    steps: steps.map((step) => {
+      const verification = chainStepVerificationContract(step.command)
+      const model = pinnedModelForRuntime(step.model)
+      return {
+        condition: step.condition,
+        ...(verification.mode === "shell" ? { command: verification.command } : {}),
+        verification: verification.verification,
+        maxTurns: step.maxTurns,
+        maxMinutes: step.maxTimeMinutes,
+        ...(step.category ? { category: step.category } : {}),
+        ...(step.tone ? { tone: step.tone } : {}),
+        ...(step.elevation ? { elevation: step.elevation } : {}),
+        ...(step.skills && step.skills.length > 0 ? { skills: [...step.skills] } : {}),
+        ...(model ? { model } : {}),
+      }
+    }),
+  })
+  return {
+    payload,
+    ...(firstStepModel ? { firstStepModel } : {}),
+    ...(firstStepSkills ? { firstStepSkills } : {}),
   }
 }
 
@@ -632,6 +872,19 @@ export function validateChainDraft(
   return errors
 }
 
+export type ChainStartDisabledReason = "busy" | "live-goal" | "missing-session"
+
+export function chainStartControlState(input: {
+  busy: boolean
+  hasLiveGoal: boolean
+  hasSession: boolean
+}): { disabled: boolean; reason: ChainStartDisabledReason | null } {
+  if (input.busy) return { disabled: true, reason: "busy" }
+  if (input.hasLiveGoal) return { disabled: true, reason: "live-goal" }
+  if (!input.hasSession) return { disabled: true, reason: "missing-session" }
+  return { disabled: false, reason: null }
+}
+
 function clampPositiveInteger(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return Math.max(0, Math.round(fallback))
   return Math.max(0, Math.round(value))
@@ -663,6 +916,25 @@ export interface GoalHandoffStore {
   handoff: GoalHandoff | null
   corrupt: boolean
   loaded: boolean
+}
+
+export type HandoffPanelMode = "hidden" | "pending" | "claim"
+
+export function handoffPanelMode(liveGoal: GoalState | null, store: GoalHandoffStore): HandoffPanelMode {
+  if (!store.handoff) return "hidden"
+  return liveGoal ? "pending" : "claim"
+}
+
+export type SteerDraftDisposition = "retain" | "clear"
+
+export function steerDraftDisposition(input: {
+  commandSaved: boolean
+  promptAttempted: boolean
+  promptAdmitted: boolean
+}): SteerDraftDisposition {
+  if (!input.commandSaved) return "retain"
+  if (input.promptAttempted && !input.promptAdmitted) return "retain"
+  return "clear"
 }
 
 function workspaceFileContent(raw: unknown): string | null {

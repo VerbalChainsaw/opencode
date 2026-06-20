@@ -17,6 +17,7 @@ import { dict as th } from "./th"
 import { dict as zh } from "./zh"
 import { dict as zht } from "./zht"
 import { dict as tr } from "./tr"
+import { mergeDictionaryWithFallback } from "../context/language"
 
 const locales = [ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, uk, th, tr, zh, zht]
 const keys = ["command.session.previous.unseen", "command.session.next.unseen"] as const
@@ -29,5 +30,21 @@ describe("i18n parity", () => {
         expect(locale[key]).not.toBe(en[key])
       }
     }
+  })
+
+  test("GoalPanel keys have an explicit English fallback in every locale", () => {
+    const goalKeys = Object.keys(en).filter((key) => key.startsWith("session.goal."))
+    expect(goalKeys.length).toBeGreaterThan(100)
+
+    for (const locale of locales) {
+      const merged = mergeDictionaryWithFallback(en, locale)
+      for (const key of goalKeys) {
+        expect(merged[key]).toBeDefined()
+      }
+    }
+
+    const zhMerged = mergeDictionaryWithFallback(en, zh)
+    expect(zhMerged["session.goal.chainBuilder.shortTitle"]).toBe(zh["session.goal.chainBuilder.shortTitle"])
+    expect(zhMerged["session.goal.action.cancel"]).toBe(en["session.goal.action.cancel"])
   })
 })

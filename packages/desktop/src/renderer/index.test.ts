@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test"
 
 /**
- * Real behavior test for the desktop renderer entrypoint.
- *
- * The earlier version only asserted the file contained a single string
- * (`import "@opencode-ai/app/index.css"`). This would pass with a file
- * that just contained that one line and nothing else. The new test
- * asserts the import is at the TOP of the file (before any other
- * statements) and that the file is a valid renderer entrypoint.
+ * Thin renderer entrypoint smoke.
+ * Importing index.tsx directly is not a useful unit test because it depends on
+ * Electron preload state plus Vite-only CSS and worker transforms. Real
+ * renderer behavior should live in extracted modules such as deep-links.ts.
  */
 
 const index = async () =>
@@ -33,5 +30,11 @@ describe("desktop renderer entrypoint", () => {
       .trimStart()
     const firstLine = cleaned.split("\n", 1)[0]?.trim() ?? ""
     expect(firstLine).toBe('import "@opencode-ai/app/index.css"')
+  })
+
+  test("wires the tested desktop deep-link bridge to the preload API", async () => {
+    const src = await index()
+    expect(src).toContain('import { listenForDesktopDeepLinks } from "./deep-links"')
+    expect(src).toContain("listenForDesktopDeepLinks(window.api, window)")
   })
 })

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, on, onMount, untrack } from "solid-js"
+import { createEffect, createMemo, onMount, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useSearchParams } from "@solidjs/router"
 import { NewSessionDesignView } from "@/components/session/session-new-design-view"
@@ -8,6 +8,7 @@ import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
+import { createNewSessionDraftResetEffect } from "@/pages/new-session-pure"
 import { resetSessionModel } from "@/pages/session/session-model-helpers"
 
 /**
@@ -48,11 +49,9 @@ export default function NewSessionPage() {
     })
   })
 
-  createEffect(
-    on(
-      () => searchParams.draftId ?? "new-session",
-      () => resetSessionModel(local),
-    ),
+  createNewSessionDraftResetEffect(
+    () => searchParams.draftId,
+    () => resetSessionModel(local),
   )
 
   onMount(() => {
