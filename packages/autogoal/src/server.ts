@@ -97,6 +97,53 @@ const COMMAND_TEMPLATE =
   "Arguments: $ARGUMENTS\n" +
   "Report the injected command result only. Do not call goal tools or change goal state.";
 
+type NudgeFailureKind = "auth" | "network" | "abort" | "provider-fatal" | "unknown";
+
+function errorField(err: unknown, key: string): string {
+  if (!err || typeof err !== "object") return "";
+  const value = (err as Record<string, unknown>)[key];
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function errorSearchText(err: unknown): string {
+  const parts = [String(err ?? "")];
+  if (err && typeof err === "object") {
+    parts.push(errorField(err, "name"));
+    parts.push(errorField(err, "message"));
+    parts.push(errorField(err, "code"));
+    const cause = (err as { cause?: unknown }).cause;
+    if (cause) {
+      parts.push(String(cause));
+      parts.push(errorField(cause, "name"));
+      parts.push(errorField(cause, "message"));
+      parts.push(errorField(cause, "code"));
+    }
+    const data = (err as { data?: unknown }).data;
+    if (data) {
+      try { parts.push(JSON.stringify(data)); } catch { /* best-effort diagnostics */ }
+    }
+  }
+  return parts.filter(Boolean).join(" ");
+}
+
+function classifyNudgeFailure(err: unknown): { kind: NudgeFailureKind; detail: string } {
+  const raw = errorSearchText(err);
+  const safeDetail = sanitizeForPrompt(raw).replace(/\s+/g, " ").trim().slice(0, 200) || "unknown error";
+  if (/ProviderAuthError|Authentication|Authorization|unauthori[sz]ed|forbidden|invalid api key|api key|401|403|EACCES/i.test(raw)) {
+    return { kind: "auth", detail: safeDetail };
+  }
+  if (/AbortError|\babort(?:ed)?\b|cancelled|canceled/i.test(raw)) {
+    return { kind: "abort", detail: safeDetail };
+  }
+  if (/NetworkError|fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket|DNS|TLS|network|timeout/i.test(raw)) {
+    return { kind: "network", detail: safeDetail };
+  }
+  if (/Provider|ApiError|MessageOutputLengthError|context[_ -]?length|rate limit|429|quota|model|finish_reason|fatal|overloaded|50[023]/i.test(raw)) {
+    return { kind: "provider-fatal", detail: safeDetail };
+  }
+  return { kind: "unknown", detail: safeDetail };
+}
+
 // v0.4.0+ — SSRF guard. Returns true for `localhost` (any port), the entire
 // `127.0.0.0/8` loopback range, IPv6 loopback `[::1]`, the unspecified
 // addresses `0.0.0.0` / `[::]`, AND the IPv4-mapped IPv6 forms of loopback
@@ -826,7 +873,13 @@ export const server: Plugin = async ({ client, directory }) => {
         .catch((err) => {
           const exceeded = recordNudgeFailure(sessionId);
           const count = nudgeFailureCounts.get(sessionId) ?? 0;
-          log("error", "Failed to inject continue prompt", { sessionId, error: String(err), consecutiveFailures: count });
+          const failure = classifyNudgeFailure(err);
+          log("error", "Failed to inject continue prompt", {
+            sessionId,
+            error: failure.detail,
+            kind: failure.kind,
+            consecutiveFailures: count,
+          });
           // v0.4.1 (B-5) — after MAX_NUDGE_FAILURES consecutive nudge-delivery
           // failures in this session, transition the goal to paused so the user
           // gets a notification instead of a silent dead loop (e.g. session was
@@ -843,7 +896,7 @@ export const server: Plugin = async ({ client, directory }) => {
                   fresh.lastEvaluation = {
                     met: false,
                     blocked: true,
-                    reason: `Nudge delivery failed ${count} times consecutively in session ${sessionId}.`,
+                    reason: `Nudge delivery failed ${count} times consecutively in session ${sessionId} (${failure.kind}: ${failure.detail}).`,
                     confidence: 1.0,
                     timestamp: Date.now(),
                     evaluatorType: "deterministic",

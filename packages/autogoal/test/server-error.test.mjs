@@ -818,3 +818,48 @@ describe("session.idle skips nudge when a permission is open (defect coverage)",
       "lastEvaluation.met should be false (the shell command exited 1)");
   });
 });
+
+describe("session.idle nudge failure diagnostics", () => {
+  for (const c of [
+    { kind: "auth", name: "ProviderAuthError", message: "Invalid API key for anthropic", code: null },
+    { kind: "network", name: "Error", message: "socket hang up", code: "ECONNRESET" },
+    { kind: "abort", name: "AbortError", message: "The operation was aborted", code: null },
+    { kind: "provider-fatal", name: "ApiError", message: "Rate limit exceeded", code: "429" },
+  ]) {
+    it(`classifies repeated ${c.kind} nudge prompt failures before pausing the goal`, async () => {
+      const dir = freshDir();
+      try {
+        const { client } = makeSpyClient();
+        const err = new Error(c.message);
+        err.name = c.name;
+        if (c.code) err.code = c.code;
+        client.session.prompt = async () => {
+          throw err;
+        };
+        const plugin = await buildPlugin(dir, client);
+
+        await plugin.tool.set_goal.execute(
+          { condition: "keep trying", verification: { type: "shell", command: process.platform === "win32" ? "exit 1" : "false" } },
+          { directory: dir }
+        );
+
+        for (let i = 0; i < 3; i++) {
+          await plugin.event({
+            event: { type: "session.compacted", properties: { sessionID: "test-session" } },
+          });
+          await plugin.event({
+            event: { type: "session.idle", properties: { sessionID: "test-session" } },
+          });
+        }
+
+        const final = readStateFileRaw(dir);
+        assert.equal(final.status, "paused");
+        assert.match(final.lastEvaluation.reason, /Nudge delivery failed 3 times consecutively/);
+        assert.match(final.lastEvaluation.reason, new RegExp(c.kind, "i"));
+        assert.match(final.lastEvaluation.reason, new RegExp(`${c.name}|${c.message}|${c.code ?? ""}`, "i"));
+      } finally {
+        cleanDir(dir);
+      }
+    });
+  }
+});

@@ -1,5 +1,6 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
+import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
 import { Button } from "@opencode-ai/ui/button"
@@ -1362,6 +1363,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const models = useModels()
   const sdk = useSDK() as unknown as GoalActionClient
   const sync = useSync()
+  const navigate = useNavigate()
   let setGoalSection: HTMLDivElement | undefined
   const state = () => props.goal.store.state
 
@@ -1679,8 +1681,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const slug = base64Encode(sdk.directory ?? "")
     setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromRoute(slug)), { prompt, files: {} })
     const href = `/${slug}/session?prompt=${encodeURIComponent(prompt)}`
-    window.history.pushState({}, "", href)
-    window.dispatchEvent(new PopStateEvent("popstate"))
+    navigate(href)
   }
 
   /** Action-library entries are selectors, not launchers. The right column
@@ -2451,7 +2452,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               data-component="goal-chain-builder-workspace"
               class="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:h-[calc(100vh-8rem)] xl:grid-cols-[minmax(620px,1fr)_minmax(360px,420px)] xl:gap-3"
             >
-              <section data-testid="goal-status-card" data-component="goal-status-card" class="hidden">
+              <section
+                data-testid="goal-status-card"
+                data-component="goal-status-card"
+                class={showForm() ? "h-fit xl:col-span-2" : "hidden"}
+              >
             <Show when={unarchivedTerminalGoal()} keyed>
               {(terminal) => (
                 <GoalConsoleSection

@@ -281,7 +281,8 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toMatch(/xl:grid-cols-\[minmax\(620px,1fr\)_minmax\(360px,420px\)\]/)
     expect(src).toMatch(/data-component="goal-chain-builder"[\s\S]*data-component="goal-chain-builder-header-strip"[\s\S]*data-component="goal-global-budget"[\s\S]*data-component="goal-playbook-chain-pane"/)
     expect(src).toMatch(/data-testid="chain-workspace"[\s\S]*data-testid="chain-builder"[\s\S]*data-component="goal-method-library-rail"/)
-    expect(src).toContain('data-component="goal-status-card" class="hidden"')
+    expect(src).toContain('data-component="goal-status-card"')
+    expect(src).toContain('class={showForm() ? "h-fit xl:col-span-2" : "hidden"}')
     expect(src).toContain("templateCategory")
     expect(src).toContain("inferActionCategory")
     expect(src).not.toContain('data-component="goal-action-context-summary"')
@@ -380,7 +381,8 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-chain-builder-workspace"')
     expect(src).toContain('data-component="goal-target-toolbar"')
     expect(src).toContain('data-component="goal-target-stat-strip"')
-    expect(src).toContain('data-component="goal-status-card" class="hidden"')
+    expect(src).toContain('data-component="goal-status-card"')
+    expect(src).toContain('class={showForm() ? "h-fit xl:col-span-2" : "hidden"}')
     expect(src).toContain('data-testid="chain-workspace"')
     expect(src).toContain('data-testid="chain-builder"')
     expect(src).toContain('data-testid="action-library"')
@@ -961,14 +963,17 @@ describe("goal panel mission-control contracts", () => {
     expect(claimGoal).toContain('sendGoalCommand("claim", "claim")')
     expect(claimGoal).toContain("structuredHandoffPrompt(pending)")
     expect(claimGoal).toContain("setSessionHandoff")
-    expect(claimGoal).toContain("window.history.pushState")
-    expect(claimGoal).toContain('window.dispatchEvent(new PopStateEvent("popstate"))')
+    expect(claimGoal).toContain("navigate(href)")
+    expect(claimGoal).not.toContain("window.history.pushState")
+    expect(claimGoal).not.toContain('window.dispatchEvent(new PopStateEvent("popstate"))')
     expect(claimGoal).not.toContain("startGoalRun")
   })
 
   test("chain header exposes a persistent Set Goal action that jumps to the standalone form", async () => {
     const src = await goalPanelSource()
     expect(src).toContain("const openSetGoalForm = () => {")
+    expect(src).toContain("const showForm = createMemo(() => shouldShowCreateFormOf(state(), showCreate()))")
+    expect(src).toContain('class={showForm() ? "h-fit xl:col-span-2" : "hidden"}')
     expect(src).toContain("setGoalSection?.scrollIntoView")
     expect(src).toContain("session.goal.create.quickHint")
     expect(src).toContain("onClick={openSetGoalForm}")
@@ -2221,6 +2226,9 @@ describe("useGoal hook", () => {
           session_working: () => false,
         },
       }),
+    }))
+    mock.module("@solidjs/router", () => ({
+      useNavigate: () => () => undefined,
     }))
     const mod = await import("./goal-panel")
     useGoal = mod.useGoal
