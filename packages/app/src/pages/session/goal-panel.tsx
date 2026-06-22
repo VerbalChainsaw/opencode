@@ -511,7 +511,7 @@ function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
     return `${base} goal-inline-command-remove border-orange-300/75 bg-orange-500/55 text-white shadow-[0_6px_14px_rgba(249,115,22,0.18)] hover:bg-orange-400 hover:ring-orange-300/45 focus-visible:ring-orange-300/65`
   }
   if (tone === "move") {
-    return `${base} goal-inline-command-move w-[22px] border-border-base bg-background-panel text-text-weak hover:border-border-strong hover:bg-white/[0.06] hover:text-text-base focus-visible:ring-border-strong`
+    return `${base} goal-inline-command-move w-[22px] border-border-base bg-background-base text-text-weak hover:border-border-strong hover:bg-white/[0.06] hover:text-text-base focus-visible:ring-border-strong`
   }
   return `${base} goal-inline-command-edit w-6 border-sky-300/30 bg-sky-500/8 text-sky-100 hover:border-sky-200/55 hover:bg-sky-500/16 focus-visible:ring-sky-300/55`
 }
@@ -582,7 +582,7 @@ function RunMetricPill(props: {
     <div
       class="grid min-w-0 grid-cols-[3px_minmax(0,1fr)] overflow-hidden rounded-md border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
       classList={{
-        "border-border-base bg-background-panel/70": !props.tone || props.tone === "default",
+        "border-border-base bg-background-base/70": !props.tone || props.tone === "default",
         "border-emerald-400/35 bg-emerald-400/10": props.tone === "success",
         "border-amber-400/35 bg-amber-400/10": props.tone === "warning",
         "border-rose-400/35 bg-rose-400/10": props.tone === "danger",
@@ -723,7 +723,7 @@ function GoalConsoleSection(props: {
     <section
       data-component="goal-console-section"
       data-zone={props.zone}
-      class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-panel/80 ${props.class ?? ""}`}
+      class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-base/80 ${props.class ?? ""}`}
       style={accent.style}
     >
       <div data-component="goal-console-section-header" class="shrink-0 border-b border-border-base/60 px-2.5 py-1.5" style={accent.headerStyle}>
@@ -1215,7 +1215,7 @@ function completionRuleKey(input: ActionDescriptor) {
 function completionRuleClass(input: ActionDescriptor) {
   return hasVerificationCommand(input)
     ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
-    : "border-border-base bg-background-panel/70 text-text-weaker"
+    : "border-border-base bg-background-base/70 text-text-weaker"
 }
 
 function terminalOutcomeTone(status: GoalState["status"]): { class: string; style: JSX.CSSProperties } {
@@ -2603,9 +2603,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       {cleanText(terminal.condition)}
                     </div>
                     <Show when={terminal.lastEvaluation?.reason}>
-                      <div class="truncate text-11-regular leading-4 text-text-weak">
-                        {cleanText(terminal.lastEvaluation!.reason)}
-                      </div>
+                      {(reason) => (
+                        <div class="truncate text-11-regular leading-4 text-text-weak">
+                          {cleanText(reason())}
+                        </div>
+                      )}
                     </Show>
                   </div>
                   <div class="flex shrink-0 items-center gap-2">
@@ -2613,13 +2615,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       data-component="goal-terminal-banner-metrics"
                       class="hidden shrink-0 grid-cols-2 gap-1.5 text-11-regular text-text-weak sm:grid"
                     >
-                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-panel/60 px-2 py-1">
+                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-base/60 px-2 py-1">
                         <div class="text-[9px] uppercase leading-3 tracking-[0.08em] text-text-weaker">Turns</div>
                         <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
                           {terminal.turnsEvaluated}/{terminal.constraints.maxTurns}
                         </div>
                       </div>
-                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-panel/60 px-2 py-1">
+                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-base/60 px-2 py-1">
                         <div class="text-[9px] uppercase leading-3 tracking-[0.08em] text-text-weaker">Time</div>
                         <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
                           {formatElapsed((terminal.completedAt ?? Date.now()) - terminal.startedAt)}/
@@ -2721,9 +2723,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       </span>
                     </Show>
                     <Show when={liveGoal()}>
-                      <span class="min-w-0 truncate text-[11px] font-semibold text-violet-100/62">
-                        {cleanText(liveGoal()!.condition)}
-                      </span>
+                      {(goal) => (
+                        <span class="min-w-0 truncate text-[11px] font-semibold text-violet-100/62">
+                          {cleanText(goal().condition)}
+                        </span>
+                      )}
                     </Show>
                   </div>
                   <div data-component="goal-target-toolbar" class="flex shrink-0 items-center justify-end gap-1.5">
@@ -3325,7 +3329,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 >
                   <div data-component="goal-plan-chain" class="flex h-full min-h-0 min-w-0 flex-col p-2">
                     <div
-                      class="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border bg-background-panel/76 p-1.5"
+                      class="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border bg-background-base/76 p-1.5"
                       style={{ "border-color": "rgba(167, 139, 250, 0.10)", "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.012)" }}
                     >
                       <Show
@@ -3981,7 +3985,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 value={actionDraft.category}
                                 disabled={busy() !== null || !props.sessionID}
                                 onChange={(event) => setActionDraft("category", event.currentTarget.value as GoalTemplateCategory)}
-                                class="h-6 w-full rounded border border-border-base/70 bg-background-panel/80 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-base outline-none transition focus:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
+                                class="h-6 w-full rounded border border-border-base/70 bg-background-base/80 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-base outline-none transition focus:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <For each={GOAL_TEMPLATE_CATEGORIES}>
                                   {(category) => (

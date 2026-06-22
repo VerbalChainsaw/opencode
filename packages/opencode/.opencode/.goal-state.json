@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "c04d2946-5776-4ea8-a68f-488730dfa9d4",
+  "condition": "say hello 100 times",
+  "command": null,
+  "status": "active",
+  "createdAt": 1782020904463,
+  "startedAt": 1782020904463,
+  "completedAt": null,
+  "pausedAt": null,
+  "resumedAt": null,
+  "turnsEvaluated": 1,
+  "tokensUsed": 0,
+  "lastEvaluation": {
+    "met": false,
+    "reason": "No GOAL_COMPLETE signal in latest output yet",
+    "confidence": 0.5,
+    "timestamp": 1782020905826,
+    "evaluatorType": "heuristic"
+  },
+  "evaluationHistory": [
+    {
+      "met": false,
+      "reason": "No GOAL_COMPLETE signal in latest output yet",
+      "confidence": 0.5,
+      "timestamp": 1782020905826,
+      "evaluatorType": "heuristic"
+    }
+  ],
+  "constraints": {
+    "maxTurns": 20,
+    "maxTimeMinutes": 30,
+    "maxTokens": 100000
+  },
+  "metadata": {
+    "setBy": "user"
+  }
+}

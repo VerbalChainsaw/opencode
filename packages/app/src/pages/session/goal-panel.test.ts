@@ -669,7 +669,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("function actionEditorPanelStyle")
     expect(src).toContain("rgba(148, 163, 184, 0.24)")
     expect(src).toContain('"background-color": "rgba(239, 68, 68, 0.12)"')
-    expect(src).toContain("border bg-background-panel/80")
+    expect(src).toContain("border bg-background-base/80")
     expect(src).toContain('data-component="goal-console-section-header"')
     expect(src).toContain("border-b border-border-base/60 px-2.5 py-1.5")
     expect(src).toContain("h-4 w-1.5 shrink-0 rounded-sm")
