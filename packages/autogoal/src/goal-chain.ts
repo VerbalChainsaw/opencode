@@ -665,12 +665,22 @@ export type AdvanceChainResult =
   | { ok: true; message: string; completed?: boolean; state?: GoalState };
 
 /**
- * Advance the chain to the next step and set it as the active goal.
- * Must only be called after the current step was achieved.
- * Checks chainId consistency to prevent advancing a chain whose goal was
- * manually overridden.
+ * v0.7.2 — `stepMarkerAt` is the `info.metadata.time.created` of the
+ * assistant message that completed the just-completed step's marker.
+ * The runner persists it on the new step's state via
+ * `state.metadata.stepMarkerAt`. The marker scan in `evaluateByTranscript`
+ * uses this as a cutoff: only assistant messages produced AFTER this
+ * timestamp are candidates for the next step's completion. Without
+ * this, step N's GOAL_COMPLETE: marker is read as step N+1's
+ * completion because the chain runner advances the state file but
+ * does not start a new model turn (so the latest assistant message is
+ * still step N's).
  */
-export function advanceGoalChain(directory: string, now: number = Date.now()): AdvanceChainResult {
+export function advanceGoalChain(
+  directory: string,
+  now: number = Date.now(),
+  opts: { stepMarkerAt?: number } = {},
+): AdvanceChainResult {
   const chain = readGoalChain(directory);
   if (!chain) return { ok: false, error: "No active chain." };
 
@@ -724,6 +734,26 @@ export function advanceGoalChain(directory: string, now: number = Date.now()): A
   // on every step beyond step 0, and `fireWebhook` in server.ts finds
   // `state.metadata.webhook` undefined on those steps' achievements.
   applyChainWebhookToState(newState, chain);
+  // v0.7.2 — persist the just-completed step's marker timestamp on the
+  // new step's state. The runner reads it as the cutoff for the
+  // marker scan (see `evaluateByTranscript` in server.ts). Without
+  // this, step N's GOAL_COMPLETE: marker is read as step N+1's
+  // completion. The chain advance is the only path that knows the
+  // timestamp of the prior step's completing message, so it must
+  // persist it here. `resetGoalChain` does the same for step 0.
+  //
+  // For non-marker verifications (shell/http/file), the runner has
+  // no marker timestamp to persist. In that case we fall back to
+  // the chain advance's own `now` — the new step's marker scan then
+  // considers only messages produced AFTER the advance. This is the
+  // correct behavior: the assistant message that triggered the prior
+  // step's met=true (the shell output, the HTTP response, etc.) is
+  // older than the advance time and is excluded.
+  const cutoff =
+    typeof opts.stepMarkerAt === "number" && opts.stepMarkerAt > 0
+      ? opts.stepMarkerAt
+      : now;
+  newState.metadata.stepMarkerAt = cutoff;
 
   try {
     writeGoalChainAtomic(directory, chain);
@@ -777,6 +807,10 @@ export function resetGoalChain(directory: string, now: number = Date.now()): Adv
   newState.metadata.chainStep = 0;
   newState.metadata.chainTotal = chain.steps.length;
   if (chain.metadata.sessionId) newState.metadata.sessionId = chain.metadata.sessionId;
+  // v0.7.2 — step 0 starts fresh, no prior step's marker. The cutoff is
+  // 0 which means "scan considers all messages". The reset path
+  // already starts a brand-new assistant turn so the model can't
+  // accidentally re-complete a prior transcript.
   // v0.4.0 D6 fix: a reset sends the chain back to step 0; project the
   // chain's webhook onto the rebuilt step state for consistency with
   // createGoalChain and advanceGoalChain.

@@ -82,6 +82,16 @@ export interface GoalState {
     chainTotal?: number;
     /** v0.4.0+ — webhook notification config. */
     webhook?: { url: string; on: GoalStatus[]; allowLocal?: boolean };
+    /**
+     * v0.7.2 (audit fix) — `info.metadata.time.created` of the latest assistant
+     * message that completed this step's marker. Persisted so the next-step's
+     * marker scan can ignore earlier assistant messages (the chain's most
+     * common bug: step 0's GOAL_COMPLETE: marker is read as step 1's
+     * completion because no new model turn is started between steps — the
+     * latest assistant message is still step 0's). 0 means "no marker seen
+     * yet on this step" and the scan considers all assistant messages.
+     */
+    stepMarkerAt?: number;
   };
 }
 
@@ -268,6 +278,17 @@ export function validateGoalState(state: any): state is GoalState {
   // (Security review #1 — closed via size cap + sanitize-on-use, not validator
   // rejection, to preserve the "don't lose the goal over a bad sub-field" contract.)
   if (state.metadata !== undefined && !isPlainObject(state.metadata)) return false;
+  // v0.7.2 — `stepMarkerAt` is an optional number. If present, must be a
+  // non-negative finite integer (milliseconds since epoch). Validator does
+  // not require it — older state files predate the field.
+  if (
+    state.metadata !== undefined &&
+    (state.metadata as Record<string, unknown>).stepMarkerAt !== undefined &&
+    (state.metadata as Record<string, unknown>).stepMarkerAt !== null
+  ) {
+    const v = (state.metadata as Record<string, unknown>).stepMarkerAt;
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0) return false;
+  }
   return true;
 }
 

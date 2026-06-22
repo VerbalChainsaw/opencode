@@ -398,7 +398,14 @@ function pinnedSkillPromptSuffix(skills: string[]): string {
 export const server: Plugin = async ({ client, directory }) => {
   let lastEvaluationTime = 0;
   let isEvaluating = false;
-  let skipNextEvaluation = false;
+  // v0.7.2 — removed the v0.7.x `skipNextEvaluation` one-shot flag. The
+  // chain runner no longer relies on it. The replacement is the per-step
+  // `state.metadata.stepMarkerAt` cutoff in `evaluateByTranscript`, which
+  // is a durable per-goal filter (survives daemon restarts) instead of a
+  // fragile per-process flag. The chain now also issues a real model
+  // prompt after advancement (see `if (snapshot.achieved)` below), so
+  // the next-step's transcript IS a new assistant message, not the same
+  // step-0 message read twice.
   // v0.4.1 (B-5) — track consecutive nudge-delivery failures per session.
   // After 3 consecutive failures for a session, transition that session's
   // goal to paused so the user gets a notification instead of a silent dead
@@ -498,47 +505,121 @@ export const server: Plugin = async ({ client, directory }) => {
     }
   }
 
-  async function getLatestAssistantText(sessionId: string): Promise<string> {
+  // v0.7.2 — returns the latest assistant message text AND the `time.created`
+  // timestamp of the message that produced it. The timestamp is the
+  // correlation key for the chain step's `metadata.stepMarkerAt` — the
+  // runner uses it to ignore assistant messages older than the last
+  // completed step's marker, so a stale GOAL_COMPLETE: from a prior step
+  // cannot be read as the current step's completion. Returns the
+  // timestamp of the most recent assistant message regardless of marker
+  // content (the caller decides what to do with it).
+  async function getLatestAssistantMeta(
+    sessionId: string,
+  ): Promise<{ text: string; createdAt: number; messageId: string } | null> {
     try {
       const res = await client.session.messages({ path: { id: sessionId } });
-      // v0.4.1 (B-1) — the SDK response shape is structurally { info: { role },
-      // parts: Array<{ type, text }> }. The `as any[]` cast was fine in
-      // practice but fragile across SDK releases. The inline type narrows
-      // the cast to the fields we actually access (role, type, text) so a
-      // future SDK update that changes the envelope shape surfaces a type
-      // error at the cast site instead of a runtime undefined-deref.
-      type SdkMessage = { info?: { role?: string }; parts?: Array<{ type?: string; text?: string }> };
+      // v0.4.1 (B-1) — the SDK response shape is structurally { info: { id,
+      // role, ... }, parts: Array<{ type, text }> }. `id` and the metadata
+      // `time.created` are the two stable per-message identifiers; we keep
+      // both. The `time.created` is the more useful comparison key (it is
+      // monotonic for messages emitted in the same session and is also
+      // emitted by message-v2 across the v1/v2 transition).
+      type SdkMessage = {
+        info?: { id?: string; role?: string; metadata?: { time?: { created?: number } } };
+        parts?: Array<{ type?: string; text?: string }>;
+      };
       const msgs = (res.data ?? []) as SdkMessage[];
-      const last = msgs.filter((m) => m?.info?.role === "assistant").at(-1);
-      if (!last) return "";
-      return (last.parts ?? []).filter((p) => p.type === "text").map((p) => p.text ?? "").join("\n");
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (m?.info?.role !== "assistant") continue;
+        const text = (m.parts ?? [])
+          .filter((p) => p.type === "text")
+          .map((p) => p.text ?? "")
+          .join("\n");
+        return {
+          text,
+          createdAt: typeof m.info?.metadata?.time?.created === "number" ? m.info.metadata.time.created : 0,
+          messageId: typeof m.info?.id === "string" ? m.info.id : "",
+        };
+      }
+      return null;
     } catch (err) {
       log("debug", "Could not read messages", { error: String(err) });
-      return "";
+      return null;
     }
   }
 
-  function evaluateByTranscript(latest: string): GoalEvaluation {
+  // Legacy wrapper preserved for callers that only need the text (the
+  // blocked-marker path doesn't need the timestamp). The blocked marker is
+  // about the CURRENT step's transcript, not cross-step correlation.
+  async function getLatestAssistantText(sessionId: string): Promise<string> {
+    const meta = await getLatestAssistantMeta(sessionId);
+    return meta?.text ?? "";
+  }
+
+  // v0.7.2 — narrow the marker scan to messages produced AFTER the
+  // chain step's `metadata.stepMarkerAt` cutoff. Without this, step N's
+  // GOAL_COMPLETE: marker (still present in the transcript) is read as
+  // step N+1's completion when the runner advances without starting a
+  // new model turn (see the v0.7.x `skipNextEvaluation` flag — the
+  // workaround that this filter replaces). When `cutoff` is 0 (default
+  // for a fresh step) every message is a candidate. The function returns
+  // the matched text + the message timestamp, so the runner can persist
+  // the latter as the next step's `stepMarkerAt`.
+  function evaluateByTranscript(
+    latest: { text: string; createdAt: number },
+    cutoff: number,
+  ): GoalEvaluation & { markerAt?: number } {
     const now = Date.now();
-    const detail = detectMarker(latest, COMPLETE_RE);
-    if (detail !== null) {
-      return { met: true, reason: `Agent reported completion: ${detail.slice(0, 200) || "(no detail)"}`, confidence: 0.8, timestamp: now, evaluatorType: "heuristic" };
+    if (cutoff > 0 && latest.createdAt > 0 && latest.createdAt <= cutoff) {
+      return {
+        met: false,
+        reason: "No assistant message since the last step was completed",
+        confidence: 0.5,
+        timestamp: now,
+        evaluatorType: "heuristic",
+      };
     }
-    return { met: false, reason: "No GOAL_COMPLETE signal in latest output yet", confidence: 0.5, timestamp: now, evaluatorType: "heuristic" };
+    const detail = detectMarker(latest.text, COMPLETE_RE);
+    if (detail !== null) {
+      return {
+        met: true,
+        reason: `Agent reported completion: ${detail.slice(0, 200) || "(no detail)"}`,
+        confidence: 0.8,
+        timestamp: now,
+        evaluatorType: "heuristic",
+        markerAt: latest.createdAt > 0 ? latest.createdAt : now,
+      };
+    }
+    return {
+      met: false,
+      reason: "No GOAL_COMPLETE signal in latest output yet",
+      confidence: 0.5,
+      timestamp: now,
+      evaluatorType: "heuristic",
+    };
   }
 
   // ── v0.4.0+ verification dispatcher ───────────────────────────────────
-  async function evaluateGoal(state: GoalState, latestTranscript: string): Promise<GoalEvaluation> {
+  // v0.7.2 — takes the step's marker cutoff as the third arg and threads
+  // the latest assistant message's metadata through. Marker-based paths
+  // use the cutoff; deterministic paths (shell/http/file) ignore it
+  // because they don't read the transcript.
+  async function evaluateGoal(
+    state: GoalState,
+    latestTranscript: { text: string; createdAt: number },
+    markerCutoff: number,
+  ): Promise<GoalEvaluation & { markerAt?: number }> {
     const v = state.verification;
     if (!v) {
       if (state.command) return evaluateDeterministic(state.command);
-      return evaluateByTranscript(latestTranscript);
+      return evaluateByTranscript(latestTranscript, markerCutoff);
     }
     switch (v.type) {
       case "shell":  return evaluateDeterministic(v.command);
       case "http":   return evaluateHttp(v);
       case "file":   return evaluateFile(v);
-      case "marker": return evaluateByTranscript(latestTranscript);
+      case "marker": return evaluateByTranscript(latestTranscript, markerCutoff);
     }
   }
 
@@ -725,11 +806,6 @@ export const server: Plugin = async ({ client, directory }) => {
     if (now - lastEvaluationTime < CONFIG.evaluationDebounceSec * 1000) return;
     isEvaluating = true;
     lastEvaluationTime = now;
-    if (skipNextEvaluation) {
-      skipNextEvaluation = false;
-      isEvaluating = false;
-      return;
-    }
     try {
       // v0.4.1 — constraint check on fresh disk state (not the idle snapshot).
       const constraintResult = checkConstraints(state, now);
@@ -740,9 +816,12 @@ export const server: Plugin = async ({ client, directory }) => {
         await notify(sessionId, "Goal stopped", constraintResult.reason, "warning");
         return;
       }
-      // v0.7.1 — blocked-marker detection on latest assistant transcript.
-      // Uses checkBlockedMarker which returns the transcript on no-match
-      // so evaluateGoal below doesn't need a second SDK fetch.
+      // v0.7.2 — read the latest assistant message with metadata (text +
+      // message id + creation time). The creation time is the cutoff for
+      // the marker scan. `checkBlockedMarker` below only needs the text
+      // (the blocked-marker is per-step, not cross-step), so we share the
+      // same `getLatestAssistantMeta` and re-use the text.
+      const latestMeta = await getLatestAssistantMeta(sessionId);
       const blocked = await checkBlockedMarker(state, sessionId, now);
       if (!blocked) return;
       if (blocked.paused) {
@@ -751,7 +830,15 @@ export const server: Plugin = async ({ client, directory }) => {
         return;
       }
 
-      const evaluation = await evaluateGoal(state, blocked.transcript);
+      // v0.7.2 — the marker cutoff is the per-step `state.metadata.stepMarkerAt`.
+      // It is 0 on a fresh step (scan considers every message) and is the
+      // creation timestamp of the just-completed step's marker once the
+      // chain advances. The cutoff is the durable replacement for the
+      // removed `skipNextEvaluation` flag.
+      const markerCutoff = typeof state.metadata.stepMarkerAt === "number" ? state.metadata.stepMarkerAt : 0;
+      const evaluation = latestMeta
+        ? await evaluateGoal(state, latestMeta, markerCutoff)
+        : await evaluateGoal(state, { text: "", createdAt: 0 }, markerCutoff);
 
       const snapshot = (() => {
         const f = readGoalState(directory);
@@ -761,6 +848,16 @@ export const server: Plugin = async ({ client, directory }) => {
         if (evaluation.met) {
           f.status = "achieved";
           f.completedAt = Date.now();
+          // v0.7.2 — persist the marker timestamp on the just-achieved
+          // state. `advanceGoalChain` reads the prior step's
+          // `state.metadata.stepMarkerAt` to carry it forward onto the
+          // new step's state (so its marker scan can ignore the prior
+          // step's stale marker). Without this, the marker cutoff is
+          // 0 on the new step and the prior step's GOAL_COMPLETE: is
+          // re-read as the new step's completion.
+          if (typeof evaluation.markerAt === "number" && evaluation.markerAt > 0) {
+            f.metadata.stepMarkerAt = evaluation.markerAt;
+          }
           // v0.7.0 (A4) — record a timeline event for the met path so
           // the Live Session pane shows the user "turn N: met" before
           // the archive hook fires. Label includes the evaluator type
@@ -797,8 +894,13 @@ export const server: Plugin = async ({ client, directory }) => {
         const achievedState = readGoalState(directory);
         if (achievedState) fireWebhook(achievedState, "active");
         await notify(sessionId, "Goal achieved", snapshot.reason, "success");
-        // v0.4.0: auto-advance chain if the achieved goal is part of one
-        const chainResult = advanceGoalChain(directory);
+        // v0.4.0: auto-advance chain if the achieved goal is part of one.
+        // v0.7.2 — pass the just-completed step's marker timestamp so the
+        // new step's `state.metadata.stepMarkerAt` is set on the new
+        // state. This is the durable per-step filter that replaces the
+        // v0.7.x `skipNextEvaluation` one-shot flag.
+        const stepMarkerAt = typeof evaluation.markerAt === "number" ? evaluation.markerAt : 0;
+        const chainResult = advanceGoalChain(directory, Date.now(), { stepMarkerAt });
         if (chainResult.ok) {
           if (chainResult.message) {
             await notify(sessionId, "Chain advanced", chainResult.message, "success");
@@ -806,17 +908,70 @@ export const server: Plugin = async ({ client, directory }) => {
           if (chainResult.completed) {
             await notify(sessionId, "Chain completed", chainResult.message, "success");
           }
-          // v0.7.x: prevent the next evaluation from reading step N's
-          // GOAL_COMPLETE marker as step N+1's completion. The chain just
-          // advanced — the agent's latest assistant message still contains
-          // the completion signal from the PREVIOUS step. Consume one idle
-          // cycle so the agent sees the advancement notification and the
-          // transcript moves past the stale marker before the next
-          // evaluation fires. Only set when the chain actually advanced
-          // (not completed — no next step to evaluate).
-          if (!chainResult.completed) {
-            skipNextEvaluation = true;
+          // v0.7.2 — instead of the removed `skipNextEvaluation` flag,
+          // issue a REAL `client.session.prompt` for the new step's
+          // condition. The previous code's `notify("Chain advanced", ...)`
+          // used `noReply: true` (a status line) which did NOT start a
+          // new model turn — that is the central bug this rewrite
+          // fixes. The new step's first `session.idle` (after the
+          // model responds) will then have a fresh assistant message
+          // to scan, and the marker cutoff (above) keeps the prior
+          // step's GOAL_COMPLETE: out of the scan.
+          if (!chainResult.completed && chainResult.state) {
+            const nextCondition = sanitizeForPrompt(chainResult.state.condition).slice(0, 500);
+            const safeMarkerAt = stepMarkerAt > 0 ? stepMarkerAt : 0;
+            const reasonSuffix = snapshot.reason
+              ? `\nPrevious step evidence: ${sanitizeForPrompt(snapshot.reason).slice(0, 240)}`
+              : "";
+            await client.session
+              .prompt({
+                path: { id: sessionId },
+                body: {
+                  parts: [
+                    {
+                      type: "text",
+                      text:
+                        `🎯 [Chain advanced] The previous step is complete. ` +
+                        `Working on the next step now: ${nextCondition}.` +
+                        reasonSuffix +
+                        `\nWhen satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
+                        `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why.`,
+                    },
+                  ],
+                  ...(typeof chainResult.state.metadata.agentName === "string"
+                    ? { agent: chainResult.state.metadata.agentName }
+                    : {}),
+                },
+              })
+              .then(() => {
+                resetNudgeFailures(sessionId);
+              })
+              .catch((err) => {
+                const failure = classifyNudgeFailure(err);
+                log("error", "Failed to inject chain-advance prompt", {
+                  sessionId,
+                  stepMarkerAt: safeMarkerAt,
+                  error: failure.detail,
+                  kind: failure.kind,
+                });
+              });
           }
+        } else {
+          // v0.7.2 — surface advance failures instead of swallowing them.
+          // The pre-fix code returned silently; the user saw "Goal
+          // achieved" then nothing. Now the user gets a concrete
+          // error message naming the cause.
+          await notify(
+            sessionId,
+            "Chain advance failed",
+            chainResult.error ?? "Unknown error",
+            "error",
+          );
+          log("error", "Chain advance failed", {
+            sessionId,
+            stepMarkerAt,
+            error: chainResult.error,
+          });
         }
         return;
       }
@@ -862,6 +1017,14 @@ export const server: Plugin = async ({ client, directory }) => {
       const pinnedSkills = currentChainStepPinnedSkills(directory);
       const pinnedAgent = currentChainStepPinnedAgent(directory) ?? snapshot.agentName;
       // Include chain position so the agent knows which step it's on.
+      // v0.7.2 — display as 1-based (chain.current + 1) so it matches
+      // what `chainContext` says in the chain-advance prompt above and
+      // what the model sees in `chain.steps[chain.current].condition`.
+      // The state file's `metadata.chainStep` is intentionally 0-based
+      // (matches `chain.current`); only the model-facing display is
+      // 1-based. Mixing the two caused the model to read "chainStep: 0"
+      // from the state and report "step 0/2" while the runner called
+      // it "step 1/2".
       const chain = readGoalChain(directory);
       const chainContext =
         chain && chain.current >= 0 && chain.current < chain.steps.length
@@ -1397,12 +1560,12 @@ export const server: Plugin = async ({ client, directory }) => {
       const result = dispatchGoalCommandStructured(directory, args);
       const text = presentGoalCommandResult(result);
       const action = args.split(/\s+/)[0] ?? "";
-      if (
-        (action === "turns" || action === "time" || action === "tokens") &&
-        result.kind === "success"
-      ) {
-        skipNextEvaluation = true;
-      }
+      // v0.7.2 — removed the v0.7.x `skipNextEvaluation = true` for dial
+      // commands. The marker-cutoff filter (`state.metadata.stepMarkerAt`)
+      // replaces the one-shot flag, so dials no longer need a special
+      // fast-path to skip the next evaluation. The next `session.idle`
+      // will simply read the new state and re-evaluate against the
+      // assistant's latest message.
       if (action === "template" || action === "use" || action === "import" || action === "export") {
         writeTemplatesSnapshot(directory);
       }

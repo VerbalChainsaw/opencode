@@ -632,12 +632,24 @@ describe("session.idle chain-advance path (defect coverage)", () => {
     cleanDir(dir);
   });
 
-  it("advances the chain and queues exactly one next-step nudge after skipNextEvaluation is consumed", async () => {
+  it("advances the chain and queues a next-step nudge as a real model prompt (defect coverage)", async () => {
+    // v0.7.2 — this test was rewritten when the v0.7.x `skipNextEvaluation`
+    // one-shot flag was removed in favor of two coordinated fixes:
+    //   (a) the per-step `state.metadata.stepMarkerAt` cutoff that
+    //       prevents step N's GOAL_COMPLETE: from being read as step
+    //       N+1's completion, and
+    //   (b) the chain advance now issues a REAL `client.session.prompt`
+    //       (noReply-less) for the new step's condition. The previous
+    //       implementation used `notify()` with `noReply: true` (a status
+    //       line only) and a per-process skip flag, which together failed
+    //       to start a new model turn — the chain would advance the
+    //       state but the agent would never see step N+1's condition.
+    //
     // 1. Setup an active 2-step chain. Step 0 is verifiable via shell
     //    (exit 0 on either platform), so evaluate() returns met=true.
     //    Step 1 has no verification, so the next-step nudge is the
-    //    "not yet met" continue prompt — the only prompt fired for
-    //    step 1's "next step" message.
+    //    "Working on the next step now: ..." prompt — the only prompt
+    //    fired for step 1's initial nudge.
     const create = createGoalChain(dir, [
       {
         condition: "achievable step",
@@ -651,8 +663,10 @@ describe("session.idle chain-advance path (defect coverage)", () => {
 
     // 2. Dispatch session.idle. The shell verification exits 0 →
     //    evaluation.met = true → snapshot.achieved → notify("Goal
-    //    achieved") → advanceGoalChain() → notify("Chain advanced") →
-    //    skipNextEvaluation = true → return. (src/server.ts:660-686)
+    //    achieved") → advanceGoalChain() with stepMarkerAt → notify("Chain
+    //    advanced") → real `client.session.prompt` for step 1's
+    //    condition. (src/server.ts:907-979) The advance prompt is the
+    //    third call; it is a real model turn, not a noReply status.
     await plugin.event({
       event: { type: "session.idle", properties: { sessionID: "test-session" } },
     });
@@ -667,44 +681,30 @@ describe("session.idle chain-advance path (defect coverage)", () => {
     assert.equal(stateAfterAdvance.condition, "follow-up step",
       "state.condition should be the new step's condition");
 
-    // The advance path fired 2 notify() calls (Goal achieved + Chain
-    // advanced) — 2 prompts + 2 toasts. Reset before counting the
-    // next-step nudge.
-    assert.equal(spies.prompts.length, 2,
-      "achieved + chain-advanced notifications should fire 2 prompts");
-    spies.prompts.length = 0;
-    spies.toast.length = 0;
+    // v0.7.2 — the chain advance path fires 3 prompts: 2 notify() status
+    // lines (achieved + chain-advanced) + 1 real model turn for step 1.
+    assert.equal(spies.prompts.length, 3,
+      "achieved + chain-advanced notifications + next-step model prompt");
+    // The 2 notify() calls use noReply (status line) — they do NOT carry
+    // the model turn's structure. The 3rd prompt is the real turn.
+    assert.equal(spies.prompts[0].body.noReply, true,
+      "notify('Goal achieved') uses noReply");
+    assert.equal(spies.prompts[1].body.noReply, true,
+      "notify('Chain advanced') uses noReply");
+    assert.notEqual(spies.prompts[2].body.noReply, true,
+      "the next-step nudge is a real model turn, not noReply");
+    assert.match(spies.prompts[2].body.parts[0].text,
+      /Working on the next step now: follow-up step/,
+      "the next-step nudge references the new step's condition");
 
-    // 4. skipNextEvaluation was set. Verify by resetting the debounce
-    //    clock (session.compacted is the plugin's own way to do this,
-    //    server.ts:1367) and dispatching another session.idle. The
-    //    skipNextEvaluation flag is consumed at the start of
-    //    evaluate() (server.ts:554-558) — no prompt is sent.
-    await plugin.event({
-      event: { type: "session.compacted", properties: { sessionID: "test-session" } },
-    });
-    await plugin.event({
-      event: { type: "session.idle", properties: { sessionID: "test-session" } },
-    });
-    assert.equal(spies.prompts.length, 0,
-      "skipNextEvaluation should consume the next idle without sending a prompt");
-
-    // 5. After skipNextEvaluation is consumed, a fresh idle (with the
-    //    debounce reset again) triggers a new evaluate(). The new step
-    //    has no verification, so evaluateByTranscript("") returns
-    //    met=false, the "not yet met" path runs, and EXACTLY ONE
-    //    continue prompt is sent for the next step.
-    await plugin.event({
-      event: { type: "session.compacted", properties: { sessionID: "test-session" } },
-    });
-    await plugin.event({
-      event: { type: "session.idle", properties: { sessionID: "test-session" } },
-    });
-    assert.equal(spies.prompts.length, 1,
-      "exactly one next-step nudge should fire after skipNextEvaluation is consumed");
-    assert.match(spies.prompts[0].body.parts[0].text,
-      /Keep working toward: follow-up step/,
-      "the next-step nudge should reference the new step's condition");
+    // v0.7.2 — the new step's `state.metadata.stepMarkerAt` is set
+    // to the prior step's marker timestamp. Without this, the
+    // marker scan on the next idle would re-read the prior step's
+    // GOAL_COMPLETE: as the new step's completion.
+    assert.ok(typeof stateAfterAdvance.metadata.stepMarkerAt === "number",
+      "stepMarkerAt should be set on the new step's state");
+    assert.ok(stateAfterAdvance.metadata.stepMarkerAt > 0,
+      "stepMarkerAt should be a positive timestamp");
   });
 });
 
