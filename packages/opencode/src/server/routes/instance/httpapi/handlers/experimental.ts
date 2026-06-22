@@ -18,6 +18,7 @@ import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import {
   ConsoleSwitchPayload,
+  GoalControlApiError,
   GoalControlPayload,
   SessionListQuery,
   ToolListQuery,
@@ -144,15 +145,22 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* Effect.tryPromise(() =>
         runGoalControlStateFile(directory, command, Date.now(), { sessionID }),
       ).pipe(
-        // Don't swallow the cause. A deterministic goal-control command that
-        // throws is almost always a validation error (→ 400), but the operator
-        // previously saw a bare 400 with no reason. The typed response stays
-        // BadRequest (the error schema carries no message field), while the
-        // actual cause is logged server-side so failures are diagnosable.
+        // Surface the cause. A deterministic goal-control command that throws
+        // is almost always a validation error (→ 400). The renderer needs
+        // the actual reason to render a useful error message instead of a
+        // bare 400 — the typed GoalControlApiError carries `data.message`
+        // straight through to the response body. We also log server-side
+        // so failures are diagnosable from logs alone.
         Effect.tapError((cause) =>
           Effect.logError("goal_control state-file command failed", { directory, command, cause }),
         ),
-        Effect.mapError(() => new HttpApiError.BadRequest({})),
+        Effect.mapError(
+          (cause) =>
+            new GoalControlApiError({
+              name: "GoalControlFailed",
+              data: { message: cause instanceof Error ? cause.message : String(cause) },
+            }),
+        ),
       )
     })
 

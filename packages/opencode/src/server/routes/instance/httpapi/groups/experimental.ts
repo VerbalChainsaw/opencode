@@ -87,6 +87,15 @@ export class WorktreeApiError extends Schema.ErrorClass<WorktreeApiError>("Workt
   },
   { httpApiStatus: 400 },
 ) {}
+
+const GoalControlErrorName = Schema.Literal("GoalControlFailed")
+export class GoalControlApiError extends Schema.ErrorClass<GoalControlApiError>("GoalControlError")(
+  {
+    name: GoalControlErrorName,
+    data: Schema.Struct({ message: Schema.String }),
+  },
+  { httpApiStatus: 400 },
+) {}
 export const SessionListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   roots: Schema.optional(QueryBoolean),
@@ -178,7 +187,7 @@ export const ExperimentalApi = HttpApi.make("experimental")
           query: WorkspaceRoutingQuery,
           payload: GoalControlPayload,
           success: described(GoalControlResponse, "Goal control result"),
-          error: HttpApiError.BadRequest,
+          error: GoalControlApiError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "experimental.goal.control",
