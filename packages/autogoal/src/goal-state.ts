@@ -1391,6 +1391,13 @@ export function sanitizeMetadata(meta: unknown): GoalState["metadata"] {
   if (typeof m.chainId === "string") out.chainId = m.chainId;           // v0.4.0
   if (isFiniteNumber(m.chainStep)) out.chainStep = m.chainStep;         // v0.4.0
   if (isFiniteNumber(m.chainTotal)) out.chainTotal = m.chainTotal;      // v0.4.0
+  // v0.7.2 — carry the chain's marker cutoff forward through sanitizer
+  // paths (handoff claim, restart, re-persist). Without this, the
+  // resumed/restarted goal loses `stepMarkerAt`, and the chain step's
+  // marker scan would re-read the prior step's stale GOAL_COMPLETE: as
+  // the new step's completion. We accept any non-negative finite number
+  // (matches the validator).
+  if (isFiniteNumber(m.stepMarkerAt) && m.stepMarkerAt >= 0) out.stepMarkerAt = m.stepMarkerAt;
   // v0.4.0+ webhook — validate shape before allowing
   if (isPlainObject(m.webhook) && typeof (m.webhook as Record<string,unknown>).url === "string" &&
       Array.isArray((m.webhook as Record<string,unknown>).on)) {

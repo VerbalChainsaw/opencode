@@ -923,10 +923,19 @@ export const server: Plugin = async ({ client, directory }) => {
             const reasonSuffix = snapshot.reason
               ? `\nPrevious step evidence: ${sanitizeForPrompt(snapshot.reason).slice(0, 240)}`
               : "";
+            // v0.7.2 — chain-advance prompt must respect the new step's
+            // pinned model + agent (mirrors the not-met nudge at line 878).
+            // A chain step that pins a model/agent should keep the new
+            // step on the same configuration. Read the pin BEFORE
+            // building the body so the spread order is stable.
+            const stepPinnedModel = currentChainStepPinnedModel(directory);
+            const stepPinnedAgent = currentChainStepPinnedAgent(directory) ?? chainResult.state.metadata.agentName;
             await client.session
               .prompt({
                 path: { id: sessionId },
                 body: {
+                  ...(stepPinnedModel ? { model: stepPinnedModel } : {}),
+                  ...(stepPinnedAgent ? { agent: stepPinnedAgent } : {}),
                   parts: [
                     {
                       type: "text",
@@ -938,9 +947,6 @@ export const server: Plugin = async ({ client, directory }) => {
                         `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why.`,
                     },
                   ],
-                  ...(typeof chainResult.state.metadata.agentName === "string"
-                    ? { agent: chainResult.state.metadata.agentName }
-                    : {}),
                 },
               })
               .then(() => {

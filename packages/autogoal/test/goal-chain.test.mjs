@@ -448,6 +448,92 @@ describe("Path (a): claimHandoff preserves chainId", () => {
   });
 });
 
+// ── v0.7.2: sanitizeMetadata preserves stepMarkerAt ───────────────────────
+// Spec: "the runner persists it on the new step's state via
+// `state.metadata.stepMarkerAt`. The marker scan in `evaluateByTranscript`
+// uses this as a cutoff". The handoff path routes metadata through
+// `sanitizeMetadata`; if the allowlist drops `stepMarkerAt`, a chain
+// goal handed off mid-step would resume with no marker cutoff, and
+// the prior step's stale GOAL_COMPLETE: would re-fire as the resumed
+// step's completion. Pin that `sanitizeMetadata` carries the field
+// forward, alongside chainId/chainStep/chainTotal.
+
+describe("v0.7.2: sanitizeMetadata preserves stepMarkerAt", () => {
+  it("stepMarkerAt survives a handoff claim", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [
+        { condition: "first" },
+        { condition: "second" },
+      ]);
+      assert.ok(create.chain);
+      // Simulate the chain having advanced from step 0: the active
+      // state is on step 1 with a stepMarkerAt from the prior step.
+      const advance = advanceGoalChain(dir, Date.now(), { stepMarkerAt: 1234567890 });
+      assert.equal(advance.ok, true);
+      // Pin the state on disk has stepMarkerAt.
+      const stBefore = readGoalState(dir);
+      assert.equal(stBefore.metadata.stepMarkerAt, 1234567890,
+        "precondition: stepMarkerAt should be set after advanceGoalChain");
+
+      // Handoff → clear → claim.
+      const ho = createHandoff(dir, "for the next session");
+      assert.equal(ho.ok, true);
+      transitionGoal(dir, "clear");
+      const claim = claimHandoff(dir);
+      assert.equal(claim.ok, true);
+      assert.ok(claim.state);
+      assert.equal(claim.state.metadata.stepMarkerAt, 1234567890,
+        "stepMarkerAt must survive handoff claim — otherwise the resumed " +
+        "step's marker scan would re-fire the prior step's GOAL_COMPLETE:");
+    } finally { cleanDir(dir); }
+  });
+
+  it("stepMarkerAt survives restartGoal", async () => {
+    const { restartGoal } = await import("../dist/goal-state.js");
+    const dir = freshDir();
+    try {
+      createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      // Move to step 1 with a stepMarkerAt.
+      const advance = advanceGoalChain(dir, Date.now(), { stepMarkerAt: 9876543210 });
+      assert.equal(advance.ok, true);
+
+      // Restart the goal. The chain association survives (chainId/
+      // chainStep/chainTotal are preserved) — and so must the cutoff.
+      const res = restartGoal(dir);
+      assert.equal(res.ok, true);
+      const state = readGoalState(dir);
+      assert.ok(state);
+      assert.equal(state.metadata.stepMarkerAt, 9876543210,
+        "stepMarkerAt must survive restartGoal — otherwise the restarted " +
+        "step's marker scan would re-fire the prior step's GOAL_COMPLETE:");
+    } finally { cleanDir(dir); }
+  });
+
+  it("unknown metadata keys still dropped; stepMarkerAt is the only new allowlist addition", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "x" }]);
+      assert.ok(create.chain);
+      const st = readGoalState(dir);
+      // Sanity: a junk key + a valid stepMarkerAt.
+      st.metadata.__attacker_planted = "should be dropped on claim";
+      st.metadata.stepMarkerAt = 11111;
+      writeGoalStateAtomic(dir, st);
+      const ho = createHandoff(dir);
+      assert.equal(ho.ok, true);
+      transitionGoal(dir, "clear");
+      const claim = claimHandoff(dir);
+      assert.equal(claim.ok, true);
+      assert.ok(claim.state);
+      assert.equal(claim.state.metadata.__attacker_planted, undefined,
+        "unknown keys still dropped by sanitizeMetadata");
+      assert.equal(claim.state.metadata.stepMarkerAt, 11111,
+        "stepMarkerAt carried through sanitizeMetadata");
+    } finally { cleanDir(dir); }
+  });
+});
+
 // ── Path (b): transitionGoal preserves chainId across clear→set cycle ────
 // Spec scenario: "user clears a chain step, then sets a NEW goal" — the
 // new goal should have NO chainId (it's not part of any chain). And

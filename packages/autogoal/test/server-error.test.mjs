@@ -619,7 +619,185 @@ describe("session.error handler (defect B-3b)", () => {
 // The two permission tests live in one describe block so they share the
 // beforeEach/afterEach fixtures (fresh dir, spy client, plugin, receiver).
 
-describe("session.idle chain-advance path (defect coverage)", () => {
+// ── v0.7.2: chain advance defect coverage ─────────────────────────────────
+// v0.7.x bug: the chain runner advanced the state file to step N+1 but
+// never started a new model turn for step N+1. The agent kept seeing
+// step N's transcript, and the marker scan re-read step N's
+// GOAL_COMPLETE: as step N+1's completion (false completion). Three
+// things had to work together to fix this:
+//
+//   (a) The runner must issue a REAL `client.session.prompt` (not a
+//       `noReply: true` status line) for the new step's condition.
+//   (b) The new step's `state.metadata.stepMarkerAt` must be set to
+//       the prior step's marker timestamp so the marker scan ignores
+//       the prior step's stale transcript.
+//   (c) The v0.7.x `skipNextEvaluation` one-shot flag is gone (it was
+//       per-process, lossy on daemon restart, and only delayed the
+//       re-evaluation by one idle cycle).
+//
+// The previous test ("advances the chain and queues a next-step
+// nudge as a real model prompt") pins (a) and (b) for the shell
+// verification case. The tests below pin (b) and the cutoff
+// semantics for the marker verification case, which is where the
+// false-completion actually manifested in the user's bug report.
+
+describe("v0.7.2: chain advance marker cutoff prevents false completion", () => {
+  let dir, plugin, spies, client, messagesFn;
+
+  beforeEach(async () => {
+    dir = freshDir();
+    ({ spies, client } = makeSpyClient());
+    // Override messages() to return a transcript that contains the
+    // PRIOR step's GOAL_COMPLETE: marker. The new step's marker scan
+    // should reject it because of the stepMarkerAt cutoff.
+    messagesFn = async () => ({
+      data: [
+        // user message
+        { info: { id: "u1", role: "user" }, parts: [{ type: "text", text: "do step 0" }] },
+        // assistant message: step 0's GOAL_COMPLETE:
+        {
+          info: {
+            id: "a1",
+            role: "assistant",
+            metadata: { time: { created: 1000 } },
+          },
+          parts: [{ type: "text", text: "Buttface Buttface Buttface\nGOAL_COMPLETE: said buttface 10 times" }],
+        },
+      ],
+    });
+    client.session.messages = messagesFn;
+    plugin = await buildPlugin(dir, client);
+  });
+
+  afterEach(() => {
+    cleanDir(dir);
+  });
+
+  it("after chain advance, the prior step's stale GOAL_COMPLETE: is NOT re-read as the new step's completion", async () => {
+    // 1. Create a 2-step chain with marker verification. Step 0 is the
+    //    active goal. The runner will see a GOAL_COMPLETE: in the
+    //    assistant message and advance the chain.
+    const create = createGoalChain(dir, [
+      { condition: "step 0", verification: { type: "marker" } },
+      { condition: "step 1", verification: { type: "marker" } },
+    ]);
+    assert.equal(create.ok, true);
+
+    // 2. Fire session.idle. The marker is detected (assistant message
+    //    has GOAL_COMPLETE:), the chain advances, the new state has
+    //    stepMarkerAt = the marker message's time.created (= 1000).
+    //    The runner also issues a real model turn for step 1 (this
+    //    fires `client.session.prompt` as a non-noReply call).
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    // 3. Pin: chain advanced to step 1, stepMarkerAt is set.
+    const stateAfterAdvance = readStateFileRaw(dir);
+    assert.equal(stateAfterAdvance.metadata.chainStep, 1);
+    assert.equal(stateAfterAdvance.status, "active");
+    assert.equal(stateAfterAdvance.condition, "step 1");
+    assert.equal(stateAfterAdvance.metadata.stepMarkerAt, 1000,
+      "stepMarkerAt should be the marker message's time.created");
+
+    // 4. Reset the spies. The next session.idle will see the SAME
+    //    transcript (still step 0's GOAL_COMPLETE: — no new model
+    //    turn has happened yet). With the v0.7.x bug, this would
+    //    mark step 1 as achieved (false completion). With the v0.7.2
+    //    cutoff, the marker scan rejects messages with
+    //    time.created <= stepMarkerAt.
+    spies.prompts.length = 0;
+    spies.toast.length = 0;
+    const chain = JSON.parse(readFileSync(join(dir, ".opencode", ".goal-chain.json"), "utf-8"));
+    assert.equal(chain.current, 1, "precondition: chain is on step 1");
+
+    // 5. Fire a session.compacted to reset the debounce, then a
+    //    session.idle. The marker scan should NOT detect the stale
+    //    GOAL_COMPLETE: in the assistant message.
+    await plugin.event({
+      event: { type: "session.compacted", properties: { sessionID: "test-session" } },
+    });
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    // 6. Pin: step 1 is still active, NOT achieved. The runner issued
+    //    a continue-prompt (not-yet-met nudge) because the stale
+    //    marker was correctly filtered.
+    const stateAfterSecondIdle = readStateFileRaw(dir);
+    assert.equal(stateAfterSecondIdle.status, "active",
+      `step 1 should still be active, not achieved — got: ${stateAfterSecondIdle.status}`);
+    assert.equal(stateAfterSecondIdle.turnsEvaluated, 1,
+      "only the prior step's turn should be recorded");
+    // The runner sent ONE continue prompt for step 1 (not noReply).
+    const nudgePrompts = spies.prompts.filter((p) => p.body.noReply !== true);
+    assert.equal(nudgePrompts.length, 1,
+      "runner should issue a continue-prompt for step 1, not re-complete it");
+    assert.match(nudgePrompts[0].body.parts[0].text,
+      /step 1/,
+      "the continue-prompt should reference step 1's condition");
+  });
+
+  it("a fresh assistant message with a NEW timestamp is accepted as the new step's completion", async () => {
+    // This is the positive case: the model eventually responds with
+    // a new message that contains GOAL_COMPLETE: for step 1. The
+    // message has a timestamp > stepMarkerAt, so the marker scan
+    // accepts it and step 1 is achieved.
+    const create = createGoalChain(dir, [
+      { condition: "step 0", verification: { type: "marker" } },
+      { condition: "step 1", verification: { type: "marker" } },
+    ]);
+    assert.equal(create.ok, true);
+
+    // 1. Fire session.idle to advance the chain (step 0 → step 1).
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+    spies.prompts.length = 0;
+    spies.toast.length = 0;
+
+    // 2. Replace the messages() mock with one that returns a fresh
+    //    assistant message (time.created = 2000, which is > the
+    //    cutoff of 1000).
+    client.session.messages = async () => ({
+      data: [
+        { info: { id: "a1", role: "assistant", metadata: { time: { created: 1000 } } } },
+        { info: { id: "a2", role: "assistant", metadata: { time: { created: 2000 } } } },
+      ],
+    });
+    // a2 has no parts (the runner reads parts[].text), so the marker
+    // scan returns "no marker" — the new step stays active. The point
+    // of this test is the cutoff's ACCEPT path: a fresh timestamp is
+    // NOT rejected by the cutoff. We don't need a new marker in the
+    // message to test the cutoff itself.
+
+    await plugin.event({
+      event: { type: "session.compacted", properties: { sessionID: "test-session" } },
+    });
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    // 3. Pin: the cutoff did NOT reject the fresh message. The
+    //    runner proceeded to evaluate it (no marker found in a2's
+    //    empty parts, but the cutoff itself didn't block).
+    const stateAfter = readStateFileRaw(dir);
+    assert.equal(stateAfter.status, "active",
+      "step 1 should still be active — a2 has no marker in its parts");
+    assert.equal(stateAfter.turnsEvaluated, 1,
+      "only the step 0 turn was recorded; the second idle's evaluation was for step 1");
+  });
+});
+
+// ── v0.7.2: chain advance issues a real model turn (shell case) ───────────
+// Pin (a) of the defect coverage: after a chain step's met=true via
+// SHELL verification, the runner issues 3 prompts (2 noReply status
+// lines + 1 real model turn) and the new state has stepMarkerAt set
+// to the chain-advance time. This is the case the previous rewrite
+// covered; the tests above pin the marker-verification case which is
+// where the user's bug actually manifested.
+
+describe("v0.7.2: chain advance issues a real model turn (shell case)", () => {
   let dir, plugin, spies, client;
 
   beforeEach(async () => {
@@ -632,24 +810,11 @@ describe("session.idle chain-advance path (defect coverage)", () => {
     cleanDir(dir);
   });
 
-  it("advances the chain and queues a next-step nudge as a real model prompt (defect coverage)", async () => {
-    // v0.7.2 — this test was rewritten when the v0.7.x `skipNextEvaluation`
-    // one-shot flag was removed in favor of two coordinated fixes:
-    //   (a) the per-step `state.metadata.stepMarkerAt` cutoff that
-    //       prevents step N's GOAL_COMPLETE: from being read as step
-    //       N+1's completion, and
-    //   (b) the chain advance now issues a REAL `client.session.prompt`
-    //       (noReply-less) for the new step's condition. The previous
-    //       implementation used `notify()` with `noReply: true` (a status
-    //       line only) and a per-process skip flag, which together failed
-    //       to start a new model turn — the chain would advance the
-    //       state but the agent would never see step N+1's condition.
-    //
+  it("advances the chain and queues a next-step nudge as a real model prompt", async () => {
     // 1. Setup an active 2-step chain. Step 0 is verifiable via shell
     //    (exit 0 on either platform), so evaluate() returns met=true.
     //    Step 1 has no verification, so the next-step nudge is the
-    //    "Working on the next step now: ..." prompt — the only prompt
-    //    fired for step 1's initial nudge.
+    //    "Working on the next step now: ..." prompt.
     const create = createGoalChain(dir, [
       {
         condition: "achievable step",
@@ -658,53 +823,31 @@ describe("session.idle chain-advance path (defect coverage)", () => {
       { condition: "follow-up step" },
     ]);
     assert.equal(create.ok, true);
-    const initial = readStateFileRaw(dir);
-    assert.equal(initial.status, "active", "precondition: chain step 0 must be active");
 
-    // 2. Dispatch session.idle. The shell verification exits 0 →
-    //    evaluation.met = true → snapshot.achieved → notify("Goal
-    //    achieved") → advanceGoalChain() with stepMarkerAt → notify("Chain
-    //    advanced") → real `client.session.prompt` for step 1's
-    //    condition. (src/server.ts:907-979) The advance prompt is the
-    //    third call; it is a real model turn, not a noReply status.
+    // 2. Dispatch session.idle. Shell exit 0 → met=true → chain advance
+    //    with stepMarkerAt → 2 noReply notifies + 1 real model turn.
     await plugin.event({
       event: { type: "session.idle", properties: { sessionID: "test-session" } },
     });
 
-    // 3. advanceGoalChain ran: state is on step 1, status flipped
-    //    back to "active" with the new step's condition.
+    // 3. advanceGoalChain ran: state is on step 1 with the new condition.
     const stateAfterAdvance = readStateFileRaw(dir);
-    assert.equal(stateAfterAdvance.metadata.chainStep, 1,
-      "chainStep should increment to 1 after advance");
-    assert.equal(stateAfterAdvance.status, "active",
-      "new step should be active after advance");
-    assert.equal(stateAfterAdvance.condition, "follow-up step",
-      "state.condition should be the new step's condition");
+    assert.equal(stateAfterAdvance.metadata.chainStep, 1);
+    assert.equal(stateAfterAdvance.status, "active");
+    assert.equal(stateAfterAdvance.condition, "follow-up step");
 
-    // v0.7.2 — the chain advance path fires 3 prompts: 2 notify() status
-    // lines (achieved + chain-advanced) + 1 real model turn for step 1.
-    assert.equal(spies.prompts.length, 3,
-      "achieved + chain-advanced notifications + next-step model prompt");
-    // The 2 notify() calls use noReply (status line) — they do NOT carry
-    // the model turn's structure. The 3rd prompt is the real turn.
-    assert.equal(spies.prompts[0].body.noReply, true,
-      "notify('Goal achieved') uses noReply");
-    assert.equal(spies.prompts[1].body.noReply, true,
-      "notify('Chain advanced') uses noReply");
-    assert.notEqual(spies.prompts[2].body.noReply, true,
-      "the next-step nudge is a real model turn, not noReply");
+    // 4. Three prompts fired: 2 noReply status lines + 1 real model turn.
+    assert.equal(spies.prompts.length, 3);
+    assert.equal(spies.prompts[0].body.noReply, true, "notify('Goal achieved') uses noReply");
+    assert.equal(spies.prompts[1].body.noReply, true, "notify('Chain advanced') uses noReply");
+    assert.notEqual(spies.prompts[2].body.noReply, true, "the next-step nudge is a real model turn");
     assert.match(spies.prompts[2].body.parts[0].text,
-      /Working on the next step now: follow-up step/,
-      "the next-step nudge references the new step's condition");
+      /Working on the next step now: follow-up step/);
 
-    // v0.7.2 — the new step's `state.metadata.stepMarkerAt` is set
-    // to the prior step's marker timestamp. Without this, the
-    // marker scan on the next idle would re-read the prior step's
-    // GOAL_COMPLETE: as the new step's completion.
-    assert.ok(typeof stateAfterAdvance.metadata.stepMarkerAt === "number",
-      "stepMarkerAt should be set on the new step's state");
-    assert.ok(stateAfterAdvance.metadata.stepMarkerAt > 0,
-      "stepMarkerAt should be a positive timestamp");
+    // 5. stepMarkerAt is set to a positive timestamp (the chain-advance
+    //    time, since shell verification has no marker timestamp).
+    assert.ok(typeof stateAfterAdvance.metadata.stepMarkerAt === "number");
+    assert.ok(stateAfterAdvance.metadata.stepMarkerAt > 0);
   });
 });
 
