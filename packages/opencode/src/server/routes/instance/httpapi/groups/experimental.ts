@@ -96,6 +96,7 @@ export class GoalControlApiError extends Schema.ErrorClass<GoalControlApiError>(
   },
   { httpApiStatus: 400 },
 ) {}
+
 export const SessionListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   roots: Schema.optional(QueryBoolean),

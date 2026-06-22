@@ -169,6 +169,48 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
   })
 })
 
+describe("chainMatchesGoal (chain snapshot scoping)", () => {
+  const baseState: GoalState = {
+    id: "goal-1",
+    condition: "ship it",
+    status: "active",
+    startedAt: 0,
+    completedAt: null,
+    turnsEvaluated: 0,
+    tokensUsed: 0,
+    lastEvaluation: null,
+    evaluationHistory: [],
+    constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
+  }
+
+  test("matches when the goal's chainId equals the chain id", async () => {
+    const { chainMatchesGoal } = await load()
+    expect(
+      chainMatchesGoal(
+        { id: "chain-1" },
+        { ...baseState, metadata: { chainId: "chain-1" } },
+      ),
+    ).toBe(true)
+  })
+
+  test("rejects when the goal's chainId differs", async () => {
+    const { chainMatchesGoal } = await load()
+    expect(
+      chainMatchesGoal(
+        { id: "chain-1" },
+        { ...baseState, metadata: { chainId: "chain-2" } },
+      ),
+    ).toBe(false)
+  })
+
+  test("rejects when the goal has no chainId (new session / non-chain goal)", async () => {
+    const { chainMatchesGoal } = await load()
+    expect(chainMatchesGoal({ id: "chain-1" }, baseState)).toBe(false)
+    expect(chainMatchesGoal({ id: "chain-1" }, null)).toBe(false)
+    expect(chainMatchesGoal({ id: "chain-1" }, undefined)).toBe(false)
+  })
+})
+
 describe("readGoalFromSdk (file.read defensive layer)", () => {
   test("returns an empty store when the file is missing", async () => {
     const { readGoalFromSdk } = await load()

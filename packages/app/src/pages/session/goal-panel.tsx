@@ -57,6 +57,7 @@ import {
   applyArchivePoll,
   chainBudgetSummary,
   chainStartControlState,
+  chainMatchesGoal,
   chainStartPayload,
   chainStepFromTemplate,
   resolveStepConditionWithObjective,
@@ -2259,8 +2260,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     // session has no matching goal (new session, cleared goal from another
     // session, etc.), the snapshot is stale and must not leak into the runtime
     // chain or the chain builder display.
-    const chainId = s?.metadata?.chainId
-    if (typeof chainId !== "string" || chainId !== runningChain.id) return []
+    if (!chainMatchesGoal(runningChain, s)) return []
     return runningChain.steps.map((step, index) => {
       const agent = agentNameForRuntime(step.agent)
       const skills = Array.isArray(step.skills)

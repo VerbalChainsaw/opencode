@@ -120,6 +120,14 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   return true
 }
 
+/** A chain snapshot belongs to exactly one goal. The GUI must not treat a
+ *  stale `.opencode/.goal-chain.json` from a previous session/goal as the
+ *  current runtime chain for a new session. */
+export function chainMatchesGoal(chain: { id: string }, state: GoalState | null | undefined): boolean {
+  const chainId = state?.metadata?.chainId
+  return typeof chainId === "string" && chainId === chain.id
+}
+
 /** Strip C0/C1 control chars and Unicode bidi/format chars before
  *  rendering user-controlled text (same character classes the plugin's
  *  sanitizeForPrompt drops). Accepts unknown — returns "" for non-string
