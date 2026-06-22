@@ -30,6 +30,15 @@
 
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
 
+## Vite / Electron Dev Environment
+
+- A renderer crash pointing at `http://localhost:5173/@fs/...` is almost always stale Vite dev-server state, not a shipped-app bug. Restart the desktop dev server by killing both the Electron processes and the electron-vite `node` process.
+- Vite HMR can keep stale component instances whose prop values no longer exist in the updated code (e.g., removed enum/union keys). Enum-keyed style/object lookups need runtime fallbacks; do not trust the prop value to be one of the currently valid keys.
+
+## Goal Panel
+
+- Goal panel state has mixed persistence: chain draft uses `sessionStorage`, template overrides/deletions are in-memory only, and built-in templates are hardcoded. See `packages/app/src/pages/session/AGENTS.md`.
+
 ## Browser Automation
 
 Use `agent-browser` for web automation. Run `agent-browser --help` for all commands.

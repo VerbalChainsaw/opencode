@@ -678,7 +678,11 @@ export default function Page() {
         }, 0)
       })
 
-      return sync.session.sync(id)
+      return sync.session.sync(id).catch((error) => {
+        const status = (error as { cause?: { status?: unknown } })?.cause?.status
+        if (status === 404) return undefined
+        throw error
+      })
     },
   )
 

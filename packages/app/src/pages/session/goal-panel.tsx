@@ -616,6 +616,7 @@ function GoalConsoleSection(props: {
     | "action-library"
     | "action-editor"
     | "activity"
+    | "history"
   title: string
   subtitle?: string
   class?: string
@@ -630,7 +631,7 @@ function GoalConsoleSection(props: {
   // a faint border + subtle header tint, but the saturated gradients, bright
   // borders, and colored glow rings were dialed back so content (esp. the goal
   // input) reads as the primary element rather than the chrome.
-  const accent = {
+  const accentByZone = {
     "running-status": {
       style: {
         "border-color": "rgba(56, 189, 248, 0.32)",
@@ -697,7 +698,22 @@ function GoalConsoleSection(props: {
       },
       markerStyle: { "background-color": "rgb(165, 243, 252)" },
     },
-  }[props.zone]
+    history: {
+      style: {
+        "border-color": "rgba(148, 163, 184, 0.24)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(39, 39, 42, 0.88), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(148, 163, 184, 0.20)",
+      },
+      markerStyle: { "background-color": "rgba(203, 213, 225, 0.8)" },
+    },
+  }
+  // HMR can keep a stale component instance whose zone no longer exists in the
+  // current accent map (e.g. after a zone rename). Fall back to chain-builder
+  // so the app survives the mismatch instead of white-screening.
+  const accent = accentByZone[props.zone] ?? accentByZone["chain-builder"]
 
   return (
     <section
@@ -2636,16 +2652,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   </div>
                 )}
               </Show>
+              <div class="flex min-h-0 min-w-0 flex-col gap-3">
               <GoalConsoleSection
                 zone="chain-builder"
                 title={language.t("session.goal.chainBuilder.shortTitle")}
                 subtitle={liveGoal() ? chainRunStateSubtitle() : language.t("session.goal.chainBuilder.sectionHint")}
-                class="min-h-0"
+                class="min-h-0 flex-1"
               >
               <div
                 data-component="goal-chain-builder"
                 data-testid="chain-builder"
-                class="flex h-full min-h-0 min-w-0 flex-col bg-[radial-gradient(circle_at_16%_0%,rgba(139,92,246,0.075),transparent_34%),linear-gradient(180deg,rgba(24,24,27,0.74),rgba(10,10,10,0.70))]"
+                class="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto bg-[radial-gradient(circle_at_16%_0%,rgba(139,92,246,0.075),transparent_34%),linear-gradient(180deg,rgba(24,24,27,0.74),rgba(10,10,10,0.70))]"
               >
               <div
                 data-component="goal-chain-builder-header-strip"
@@ -3605,6 +3622,177 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 </div>
               </div>
               </GoalConsoleSection>
+              <Show when={archive().length > 0 && !liveGoal()}>
+                <GoalConsoleSection
+                  zone="history"
+                  title={language.t("session.goal.history.title")}
+                  subtitle={language.t("session.goal.history.archivedRuns", { count: archive().length })}
+                  class="bg-background-weak"
+                >
+                  <div
+                    data-testid="run-history"
+                    data-component="goal-history-panel"
+                    class="min-h-0 flex-1 overflow-hidden p-2"
+                  >
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-between gap-3 text-left"
+                    onClick={() => setHistoryOpen((open) => !open)}
+                    aria-expanded={historyOpen()}
+                  >
+                    <span class="text-12-regular text-text-weaker">
+                      {language.t("session.goal.recentRuns")} ·{" "}
+                      {language.t("session.goal.history.archivedRuns", { count: archive().length })}
+                    </span>
+                    <span class="shrink-0 text-text-weaker" aria-hidden>
+                      {historyOpen() ? "▾" : "▸"}
+                    </span>
+                  </button>
+
+                  <Show when={historyOpen()}>
+                    <div class="mt-3 flex flex-col gap-3">
+                      <div
+                        role="listbox"
+                        aria-label={language.t("session.goal.recentRuns")}
+                        tabindex={0}
+                        class="max-h-72 overflow-y-auto rounded-xl border border-border-base bg-background-base"
+                        onKeyDown={handleHistoryListboxKeyDown}
+                      >
+                        <For each={archive()}>
+                          {(h) => (
+                            <button
+                              role="option"
+                              type="button"
+                              aria-selected={selectedHistoryGoalID() === h.summary.goalID}
+                              class="group grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border-base/70 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-white/[0.04] focus-visible:bg-white/[0.06] focus-visible:outline-none"
+                              classList={{
+                                "bg-white/[0.06]": selectedHistoryGoalID() === h.summary.goalID,
+                              }}
+                              onClick={() => setSelectedHistoryGoalID(h.summary.goalID)}
+                            >
+                              <span class={`h-2.5 w-2.5 rounded-full ${nodeColor(h.summary.status)}`} aria-hidden />
+                              <div class="min-w-0">
+                                <div class="truncate text-12-medium text-text-base" title={cleanText(h.summary.title)}>
+                                  {cleanText(h.summary.title)}
+                                </div>
+                                <div class="mt-0.5 truncate text-[11px] tabular-nums text-text-weaker">
+                                  {outcomeLabel(h.summary.outcome)} ·{" "}
+                                  {language.t("session.goal.history.turnCount", { count: h.summary.turns })} ·{" "}
+                                  {formatElapsed(h.summary.elapsedMs)}
+                                </div>
+                              </div>
+                              <span
+                                class="h-5 w-1 rounded-full opacity-0 transition-opacity group-aria-selected:opacity-100"
+                                classList={{
+                                  "bg-emerald-400": h.summary.status === "success",
+                                  "bg-amber-400": h.summary.status === "mixed",
+                                  "bg-rose-400": h.summary.status === "failure",
+                                }}
+                                aria-hidden
+                              />
+                            </button>
+                          )}
+                        </For>
+                      </div>
+
+                      <Show when={selectedHistoryRun()}>
+                        {(run) => (
+                          <div class="min-w-0 rounded-2xl border border-border-base bg-background-base p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                            <div class="flex items-start justify-between gap-3">
+                              <div class="min-w-0">
+                                <div class="flex min-w-0 items-center gap-2">
+                                  <span
+                                    class={`h-2.5 w-2.5 shrink-0 rounded-full ${nodeColor(run().summary.status)}`}
+                                    aria-hidden
+                                  />
+                                  <div class="truncate text-13-medium text-text-base" title={cleanText(run().summary.title)}>
+                                    {cleanText(run().summary.title)}
+                                  </div>
+                                </div>
+                                <div class="mt-1 text-11-regular text-text-weaker">
+                                  {language.t("session.goal.history.details")}
+                                </div>
+                              </div>
+                              <ActionButton
+                                label={language.t("session.goal.history.reuse")}
+                                variant="secondary"
+                                disabled={busy() !== null || !props.sessionID}
+                                onClick={() => void reuseHistoryRun(run().detail.template.reuseCommand)}
+                              />
+                            </div>
+
+                            <div class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-5">
+                              <RunMetricPill
+                                label={language.t("session.goal.history.outcome")}
+                                value={outcomeLabel(run().summary.outcome)}
+                                detail={run().summary.status}
+                                tone={
+                                  run().summary.status === "success"
+                                    ? "success"
+                                    : run().summary.status === "failure"
+                                      ? "danger"
+                                      : "warning"
+                                }
+                              />
+                              <RunMetricPill
+                                label={language.t("session.goal.history.turns")}
+                                value={String(run().summary.turns)}
+                                detail={language.t("session.goal.history.evaluated")}
+                              />
+                              <RunMetricPill
+                                label={language.t("session.goal.history.elapsed")}
+                                value={formatElapsed(run().summary.elapsedMs)}
+                                detail={language.t("session.goal.history.runtime")}
+                              />
+                              <RunMetricPill
+                                label={language.t("session.goal.history.passed")}
+                                value={String(run().summary.successCount)}
+                                detail={language.t("session.goal.history.passed")}
+                                tone={run().summary.successCount > 0 ? "success" : "default"}
+                              />
+                              <RunMetricPill
+                                label={language.t("session.goal.history.failed")}
+                                value={String(run().summary.failureCount)}
+                                detail={language.t("session.goal.history.notMet")}
+                                tone={run().summary.failureCount > 0 ? "danger" : "default"}
+                              />
+                            </div>
+
+                            <Show when={run().detail.latestReason}>
+                              <div class="mt-3 rounded-xl border border-border-base bg-background-stronger px-3 py-2.5">
+                                <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
+                                  {language.t("session.goal.history.latestReason")}
+                                </div>
+                                <div class="mt-1 text-12-regular leading-5 text-text-weak">
+                                  {cleanText(run().detail.latestReason)}
+                                </div>
+                              </div>
+                            </Show>
+
+                            <div class="mt-3 flex max-h-56 flex-col gap-1.5 overflow-y-auto pr-1">
+                              <For each={run().detail.cycles}>
+                                {(cycle) => (
+                                  <div class="flex items-start gap-2 rounded-lg border border-border-base/70 bg-background-stronger/70 px-2 py-1.5 text-11-regular">
+                                    <span class={`mt-0.5 shrink-0 ${cycle.met ? "text-emerald-400" : "text-amber-400"}`}>
+                                      {cycle.met ? "✓" : "↺"}
+                                    </span>
+                                    <span class="shrink-0 tabular-nums text-text-weaker">#{cycle.turn}</span>
+                                    <span class="min-w-0 flex-1 text-text-weak">{cleanText(cycle.reason)}</span>
+                                  </div>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                        )}
+                      </Show>
+                    </div>
+                  </Show>
+
+                  </div>
+                </GoalConsoleSection>
+              </Show>
+              </div>
+
 
                 <aside
                   data-component="goal-method-library-rail"
@@ -4106,185 +4294,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         </Match>
       </Switch>
 
-      {/* ── History timeline — visible outside the action-editing workspace ─
-          A vertical rail of past runs. A cleared goal lands here as
-          "Cancelled"; an achieved goal as "Achieved". This is where terminal
-          goals go instead of blanking the panel. Hidden while the chain/action
-          editor workspace is open so an expanded archive cannot cover controls.
-
-          Visibility is keyed ONLY on the archive (goal-history.json, polled
-          every 2s into `archive()`) — NOT on the live goal store. Coupling it
-          to `store.loaded && !store.corrupt` made history vanish the moment a
-          run was stopped/cleared (the live state momentarily reloads/empties),
-          even though the archived runs are intact and independent. */}
-      <Show when={archive().length > 0 && !liveGoal()}>
-        <div
-          data-testid="run-history"
-          data-component="goal-history-panel"
-          class="mt-1 min-w-0 border-t border-border-base pt-3"
-        >
-          <div class="rounded-2xl border border-border-base bg-background-panel/70 p-3 min-w-0">
-            <button
-              type="button"
-              class="flex w-full items-center justify-between gap-3 text-left"
-              onClick={() => setHistoryOpen((open) => !open)}
-              aria-expanded={historyOpen()}
-            >
-              <div class="min-w-0">
-                <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                  {language.t("session.goal.history.title")}
-                </div>
-                <div class="mt-1 text-12-regular text-text-weaker">
-                  {language.t("session.goal.recentRuns")} ·{" "}
-                  {language.t("session.goal.history.archivedRuns", { count: archive().length })}
-                </div>
-              </div>
-              <span class="shrink-0 text-text-weaker" aria-hidden>
-                {historyOpen() ? "▾" : "▸"}
-              </span>
-            </button>
-
-            <Show when={historyOpen()}>
-              <div class="mt-3 flex flex-col gap-3">
-                <div
-                  role="listbox"
-                  aria-label={language.t("session.goal.recentRuns")}
-                  tabindex={0}
-                  class="max-h-72 overflow-y-auto rounded-xl border border-border-base bg-background-base/70"
-                  onKeyDown={handleHistoryListboxKeyDown}
-                >
-                  <For each={archive()}>
-                    {(h) => (
-                      <button
-                        role="option"
-                        type="button"
-                        aria-selected={selectedHistoryGoalID() === h.summary.goalID}
-                        class="group grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border-base/70 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-white/[0.04] focus-visible:bg-white/[0.06] focus-visible:outline-none"
-                        classList={{
-                          "bg-white/[0.06]": selectedHistoryGoalID() === h.summary.goalID,
-                        }}
-                        onClick={() => setSelectedHistoryGoalID(h.summary.goalID)}
-                      >
-                        <span class={`h-2.5 w-2.5 rounded-full ${nodeColor(h.summary.status)}`} aria-hidden />
-                        <div class="min-w-0">
-                          <div class="truncate text-12-medium text-text-base" title={cleanText(h.summary.title)}>
-                            {cleanText(h.summary.title)}
-                          </div>
-                          <div class="mt-0.5 truncate text-[11px] tabular-nums text-text-weaker">
-                            {outcomeLabel(h.summary.outcome)} ·{" "}
-                            {language.t("session.goal.history.turnCount", { count: h.summary.turns })} ·{" "}
-                            {formatElapsed(h.summary.elapsedMs)}
-                          </div>
-                        </div>
-                        <span
-                          class="h-5 w-1 rounded-full opacity-0 transition-opacity group-aria-selected:opacity-100"
-                          classList={{
-                            "bg-emerald-400": h.summary.status === "success",
-                            "bg-amber-400": h.summary.status === "mixed",
-                            "bg-rose-400": h.summary.status === "failure",
-                          }}
-                          aria-hidden
-                        />
-                      </button>
-                    )}
-                  </For>
-                </div>
-
-                <Show when={selectedHistoryRun()}>
-                  {(run) => (
-                    <div class="min-w-0 rounded-2xl border border-border-base bg-background-base/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <div class="flex min-w-0 items-center gap-2">
-                            <span
-                              class={`h-2.5 w-2.5 shrink-0 rounded-full ${nodeColor(run().summary.status)}`}
-                              aria-hidden
-                            />
-                            <div class="truncate text-13-medium text-text-base" title={cleanText(run().summary.title)}>
-                              {cleanText(run().summary.title)}
-                            </div>
-                          </div>
-                          <div class="mt-1 text-11-regular text-text-weaker">
-                            {language.t("session.goal.history.details")}
-                          </div>
-                        </div>
-                        <ActionButton
-                          label={language.t("session.goal.history.reuse")}
-                          variant="secondary"
-                          disabled={busy() !== null || !props.sessionID}
-                          onClick={() => void reuseHistoryRun(run().detail.template.reuseCommand)}
-                        />
-                      </div>
-
-                      <div class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-5">
-                        <RunMetricPill
-                          label={language.t("session.goal.history.outcome")}
-                          value={outcomeLabel(run().summary.outcome)}
-                          detail={run().summary.status}
-                          tone={
-                            run().summary.status === "success"
-                              ? "success"
-                              : run().summary.status === "failure"
-                                ? "danger"
-                                : "warning"
-                          }
-                        />
-                        <RunMetricPill
-                          label={language.t("session.goal.history.turns")}
-                          value={String(run().summary.turns)}
-                          detail={language.t("session.goal.history.evaluated")}
-                        />
-                        <RunMetricPill
-                          label={language.t("session.goal.history.elapsed")}
-                          value={formatElapsed(run().summary.elapsedMs)}
-                          detail={language.t("session.goal.history.runtime")}
-                        />
-                        <RunMetricPill
-                          label={language.t("session.goal.history.passed")}
-                          value={String(run().summary.successCount)}
-                          detail={language.t("session.goal.history.passed")}
-                          tone={run().summary.successCount > 0 ? "success" : "default"}
-                        />
-                        <RunMetricPill
-                          label={language.t("session.goal.history.failed")}
-                          value={String(run().summary.failureCount)}
-                          detail={language.t("session.goal.history.notMet")}
-                          tone={run().summary.failureCount > 0 ? "danger" : "default"}
-                        />
-                      </div>
-
-                      <Show when={run().detail.latestReason}>
-                        <div class="mt-3 rounded-xl border border-border-base bg-background-panel/70 px-3 py-2.5">
-                          <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
-                            {language.t("session.goal.history.latestReason")}
-                          </div>
-                          <div class="mt-1 text-12-regular leading-5 text-text-weak">
-                            {cleanText(run().detail.latestReason)}
-                          </div>
-                        </div>
-                      </Show>
-
-                      <div class="mt-3 flex max-h-56 flex-col gap-1.5 overflow-y-auto pr-1">
-                        <For each={run().detail.cycles}>
-                          {(cycle) => (
-                            <div class="flex items-start gap-2 rounded-lg border border-border-base/70 bg-background-panel/50 px-2 py-1.5 text-11-regular">
-                              <span class={`mt-0.5 shrink-0 ${cycle.met ? "text-emerald-400" : "text-amber-400"}`}>
-                                {cycle.met ? "✓" : "↺"}
-                              </span>
-                              <span class="shrink-0 tabular-nums text-text-weaker">#{cycle.turn}</span>
-                              <span class="min-w-0 flex-1 text-text-weak">{cleanText(cycle.reason)}</span>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  )}
-                </Show>
-              </div>
-            </Show>
-          </div>
-        </div>
-      </Show>
+     
     </div>
   )
 }

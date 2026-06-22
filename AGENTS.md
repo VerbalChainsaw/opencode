@@ -145,8 +145,9 @@ Docs: https://opencode.ai/docs/sdk/ | npm: https://www.npmjs.com/package/@openco
 2. **`<Show when={accessor}>` without `()`** — always truthy. Fix: `<Show when={accessor()}>`.
 3. **Barrel imports crash Vite `lazy()` imports.** Import leaf modules directly, never through barrels.
 4. **`!` non-null assertion on signals in event handlers** — signal value can change between render and click. Guard inside handler: `const val = signal(); if (!val) return`.
-5. **`createStore` preferred over multiple `createSignal` calls.**
-6. **Prefer `const` over `let`. Avoid `else` — use early returns. Never alias imports. Never star imports.**
+5. **Vite HMR can keep stale component instances** with prop values that no longer exist in the updated code (e.g., removed enum/union keys). Add defensive fallbacks for enum-keyed style/object lookups to avoid white-screen crashes.
+6. **`createStore` preferred over multiple `createSignal` calls.**
+7. **Prefer `const` over `let`. Avoid `else` — use early returns. Never alias imports. Never star imports.**
 
 Full style guide: see § Style Guide below.
 

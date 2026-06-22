@@ -83,6 +83,15 @@ a {
 }
 
 /*
+  Chromium computes the draggable region as the union of `app-region: drag`
+  rects MINUS the union of `app-region: no-drag` rects; `app-region` does not
+  inherit. So `drag` goes on the title-bar `<header>` (covering its whole rect)
+  and `no-drag` is carved back out of the interactive descendants (rule below).
+  GOTCHA: a child that *fills* the header (e.g. the `flex-1` tab strip) must NOT
+  itself be `no-drag` — that subtracts the entire bar and nothing drags. Mark
+  only the actual tab elements `no-drag`, never their full-width container.
+*/
+/*
   Window drag region. This codebase was ported from Tauri to Electron: under
   Tauri, `data-tauri-drag-region` was handled by Tauri's JS runtime, so the
   unprefixed `app-region` below was effectively decorative. Electron's Chromium

@@ -395,10 +395,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
                 <div
                   data-component="titlebar-v2-tabs-scroll"
-                  class="flex min-w-0 flex-1 basis-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [-webkit-app-region:no-drag] [app-region:no-drag]"
+                  class="flex min-w-0 flex-1 basis-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar"
                   ref={tabScrollRef}
                 >
-                  <div class="flex min-w-0 flex-row items-center gap-1.5">
+                  <div class="flex min-w-0 flex-row items-center gap-1.5 [-webkit-app-region:no-drag] [app-region:no-drag]">
                     <For each={tabsStore}>
                       {(tab, i) => {
                         let ref!: HTMLDivElement
