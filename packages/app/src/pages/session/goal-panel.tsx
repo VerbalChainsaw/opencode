@@ -24,7 +24,6 @@ import {
   nodeColor as nodeColorOf,
   outcomeLabel as outcomeLabelOf,
   pauseResumeAction,
-  shouldShowCreateForm as shouldShowCreateFormOf,
   statusMeta as statusMetaOf,
   terminalGoal as terminalGoalOf,
 } from "./goal-panel-lifecycle"
@@ -60,6 +59,7 @@ import {
   chainStartControlState,
   chainStartPayload,
   chainStepFromTemplate,
+  resolveStepConditionWithObjective,
   cleanText,
   completionRuleTranslationKey,
   readHandoffFromSdk,
@@ -125,6 +125,13 @@ const ACTION_SKILL_LIMIT = 8
 // `import type { GoalStore } from "./goal-panel-pure"` (new) get the
 // same shape.
 export type GoalStore = import("./goal-panel-pure").GoalStore
+
+function goalStateForSession(state: GoalState | null, sessionID?: string) {
+  if (!state || !sessionID) return state
+  const metadata = (state as GoalState & { metadata?: { sessionId?: unknown } }).metadata
+  const owner = typeof metadata?.sessionId === "string" ? cleanText(metadata.sessionId).trim() : ""
+  return owner === sessionID ? state : null
+}
 
 /**
  * Poll the goal state file. Distinguishes:
@@ -362,7 +369,7 @@ type ActionDraftState = {
 }
 
 /** Read the engine's `.opencode/.goal-chain.json` so the panel can show
- *  sub-goal steps. Returns null when there's no chain (single goal). */
+ *  chain steps. Returns null when this is a direct, non-chain goal. */
 async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
   const content = await readWorkspaceText(sdk, ".opencode/.goal-chain.json")
   if (!content) return null
@@ -603,7 +610,6 @@ function RunMetricPill(props: {
 
 function GoalConsoleSection(props: {
   zone:
-    | "set-goal"
     | "running-status"
     | "run-controls"
     | "chain-builder"
@@ -615,90 +621,81 @@ function GoalConsoleSection(props: {
   class?: string
   children: JSX.Element
 }) {
+  // Single inline-style accent system. Inline is the source of truth because
+  // dynamically-keyed Tailwind color classes render white under Electron dark
+  // mode (verified). Each zone declares border/shadow (style), header gradient
+  // (headerStyle), and marker fill (markerStyle) in one place so the two
+  // mechanisms can no longer drift.
+  // Calm accent system: each zone keeps its identity through the marker dot and
+  // a faint border + subtle header tint, but the saturated gradients, bright
+  // borders, and colored glow rings were dialed back so content (esp. the goal
+  // input) reads as the primary element rather than the chrome.
   const accent = {
-    "set-goal": {
-      class: "border-blue-400/70",
-      style: {
-        "border-color": "rgba(96, 165, 250, 0.58)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
-      },
-      headerStyle: {
-        "background": "linear-gradient(90deg, rgba(30, 64, 175, 0.9), rgba(30, 30, 30, 0.92))",
-        "border-color": "rgba(96, 165, 250, 0.72)",
-      },
-      marker: "bg-blue-200",
-    },
     "running-status": {
-      class: "border-sky-400/60",
       style: {
-        "border-color": "rgba(56, 189, 248, 0.54)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(56, 189, 248, 0.07)",
+        "border-color": "rgba(56, 189, 248, 0.32)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(12, 74, 110, 0.9), rgba(24, 24, 27, 0.92))",
-        "border-color": "rgba(125, 211, 252, 0.58)",
+        "background": "linear-gradient(90deg, rgba(12, 74, 110, 0.38), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(125, 211, 252, 0.30)",
       },
-      marker: "bg-sky-200",
+      markerStyle: { "background-color": "rgb(186, 230, 253)" },
     },
     "run-controls": {
-      class: "border-indigo-400/55",
       style: {
-        "border-color": "rgba(129, 140, 248, 0.5)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(129, 140, 248, 0.07)",
+        "border-color": "rgba(129, 140, 248, 0.30)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(49, 46, 129, 0.86), rgba(24, 24, 27, 0.92))",
-        "border-color": "rgba(165, 180, 252, 0.46)",
+        "background": "linear-gradient(90deg, rgba(49, 46, 129, 0.38), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(165, 180, 252, 0.28)",
       },
-      marker: "bg-indigo-200",
+      markerStyle: { "background-color": "rgb(199, 210, 254)" },
     },
     "chain-builder": {
-      class: "border-violet-500/22",
       style: {
-        "border-color": "rgba(139, 92, 246, 0.22)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(139, 92, 246, 0.024)",
+        "border-color": "rgba(139, 92, 246, 0.20)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.48), rgba(24, 24, 27, 0.92))",
-        "border-color": "rgba(167, 139, 250, 0.18)",
+        "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.30), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(167, 139, 250, 0.16)",
       },
-      marker: "bg-violet-300/80",
+      markerStyle: { "background-color": "rgba(196, 181, 253, 0.8)" },
     },
     "action-library": {
-      class: "border-emerald-400/70",
       style: {
-        "border-color": "rgba(52, 211, 153, 0.58)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20)",
+        "border-color": "rgba(52, 211, 153, 0.34)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(6, 95, 70, 0.9), rgba(30, 30, 30, 0.92))",
-        "border-color": "rgba(52, 211, 153, 0.72)",
+        "background": "linear-gradient(90deg, rgba(6, 95, 70, 0.38), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(52, 211, 153, 0.30)",
       },
-      marker: "bg-emerald-200",
+      markerStyle: { "background-color": "rgb(167, 243, 208)" },
     },
     "action-editor": {
-      class: "border-slate-400/28",
       style: {
-        "border-color": "rgba(148, 163, 184, 0.26)",
-        "box-shadow": "0 10px 22px rgba(0, 0, 0, 0.16)",
+        "border-color": "rgba(148, 163, 184, 0.24)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(39, 39, 42, 0.92), rgba(24, 24, 27, 0.94))",
-        "border-color": "rgba(148, 163, 184, 0.22)",
+        "background": "linear-gradient(90deg, rgba(39, 39, 42, 0.88), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(148, 163, 184, 0.20)",
       },
-      marker: "bg-slate-300/80",
+      markerStyle: { "background-color": "rgba(203, 213, 225, 0.8)" },
     },
     activity: {
-      class: "border-cyan-400/55",
       style: {
-        "border-color": "rgba(34, 211, 238, 0.5)",
-        "box-shadow": "0 12px 28px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(34, 211, 238, 0.07)",
+        "border-color": "rgba(34, 211, 238, 0.30)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(21, 94, 117, 0.86), rgba(24, 24, 27, 0.92))",
-        "border-color": "rgba(103, 232, 249, 0.46)",
+        "background": "linear-gradient(90deg, rgba(21, 94, 117, 0.38), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(103, 232, 249, 0.28)",
       },
-      marker: "bg-cyan-200",
+      markerStyle: { "background-color": "rgb(165, 243, 252)" },
     },
   }[props.zone]
 
@@ -706,7 +703,7 @@ function GoalConsoleSection(props: {
     <section
       data-component="goal-console-section"
       data-zone={props.zone}
-      class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-panel/80 ${accent.class} ${props.class ?? ""}`}
+      class={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background-panel/80 ${props.class ?? ""}`}
       style={accent.style}
     >
       <div data-component="goal-console-section-header" class="shrink-0 border-b border-border-base/60 px-2.5 py-1.5" style={accent.headerStyle}>
@@ -715,7 +712,7 @@ function GoalConsoleSection(props: {
           class="flex min-w-0 items-center"
         >
           <div class="flex min-w-0 flex-1 items-center gap-2">
-            <span class={`h-4 w-1.5 shrink-0 rounded-sm ${accent.marker}`} aria-hidden />
+            <span class="h-4 w-1.5 shrink-0 rounded-sm" style={accent.markerStyle} aria-hidden />
             <div class="flex min-w-0 flex-1 items-baseline gap-2">
               <span data-component="goal-console-section-title-text" class="shrink-0 truncate text-[13px] font-black uppercase leading-4 tracking-[0.12em] text-white">
                 {props.title}
@@ -1245,10 +1242,12 @@ function terminalOutcomeTone(status: GoalState["status"]): { class: string; styl
 interface ChainDraftState {
   steps: GoalChainDraftStep[]
   master: { maxTurns: number; maxTimeMinutes: number }
+  /** Run-level objective that fills `{scope}` across every chain step at start. */
+  objective: string
 }
 
 function defaultChainDraft(): ChainDraftState {
-  return { steps: [], master: { maxTurns: 20, maxTimeMinutes: 60 } }
+  return { steps: [], master: { maxTurns: 20, maxTimeMinutes: 60 }, objective: "" }
 }
 
 function chainDraftStorageKey(sessionID?: string) {
@@ -1257,9 +1256,10 @@ function chainDraftStorageKey(sessionID?: string) {
 
 function isStoredChainDraft(value: unknown): value is ChainDraftState {
   if (!value || typeof value !== "object") return false
-  const draft = value as { steps?: unknown; master?: unknown }
+  const draft = value as { steps?: unknown; master?: unknown; objective?: unknown }
   if (!Array.isArray(draft.steps)) return false
   if (!draft.master || typeof draft.master !== "object") return false
+  if (draft.objective !== undefined && typeof draft.objective !== "string") return false
   const master = draft.master as { maxTurns?: unknown; maxTimeMinutes?: unknown }
   if (typeof master.maxTurns !== "number" || !Number.isFinite(master.maxTurns)) return false
   if (typeof master.maxTimeMinutes !== "number" || !Number.isFinite(master.maxTimeMinutes)) return false
@@ -1269,6 +1269,7 @@ function isStoredChainDraft(value: unknown): value is ChainDraftState {
     const actionID: unknown = Reflect.get(step, "actionID")
     const label: unknown = Reflect.get(step, "label")
     const condition: unknown = Reflect.get(step, "condition")
+    const conditionTemplate: unknown = Reflect.get(step, "conditionTemplate")
     const command: unknown = Reflect.get(step, "command")
     const maxTurns: unknown = Reflect.get(step, "maxTurns")
     const maxTimeMinutes: unknown = Reflect.get(step, "maxTimeMinutes")
@@ -1284,6 +1285,7 @@ function isStoredChainDraft(value: unknown): value is ChainDraftState {
       typeof actionID === "string" &&
       typeof label === "string" &&
       typeof condition === "string" &&
+      (conditionTemplate === undefined || typeof conditionTemplate === "string") &&
       typeof command === "string" &&
       typeof maxTurns === "number" &&
       Number.isFinite(maxTurns) &&
@@ -1294,9 +1296,9 @@ function isStoredChainDraft(value: unknown): value is ChainDraftState {
       (tone === undefined || (typeof tone === "string" && (GOAL_TEMPLATE_TONES as readonly string[]).includes(tone))) &&
       (elevation === undefined ||
         (typeof elevation === "string" && (GOAL_TEMPLATE_ELEVATIONS as readonly string[]).includes(elevation))) &&
-      (agent === undefined || (typeof agent === "string" && agent.trim().length > 0)) &&
+      (agent === undefined || typeof agent === "string") &&
       (skills === undefined ||
-        (Array.isArray(skills) && skills.every((skill) => typeof skill === "string" && skill.trim().length > 0))) &&
+        (Array.isArray(skills) && skills.every((skill) => typeof skill === "string"))) &&
       (model === undefined || typeof model === "string" || isGoalPinnedModel(model)) &&
       typeof builtin === "boolean"
     )
@@ -1316,6 +1318,7 @@ function readStoredChainDraft(sessionID?: string): ChainDraftState {
         actionID: step.actionID,
         label: cleanText(step.label),
         condition: cleanText(step.condition),
+        ...(step.conditionTemplate ? { conditionTemplate: cleanText(step.conditionTemplate) } : {}),
         command: cleanText(step.command),
         maxTurns: Math.max(1, Math.round(step.maxTurns)),
         maxTimeMinutes: Math.max(1, Math.round(step.maxTimeMinutes)),
@@ -1337,6 +1340,7 @@ function readStoredChainDraft(sessionID?: string): ChainDraftState {
         maxTurns: Math.max(1, Math.round(parsed.master.maxTurns)),
         maxTimeMinutes: Math.max(1, Math.round(parsed.master.maxTimeMinutes)),
       },
+      objective: typeof parsed.objective === "string" ? cleanText(parsed.objective) : "",
     }
   } catch {
     return defaultChainDraft()
@@ -1359,8 +1363,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const sdk = useSDK() as unknown as GoalActionClient
   const sync = useSync()
   const navigate = useNavigate()
-  let setGoalSection: HTMLDivElement | undefined
-  const state = () => props.goal.store.state
+  const state = () => goalStateForSession(props.goal.store.state, props.sessionID)
 
   const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | "template" | "chain" | "fresh" | null>(null)
   // Optimistic pause/resume: the instant the user clicks, we record the status
@@ -1370,16 +1373,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [optimisticStatus, setOptimisticStatus] = createSignal<"active" | "paused" | null>(null)
   const [controlError, setControlError] = createSignal<string | null>(null)
   const [confirmingClear, setConfirmingClear] = createSignal(false)
-  const [newCondition, setNewCondition] = createSignal("")
   const [newCommand, setNewCommand] = createSignal("")
   const [steerOpen, setSteerOpen] = createSignal(false)
   const [steerText, setSteerText] = createSignal("")
   const [handoff, setHandoff] = createSignal<GoalHandoffStore>({ handoff: null, corrupt: false, loaded: false })
   const [handoffOpen, setHandoffOpen] = createSignal(false)
   const [handoffText, setHandoffText] = createSignal("")
-  // When true, show the create form even though a goal exists (the "New goal"
-  // affordance), so the panel is never a dead end — including on achieved goals.
-  const [showCreate, setShowCreate] = createSignal(false)
   const [activity, setActivity] = createSignal<ActivityEvent[]>([])
   const [chain, setChain] = createSignal<ChainData | null>(null)
   const [templates, setTemplates] = createSignal(DEFAULT_TEMPLATE_BUTTONS)
@@ -1391,6 +1390,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [templateCategory, setTemplateCategory] = createSignal<ActionCategory>("All")
   const [chainErrors, setChainErrors] = createSignal<ChainValidationError[]>([])
   const [chainDraft, setChainDraft] = createStore<ChainDraftState>(readStoredChainDraft(props.sessionID))
+  const [loadedDraftSessionID, setLoadedDraftSessionID] = createSignal(props.sessionID)
   const [editingChainStepID, setEditingChainStepID] = createSignal<string | null>(null)
   const [actionDraft, setActionDraft] = createStore<ActionDraftState>({
     sourceID: "",
@@ -1409,12 +1409,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   const [archive, setArchive] = createSignal<HistoryRun[]>([])
   const [availableSkills, setAvailableSkills] = createSignal<SkillOption[]>([])
-  const openSetGoalForm = () => {
-    setShowCreate(true)
-    window.requestAnimationFrame(() => {
-      setGoalSection?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-    })
-  }
   const structuredHandoffPrompt = (pending: NonNullable<GoalHandoffStore["handoff"]>) => {
     const goal = pending.state
     return [
@@ -1438,12 +1432,26 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [selectedHistoryGoalID, setSelectedHistoryGoalID] = createSignal<string | null>(null)
 
   createEffect(() => {
+    const sessionID = props.sessionID
+    if (sessionID === loadedDraftSessionID()) return
+    const next = readStoredChainDraft(sessionID)
+    setLoadedDraftSessionID(sessionID)
+    setChainDraft("steps", next.steps)
+    setChainDraft("master", "maxTurns", next.master.maxTurns)
+    setChainDraft("master", "maxTimeMinutes", next.master.maxTimeMinutes)
+    setChainDraft("objective", next.objective)
+    setChainErrors([])
+    setNewCommand("")
+  })
+
+  createEffect(() => {
     writeStoredChainDraft(props.sessionID, {
       steps: chainDraft.steps.map((step) => ({ ...step })),
       master: {
         maxTurns: chainDraft.master.maxTurns,
         maxTimeMinutes: chainDraft.master.maxTimeMinutes,
       },
+      objective: chainDraft.objective,
     })
   })
 
@@ -1541,7 +1549,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     } finally {
       setBusy(null)
       if (result.ok) setConfirmingClear(false)
-      if (result.ok && label === "set") setShowCreate(false)
     }
     return result.ok
   }
@@ -1623,11 +1630,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     })
     if (result.ok) {
       setControlError(null)
-      setShowCreate(true)
       setOptimisticStatus(null)
       setConfirmingClear(false)
       setChain(null)
       setActivity([])
+      setChainDraft("steps", [])
+      setChainDraft("objective", "")
+      setChainErrors([])
+      setNewCommand("")
       setHandoff({ handoff: null, corrupt: false, loaded: true })
     } else {
       setControlError(result.error)
@@ -1640,11 +1650,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return result.ok
   }
 
-  /** Create a goal from the panel's form. Quotes are stripped so they can't
+  /** Create a goal from the main Goal field. Quotes are stripped so they can't
    *  break the `/goal set "<condition>"` quoting; the condition is required,
    *  the verify command optional. */
   const createGoal = async () => {
-    const condition = newCondition().trim().replace(/"/g, "")
+    const condition = chainDraft.objective.trim().replace(/"/g, "")
     if (!condition) return
     const command = newCommand().trim().replace(/"/g, "")
     const args = command ? `set "${condition}" --command "${command}"` : `set "${condition}"`
@@ -1657,7 +1667,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         })
         if (!prompted) await sendGoalCommand("pause", "pause")
       }
-      setNewCondition("")
+      setChainDraft("objective", "")
       setNewCommand("")
     }
   }
@@ -1805,7 +1815,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   const varsForAction = (template: GoalTemplateButton) => {
     const defaults = templateVariableDefaults(template)
-    const scope = newCondition().trim()
+    const scope = chainDraft.objective.trim()
     return {
       ...defaults,
       ...templateVars(),
@@ -2226,24 +2236,29 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const runningChain = chain()
     if (!runningChain) return []
     const s = state()
-    return runningChain.steps.map((step, index) => ({
-      id: `running-${index}`,
-      actionID: `running-${index}`,
-      label: cleanText(step.condition).slice(0, 52) || `Step ${index + 1}`,
-      condition: cleanText(step.condition),
-      command: cleanText(step.command ?? ""),
-      maxTurns: step.maxTurns ?? s?.constraints.maxTurns ?? chainDraft.master.maxTurns,
-      maxTimeMinutes: step.maxTimeMinutes ?? s?.constraints.maxTimeMinutes ?? chainDraft.master.maxTimeMinutes,
-      category: step.category ?? inferActionCategory(step),
-      tone: step.tone ?? inferredActionTone(step),
-      elevation: step.elevation ?? "flat",
-      builtin: false,
-      agent: agentNameForRuntime(step.agent) ?? "",
-      skills: Array.isArray(step.skills)
+    return runningChain.steps.map((step, index) => {
+      const agent = agentNameForRuntime(step.agent)
+      const skills = Array.isArray(step.skills)
         ? [...new Set(step.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean))].slice(0, 8)
-        : [],
-      model: templateModelFromSnapshot(step.model) ?? "",
-    }))
+        : []
+      const model = templateModelFromSnapshot(step.model)
+      return {
+        id: `running-${index}`,
+        actionID: `running-${index}`,
+        label: cleanText(step.condition).slice(0, 52) || `Step ${index + 1}`,
+        condition: cleanText(step.condition),
+        command: cleanText(step.command ?? ""),
+        maxTurns: step.maxTurns ?? s?.constraints.maxTurns ?? chainDraft.master.maxTurns,
+        maxTimeMinutes: step.maxTimeMinutes ?? s?.constraints.maxTimeMinutes ?? chainDraft.master.maxTimeMinutes,
+        category: step.category ?? inferActionCategory(step),
+        tone: step.tone ?? inferredActionTone(step),
+        elevation: step.elevation ?? "flat",
+        builtin: false,
+        ...(agent ? { agent } : {}),
+        ...(skills.length > 0 ? { skills } : {}),
+        ...(model ? { model } : {}),
+      }
+    })
   }
   // ── Lifecycle model ──────────────────────────────────────────────────────
   // The panel renders strictly by STATUS, not by "is there a state object?".
@@ -2263,6 +2278,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (liveGoal()) return []
     return selectRunnableChainSteps(chainDraft.steps, chainSnapshotSteps())
   }
+  // What a step's condition will actually run as, given the current objective.
+  const stepConditionPreview = (step: GoalChainDraftStep) =>
+    resolveStepConditionWithObjective(step, chainDraft.objective)
   const chainStartControl = createMemo(() =>
     chainStartControlState({
       busy: busy() !== null,
@@ -2282,6 +2300,31 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         return language.t("session.goal.chainBuilder.startTitle")
     }
   }
+  const hasRunnableChain = () => runnableChainSteps().length > 0
+  const primaryRunLabel = () => {
+    if (liveGoal()) return language.t("session.goal.chainBuilder.runningButton")
+    if (hasRunnableChain()) return language.t("session.goal.chainBuilder.start")
+    // Empty single-goal input: read as "waiting for you" rather than a dead button.
+    if (props.sessionID && busy() === null && !chainDraft.objective.trim())
+      return language.t("session.goal.create.waiting")
+    return language.t("session.goal.create.submit")
+  }
+  const primaryRunDisabled = () => {
+    if (hasRunnableChain()) return chainStartControl().disabled
+    return busy() !== null || !!liveGoal() || !props.sessionID || !chainDraft.objective.trim()
+  }
+  const primaryRunTitle = () => {
+    if (hasRunnableChain()) return chainStartTitle()
+    if (busy() !== null) return language.t("session.goal.template.disabled.busy")
+    if (liveGoal()) return chainRunStateSubtitle()
+    if (!props.sessionID) return language.t("session.goal.chainBuilder.disabled.missingSession")
+    return language.t("session.goal.create.quickHint")
+  }
+  const startGoalOrChain = async () => {
+    if (hasRunnableChain()) return startGoalChain()
+    setChainErrors([])
+    return createGoal()
+  }
   const startGoalChain = async () => {
     const steps = runnableChainSteps()
     const errors = validateChainDraft(steps, {
@@ -2290,7 +2333,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     })
     setChainErrors(errors)
     if (errors.length > 0) return
-    const startPayload = chainStartPayload(steps, chainDraft.master)
+    const startPayload = chainStartPayload(steps, chainDraft.master, chainDraft.objective)
     const sent = await sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)
     if (sent) {
       if (props.sessionID) {
@@ -2305,7 +2348,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         })
         if (!prompted) await sendGoalCommand("pause", "pause")
       }
-      setShowCreate(false)
     }
   }
 
@@ -2321,16 +2363,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const end = s.completedAt ?? Date.now()
     return Math.max(0, Math.round((end - s.startedAt) / 60_000))
   })
-  const currentGoalTurns = createMemo(() => state()?.turnsEvaluated ?? 0)
-  const maxGoalTurns = createMemo(() => state()?.constraints.maxTurns ?? masterTurns())
-  const currentGoalMinutes = createMemo(() => (state() ? elapsedMinutes() : 0))
-  const maxGoalMinutes = createMemo(() => state()?.constraints.maxTimeMinutes ?? masterMinutes())
 
   const selectedHistoryRun = createMemo(
     () => archive().find((run) => run.summary.goalID === selectedHistoryGoalID()) ?? null,
   )
-  const goalCommandAvailable = createMemo(() => sync.data.command.some((item) => item.name === "goal"))
-  const goalCommandMissing = createMemo(() => sync.ready && !goalCommandAvailable())
 
   const selectHistoryAt = (index: number) => {
     const runs = archive()
@@ -2479,7 +2515,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
   })
 
-  const showForm = createMemo(() => shouldShowCreateFormOf(state(), showCreate()))
   const statusMeta = (s: GoalState["status"] | undefined) => statusMetaOf(s)
   const nodeColor = (status: string) => nodeColorOf(status)
   const outcomeLabel = (outcome: string) => outcomeLabelOf(outcome)
@@ -2508,10 +2543,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               <section
                 data-testid="goal-status-card"
                 data-component="goal-status-card"
-                class={showForm() ? "h-fit xl:col-span-2" : "hidden"}
+                class={unarchivedTerminalGoal() ? "h-fit xl:col-span-2" : "hidden"}
             >
             <Show when={unarchivedTerminalGoal()} keyed>
               {(terminal) => (
+                <>
                 <div
                   data-component="goal-terminal-result-banner"
                   role="status"
@@ -2520,10 +2556,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 >
                   <span
                     data-component="goal-terminal-outcome-badge"
-                    class={`inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${terminalOutcomeTone(terminal.status).class}`}
-                    style={terminalOutcomeTone(terminal.status).style}
+                    class="inline-flex shrink-0 cursor-default select-none items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-weak"
                   >
-                    <span aria-hidden>{statusMeta(terminal.status).glyph}</span>
+                    <span
+                      class="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ "background-color": terminalOutcomeTone(terminal.status).style["border-color"] as string }}
+                      aria-hidden
+                    />
                     {statusMeta(terminal.status).label}
                   </span>
                   <div data-component="goal-terminal-summary" class="min-w-0">
@@ -2569,88 +2608,34 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         variant="ghost"
                         busy={busy() === "fresh"}
                         disabled={busy() !== null || !props.sessionID}
-                        class="h-7 px-2 text-11-medium"
+                        class="h-7 border border-border-base/80 bg-background-base/70 px-2 text-11-medium text-text-base hover:border-amber-200/45 hover:bg-amber-400/10"
                         title={language.t("session.goal.action.resetStateHint")}
                         onClick={() => void resetGoalState()}
                       />
                     </div>
                   </div>
                 </div>
+                <p
+                  data-component="goal-terminal-start-again"
+                  class="mb-3 px-1 text-11-regular leading-4 text-text-weak"
+                >
+                  {language.t("session.goal.terminal.startAgainHint")}
+                </p>
+                </>
               )}
             </Show>
-            <GoalConsoleSection
-              zone="set-goal"
-              title={language.t("session.goal.create.title")}
-              subtitle="Create one standalone goal outside the chain."
-            >
-              <div ref={(el) => (setGoalSection = el)} data-component="goal-playbook-setup" class="min-w-0 p-3">
-                <div class="flex justify-end">
-                  <Show when={showCreate() && liveGoal()}>
-                    <button
-                      type="button"
-                      class="text-11-regular text-text-weaker hover:text-text-base shrink-0"
-                      onClick={() => setShowCreate(false)}
-                    >
-                      {language.t("session.goal.action.cancel")}
-                    </button>
-                  </Show>
-                </div>
-                <Show when={goalCommandMissing()}>
-                  <div class="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/8 px-3 py-2 text-11-regular text-text-weak">
-                    This session does not expose the <code>/goal</code> slash command. GoalPanel controls will use the
-                    native bridge directly.
-                  </div>
-                </Show>
-                <Show when={controlError()}>
-                  {(message) => (
-                    <div
-                      data-component="goal-control-error"
-                      class="mt-3 rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2 text-11-regular leading-5 text-red-100"
-                    >
-                      Goal control failed: {message()}
-                    </div>
-                  )}
-                </Show>
-                <div class="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-border-base bg-background-base/60 p-2">
-                  <TextField
-                    value={newCondition()}
-                    onChange={setNewCondition}
-                    label={language.t("session.goal.create.condition")}
-                    hideLabel
-                    placeholder={language.t("session.goal.create.conditionPlaceholder")}
-                    disabled={busy() !== null || !props.sessionID}
-                    class="w-full"
-                  />
-                  <TextField
-                    value={newCommand()}
-                    onChange={setNewCommand}
-                    label={language.t("session.goal.create.command")}
-                    hideLabel
-                    placeholder={language.t("session.goal.create.commandPlaceholder")}
-                    disabled={busy() !== null || !props.sessionID}
-                    class="w-full"
-                  />
-                  <ActionButton
-                    variant="primary"
-                    class="h-8 w-full"
-                    label={language.t("session.goal.create.submit")}
-                    onClick={() => void createGoal()}
-                    disabled={!newCondition().trim() || !props.sessionID || busy() !== null}
-                    busy={busy() === "set"}
-                  />
-                </div>
-
-                <div
-                  data-component="goal-playbook-budget-strip"
-                  class="mt-2 flex items-center gap-3 px-1 text-11-regular text-text-weaker"
-                >
-                  <span>Turns <span class="tabular-nums text-text-base">{currentGoalTurns()}/{maxGoalTurns()}</span></span>
-                  <span>Time <span class="tabular-nums text-text-base">{currentGoalMinutes()}m/{maxGoalMinutes()}m</span></span>
-                  <span class="ml-auto">{budgetSummary().stepCount} step{budgetSummary().stepCount !== 1 ? "s" : ""}</span>
-                </div>
-              </div>
-            </GoalConsoleSection>
               </section>
+              <Show when={controlError()}>
+                {(error) => (
+                  <div
+                    data-component="goal-control-error"
+                    role="alert"
+                    class="xl:col-span-2 rounded-md border border-red-400/35 bg-red-400/8 px-3 py-2 text-12-regular text-red-100/86"
+                  >
+                    {error()}
+                  </div>
+                )}
+              </Show>
               <GoalConsoleSection
                 zone="chain-builder"
                 title={language.t("session.goal.chainBuilder.shortTitle")}
@@ -2716,64 +2701,95 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     </Show>
                   </div>
                   <div data-component="goal-target-toolbar" class="flex shrink-0 items-center justify-end gap-1.5">
-                    <Show when={!liveGoal()}>
-                      <ActionButton
-                        label={language.t("session.goal.create.submit")}
-                        variant="secondary"
-                        class="h-5 shrink-0 px-2.5 text-11-medium"
-                        title={language.t("session.goal.create.quickHint")}
-                        disabled={busy() !== null || !props.sessionID}
-                        onClick={openSetGoalForm}
-                      />
-                    </Show>
                     <ActionButton
-                      label={liveGoal() ? "Running…" : "Start Chain"}
+                      label={primaryRunLabel()}
                       variant={liveGoal() ? "secondary" : "primary"}
                       class="h-5 shrink-0 px-2.5 text-11-medium"
-                      busy={busy() === "chain"}
-                      disabled={chainStartControl().disabled}
-                      title={chainStartTitle()}
-                      onClick={() => void startGoalChain()}
+                      busy={busy() === "chain" || busy() === "set"}
+                      disabled={primaryRunDisabled()}
+                      title={primaryRunTitle()}
+                      onClick={() => void startGoalOrChain()}
                     />
                     <Show when={!liveGoal()}>
                       <div class="flex items-center gap-1">
-                        <ActionButton
-                          label="Check"
-                          variant="secondary"
-                          class="h-5 shrink-0 px-2.5 text-11-medium"
-                          disabled={busy() !== null || !props.sessionID}
-                          onClick={() => {
-                            const errors = validateChainDraft(runnableChainSteps(), {
-                              maxTurns: chainDraft.master.maxTurns,
-                              maxTimeMinutes: chainDraft.master.maxTimeMinutes,
-                            })
-                            setChainErrors(errors)
-                            if (errors.length === 0) {
-                              refreshChain()
-                              void props.goal.refresh().catch(ignoreRefreshError)
-                            }
-                          }}
-                        />
-                        <ActionButton
-                          label="Save"
-                          variant="secondary"
-                          class="h-5 shrink-0 px-2.5 text-11-medium"
-                          disabled={busy() !== null}
-                          onClick={() => {
-                            writeStoredChainDraft(props.sessionID, {
-                              steps: chainDraft.steps.map((step) => ({ ...step })),
-                              master: {
+                        <Show when={hasRunnableChain()}>
+                          <ActionButton
+                            label="Check"
+                            variant="secondary"
+                            class="h-5 shrink-0 px-2.5 text-11-medium"
+                            disabled={busy() !== null || !props.sessionID}
+                            onClick={() => {
+                              const errors = validateChainDraft(runnableChainSteps(), {
                                 maxTurns: chainDraft.master.maxTurns,
                                 maxTimeMinutes: chainDraft.master.maxTimeMinutes,
-                              },
-                            })
-                            refreshChain()
-                          }}
-                        />
+                              })
+                              setChainErrors(errors)
+                              if (errors.length === 0) {
+                                refreshChain()
+                                void props.goal.refresh().catch(ignoreRefreshError)
+                              }
+                            }}
+                          />
+                        </Show>
+                        <span
+                          data-component="goal-chain-draft-autosave"
+                          class="inline-flex h-5 shrink-0 cursor-default select-none items-center rounded border border-border-base/55 bg-background-base/45 px-2 text-[10px] font-semibold text-text-weaker"
+                          title={language.t("session.goal.chainBuilder.autosaveHint")}
+                        >
+                          {language.t("session.goal.chainBuilder.autosave")}
+                        </span>
                       </div>
                     </Show>
                   </div>
                 </div>
+                <Show when={!liveGoal()}>
+                  <div
+                    data-component="goal-chain-target-field"
+                    class="mt-1 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md border px-2 py-1"
+                    style={{
+                      "background-color": "rgba(15, 23, 42, 0.22)",
+                      "border-color": "rgba(167, 139, 250, 0.12)",
+                    }}
+                  >
+                    <span class="shrink-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-100/74">
+                      {language.t("session.goal.chainBuilder.objective")}
+                    </span>
+                    <input
+                      value={chainDraft.objective}
+                      onInput={(event) => setChainDraft("objective", event.currentTarget.value)}
+                      disabled={busy() !== null || !props.sessionID}
+                      placeholder={language.t("session.goal.chainBuilder.objectivePlaceholder")}
+                      class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-violet-50 outline-none placeholder:text-violet-100/32 disabled:opacity-40"
+                    />
+                    <span
+                      class="shrink-0 text-[9px] font-medium text-violet-100/46"
+                      title={language.t("session.goal.chainBuilder.objectiveHint")}
+                    >
+                      {"{scope}"}
+                    </span>
+                  </div>
+                  <Show when={!hasRunnableChain()}>
+                    <div
+                      data-component="goal-standalone-command-field"
+                      class="mt-1 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-1.5 rounded-md border px-2 py-1"
+                      style={{
+                        "background-color": "rgba(14, 165, 233, 0.05)",
+                        "border-color": "rgba(56, 189, 248, 0.12)",
+                      }}
+                    >
+                      <span class="shrink-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-sky-100/74">
+                        {language.t("session.goal.create.command")}
+                      </span>
+                      <input
+                        value={newCommand()}
+                        onInput={(event) => setNewCommand(event.currentTarget.value)}
+                        disabled={busy() !== null || !props.sessionID}
+                        placeholder={language.t("session.goal.create.commandPlaceholder")}
+                        class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-sky-50 outline-none placeholder:text-sky-100/32 disabled:opacity-40"
+                      />
+                    </div>
+                  </Show>
+                </Show>
                 <Show when={!liveGoal()}>
                   <div
                     data-component="goal-global-budget"
@@ -3302,7 +3318,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 {language.t("session.goal.chainBuilder.emptyChain")}
                               </div>
                               <div class="mt-2 text-12-regular leading-5 text-violet-100/72">
-                                Add actions from the library. Start Chain writes the ordered steps, activates step 1, and the engine advances after each step is achieved.
+                                No chain items are required. Start Goal runs the goal above; add actions only when this goal needs a sequence.
                               </div>
                               <div
                                 data-component="goal-chain-execution-note"
@@ -3312,7 +3328,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   "border-color": "rgba(167, 139, 250, 0.14)",
                                 }}
                               >
-                                Draft edits stay local. Reorder, remove, turns, minutes, prompt, and command edits do not start a turn until Start Chain.
+                                Chain item edits stay local. Reorder, remove, turns, minutes, prompt, and command edits do not start a turn until Start Chain.
                               </div>
                             </div>
                           </div>
@@ -3377,9 +3393,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <div class="truncate text-13-medium font-semibold text-text-base">{step.label}</div>
                                   <div
                                     class="mt-0.5 truncate text-[11px] leading-4 text-text-weaker"
-                                    title={cleanText(step.condition)}
+                                    title={cleanText(stepConditionPreview(step))}
                                   >
-                                    {cleanText(step.condition)}
+                                    {cleanText(stepConditionPreview(step))}
                                   </div>
                                   <Show when={(step.skills?.length ?? 0) > 0 || step.model}>
                                     <div class="flex min-w-0 gap-1 overflow-hidden">
@@ -4101,7 +4117,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           to `store.loaded && !store.corrupt` made history vanish the moment a
           run was stopped/cleared (the live state momentarily reloads/empties),
           even though the archived runs are intact and independent. */}
-      <Show when={archive().length > 0 && !showForm() && !liveGoal()}>
+      <Show when={archive().length > 0 && !liveGoal()}>
         <div
           data-testid="run-history"
           data-component="goal-history-panel"

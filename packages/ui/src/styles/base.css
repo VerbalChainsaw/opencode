@@ -82,7 +82,21 @@ a {
   cursor: default;
 }
 
-#root:not([aria-hidden]) *[data-tauri-drag-region] {
+/*
+  Window drag region. This codebase was ported from Tauri to Electron: under
+  Tauri, `data-tauri-drag-region` was handled by Tauri's JS runtime, so the
+  unprefixed `app-region` below was effectively decorative. Electron's Chromium
+  honors `-webkit-app-region`, so it MUST be emitted or the title bar cannot
+  drag the window. Keep both: prefixed for Electron, unprefixed for the spec.
+
+  Do NOT re-add a `:not([aria-hidden])` guard on #root here. `@kobalte/core`
+  overlays (tooltips, popovers, dialogs) set `aria-hidden` on root-level
+  siblings for focus-trapping; gating the drag region on it kills title-bar
+  dragging whenever any overlay is open. The title bar must stay draggable
+  regardless of overlay state.
+*/
+#root *[data-tauri-drag-region] {
+  -webkit-app-region: drag;
   app-region: drag;
 }
 
@@ -94,6 +108,7 @@ a {
 *[data-tauri-drag-region] [role="button"],
 *[data-tauri-drag-region] [role="menuitem"],
 *[data-tauri-drag-region] [contenteditable] {
+  -webkit-app-region: no-drag;
   app-region: no-drag;
 }
 

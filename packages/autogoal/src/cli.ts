@@ -86,6 +86,8 @@ Commands:
   resume                     Resume a paused goal
   clear | stop | off | reset | none | cancel
                              Clear the current goal (marks it terminal)
+  fresh                      Clear live goal, chain, handoff, and activity files
+                             while preserving templates and history
   restart                    Restart with the same condition + constraints
   history                    Show the last 10 evaluation records
 
@@ -209,6 +211,8 @@ const CLI_TO_DISPATCHER: Record<string, string> = {
   reset: "clear",
   none: "clear",
   cancel: "clear",
+  fresh: "fresh",
+  "reset-state": "reset-state",
   template: "template",
   use: "template",
   restart: "restart",

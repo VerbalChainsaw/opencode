@@ -458,6 +458,11 @@ function sanitizeAgentName(value: unknown): string | undefined {
   return agent || undefined;
 }
 
+function sanitizeSessionId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return sanitizeForPrompt(value).slice(0, 160) || undefined;
+}
+
 function agentNameForStep(step: GoalChainStep, chain: Pick<GoalChain, "metadata">): string | undefined {
   return sanitizeAgentName(step.agent) ?? sanitizeAgentName(chain.metadata.agentName);
 }
@@ -593,6 +598,7 @@ export function createGoalChain(
     const existingAgent = existingGoal?.metadata?.agentName;
     resolvedAgentName = sanitizeAgentName(existingAgent);
   }
+  const resolvedSessionId = sanitizeSessionId(opts.sessionId);
 
   const chain: GoalChain = {
     version: 1,
@@ -609,7 +615,7 @@ export function createGoalChain(
     metadata: {
       createdAt: now,
       setBy: opts.setBy ?? "user",
-      sessionId: opts.sessionId,
+      ...(resolvedSessionId ? { sessionId: resolvedSessionId } : {}),
       ...(resolvedAgentName ? { agentName: resolvedAgentName } : {}),
     },
   };
@@ -628,6 +634,7 @@ export function createGoalChain(
   state.metadata.chainId = chain.id;
   state.metadata.chainStep = 0;
   state.metadata.chainTotal = steps.length;
+  if (chain.metadata.sessionId) state.metadata.sessionId = chain.metadata.sessionId;
   // v0.4.0 D6 fix: project the chain's webhook onto the step state so
   // the auto-loop's `fireWebhook` finds it on this step's achievement.
   applyChainWebhookToState(state, chain);
@@ -711,6 +718,7 @@ export function advanceGoalChain(directory: string, now: number = Date.now()): A
   newState.metadata.chainId = chain.id;
   newState.metadata.chainStep = chain.current;
   newState.metadata.chainTotal = chain.steps.length;
+  if (chain.metadata.sessionId) newState.metadata.sessionId = chain.metadata.sessionId;
   // v0.4.0 D6 fix: re-project the chain's webhook onto the new step's
   // state. Without this, `advanceGoalChain` silently drops the webhook
   // on every step beyond step 0, and `fireWebhook` in server.ts finds
@@ -768,6 +776,7 @@ export function resetGoalChain(directory: string, now: number = Date.now()): Adv
   newState.metadata.chainId = chain.id;
   newState.metadata.chainStep = 0;
   newState.metadata.chainTotal = chain.steps.length;
+  if (chain.metadata.sessionId) newState.metadata.sessionId = chain.metadata.sessionId;
   // v0.4.0 D6 fix: a reset sends the chain back to step 0; project the
   // chain's webhook onto the rebuilt step state for consistency with
   // createGoalChain and advanceGoalChain.
@@ -868,7 +877,7 @@ export function setChainWebhook(
  * Append a sub-goal step. If a chain already exists, the step is pushed onto
  * the end. If there is NO chain but there IS a current goal, the goal is
  * promoted into a 2-step chain (the current goal becomes step 0/active, the
- * new condition step 1) so the user can break a single goal into ordered
+ * new condition step 1) so the user can break an active goal into ordered
  * sub-goals from the GUI. Refuses past MAX_CHAIN_STEPS.
  */
 export function addChainStep(

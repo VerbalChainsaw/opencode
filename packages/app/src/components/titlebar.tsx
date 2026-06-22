@@ -48,27 +48,6 @@ import { decode64 } from "@/utils/base64"
 import { ServerConnection, useServer } from "@/context/server"
 import { tabHref, useTabs, type Tab } from "@/context/tabs"
 
-type TauriDesktopWindow = {
-  startDragging?: () => Promise<void>
-  toggleMaximize?: () => Promise<void>
-}
-
-type TauriThemeWindow = {
-  setTheme?: (theme?: "light" | "dark" | null) => Promise<void>
-}
-
-type TauriApi = {
-  window?: {
-    getCurrentWindow?: () => TauriDesktopWindow
-  }
-  webviewWindow?: {
-    getCurrentWebviewWindow?: () => TauriThemeWindow
-  }
-}
-
-const tauriApi = () => (window as unknown as { __TAURI__?: TauriApi }).__TAURI__
-const currentDesktopWindow = () => tauriApi()?.window?.getCurrentWindow?.()
-const currentThemeWindow = () => tauriApi()?.webviewWindow?.getCurrentWebviewWindow?.()
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 36
 
@@ -95,7 +74,9 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
   const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
   const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
-  const electronWindows = createMemo(() => windows() && !tauriApi())
+  // Electron-on-Windows. Gates the title-bar width reserved for the native
+  // window-controls overlay. Retained name post-Tauri; equivalent to windows().
+  const electronWindows = createMemo(() => windows())
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const web = createMemo(() => platform.platform === "web")
   const zoom = () => platform.webviewZoom?.() ?? 1
@@ -215,55 +196,9 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     },
   ])
 
-  const getWin = () => {
-    if (platform.platform !== "desktop") return
-    return currentDesktopWindow()
-  }
-
-  createEffect(() => {
-    if (platform.platform !== "desktop") return
-
-    const scheme = theme.colorScheme()
-    const value = scheme === "system" ? null : scheme
-
-    const win = currentThemeWindow()
-    if (!win?.setTheme) return
-
-    void win.setTheme(value).catch(() => undefined)
-  })
-
-  const interactive = (target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false
-
-    const selector =
-      "button, a, input, textarea, select, option, [role='button'], [role='menuitem'], [contenteditable='true'], [contenteditable='']"
-
-    return !!target.closest(selector)
-  }
-
-  const drag = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (e.buttons !== 1) return
-    if (interactive(e.target)) return
-
-    const win = getWin()
-    if (!win?.startDragging) return
-
-    e.preventDefault()
-    void win.startDragging().catch(() => undefined)
-  }
-
-  const maximize = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (interactive(e.target)) return
-    if (e.target instanceof Element && e.target.closest("[data-tauri-decorum-tb]")) return
-
-    const win = getWin()
-    if (!win?.toggleMaximize) return
-
-    e.preventDefault()
-    void win.toggleMaximize().catch(() => undefined)
-  }
+  // Window dragging is handled by the `-webkit-app-region: drag` CSS on
+  // `[data-tauri-drag-region]` (see ui/base.css); double-click-to-maximize is
+  // handled natively by Electron's frameless window. No JS handlers needed.
 
   return (
     <header
@@ -280,8 +215,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
         "align-self": electronWindows() ? "flex-start" : undefined,
       }}
       data-tauri-drag-region
-      onMouseDown={drag}
-      onDblClick={maximize}
     >
       <Switch>
         <Match when={useV2Titlebar()}>
@@ -462,7 +395,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
                 <div
                   data-component="titlebar-v2-tabs-scroll"
-                  class="flex min-w-0 flex-1 basis-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"
+                  class="flex min-w-0 flex-1 basis-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [-webkit-app-region:no-drag] [app-region:no-drag]"
                   ref={tabScrollRef}
                 >
                   <div class="flex min-w-0 flex-row items-center gap-1.5">
@@ -533,9 +466,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   aria-label={language.t("command.session.new")}
                 />
                 <TitlebarV2Right state={v2RightState()} />
-                <Show when={windows() && !electronWindows()}>
-                  <div data-tauri-decorum-tb class="flex flex-row" />
-                </Show>
               </div>
             )
           }}
@@ -681,11 +611,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 "pr-2": !windows(),
               }}
               data-tauri-drag-region
-              onMouseDown={drag}
             >
               <div id="opencode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
               <Show when={windows()}>
-                {!tauriApi() && <div class="shrink-0" style={{ width: windowsControlsWidth() }} />}
+                <div class="shrink-0" style={{ width: windowsControlsWidth() }} />
                 <div data-tauri-decorum-tb class="flex flex-row" />
               </Show>
             </div>

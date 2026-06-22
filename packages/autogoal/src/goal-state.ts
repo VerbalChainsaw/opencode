@@ -445,6 +445,7 @@ export interface ParsedGoal {
   constraints: GoalConstraints;
   custom: boolean;
   agentName?: string | null;
+  sessionId?: string | null;
 }
 
 export interface GoalSeed {
@@ -454,7 +455,10 @@ export interface GoalSeed {
 }
 
 /** Parse a raw `/goal set` argument string. Returns ParsedGoal or an error string. */
-export function parseGoalInput(rawArgs: string, seed: GoalSeed = {}): ParsedGoal | { error: string } {
+export function parseGoalInput(
+  rawArgs: string,
+  seed: GoalSeed & { sessionId?: string | null } = {},
+): ParsedGoal | { error: string } {
   const trimmed = (rawArgs ?? "").trim();
   if (!trimmed) return { error: 'Goal condition cannot be empty. Usage: /goal set "<condition>"' };
 
@@ -472,12 +476,20 @@ export function parseGoalInput(rawArgs: string, seed: GoalSeed = {}): ParsedGoal
     constraints.maxTimeMinutes !== DEFAULT_CONSTRAINTS.maxTimeMinutes ||
     constraints.maxTokens !== DEFAULT_CONSTRAINTS.maxTokens;
 
-  return { condition, command, constraints, custom };
+  return {
+    condition,
+    command,
+    constraints,
+    custom,
+    ...(seed.sessionId ? { sessionId: seed.sessionId } : {}),
+  };
 }
 
 export function createGoalState(parsed: ParsedGoal, setBy: "user" | "template" | "chain", now: number): GoalState {
   const metadata: GoalState["metadata"] = { setBy };
   if (parsed.agentName) metadata.agentName = parsed.agentName;
+  const sessionId = sanitizeSessionId(parsed.sessionId);
+  if (sessionId) metadata.sessionId = sessionId;
   return {
     version: 1,
     id: randomUUID(),
@@ -879,6 +891,9 @@ export interface GoalFields {
    *  set_goal tool's execution context so the auto-loop passes the
    *  correct agent to session.prompt. */
   agentName?: string | null;
+  /** Session that owns this active goal. Prevents a later session in the same
+   *  workspace from inheriting or advancing stale state. */
+  sessionId?: string | null;
 }
 
 /**
@@ -906,7 +921,15 @@ export function setGoalFields(
     constraints.maxTimeMinutes !== DEFAULT_CONSTRAINTS.maxTimeMinutes ||
     constraints.maxTokens !== DEFAULT_CONSTRAINTS.maxTokens;
 
-  const parsed: ParsedGoal = { condition, command: fields.command ?? null, verification: fields.verification ?? null, constraints, custom, agentName: fields.agentName ?? null };
+  const parsed: ParsedGoal = {
+    condition,
+    command: fields.command ?? null,
+    verification: fields.verification ?? null,
+    constraints,
+    custom,
+    agentName: fields.agentName ?? null,
+    sessionId: fields.sessionId ?? null,
+  };
   return persistGoal(directory, parsed, opts.setBy ?? "user", opts.now ?? Date.now());
 }
 
@@ -1304,6 +1327,11 @@ export function sanitizeForPrompt(s: string): string {
     out += s[i];
   }
   return out.replace(/ {2,}/g, " ").trim();
+}
+
+function sanitizeSessionId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return sanitizeForPrompt(value).slice(0, 160) || undefined;
 }
 
 /**
@@ -1723,4 +1751,3 @@ export function claimHandoff(directory: string, now: number = Date.now()): { ok:
     };
   }
 }
-

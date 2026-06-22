@@ -237,6 +237,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         }
 
         if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") {
+          if (isLocal()) return InstallationVersion
           const response = yield* httpOk.execute(
             HttpClientRequest.get(
               `${yield* NpmConfig.registry(process.cwd())}/opencode-ai/${InstallationChannel}`,

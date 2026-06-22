@@ -498,6 +498,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       actionID: "build",
       label: "Build",
       condition: expect.stringContaining("the renderer chain builder"),
+      conditionTemplate: "Implement {scope} using the repository's existing patterns.",
       command: "",
       maxTurns: 8,
       maxTimeMinutes: 30,
@@ -665,6 +666,80 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     })
     expect(parsed.steps[0]).not.toHaveProperty("gate")
     expect(parsed.steps[1]).not.toHaveProperty("command")
+  })
+
+  test("omits session-default agent and model pins from chain runtime payload", async () => {
+    const { chainStartPayload } = await load()
+    const start = chainStartPayload(
+      [
+        {
+          id: "default-runtime",
+          actionID: "default-runtime",
+          label: "Default runtime",
+          condition: "Use the session defaults",
+          command: "",
+          maxTurns: 4,
+          maxTimeMinutes: 10,
+          agent: "",
+          model: "",
+          builtin: false,
+        },
+      ],
+      { maxTurns: 10, maxTimeMinutes: 30 },
+    )
+
+    expect(start.firstStepAgent).toBeUndefined()
+    expect(start.firstStepModel).toBeUndefined()
+    const parsed = JSON.parse(start.payload)
+    expect(parsed.steps[0]).toMatchObject({
+      condition: "Use the session defaults",
+      verification: { type: "marker" },
+      maxTurns: 4,
+      maxMinutes: 10,
+    })
+    expect(parsed.steps[0]).not.toHaveProperty("agent")
+    expect(parsed.steps[0]).not.toHaveProperty("model")
+  })
+
+  test("run-level objective fills {scope} across chain steps without editing the action", async () => {
+    const { chainStepFromTemplate, chainStartPayload, resolveStepConditionWithObjective } = await load()
+    const planTemplate = {
+      id: "plan",
+      label: "Plan",
+      condition: "Create a concise implementation plan for {scope}.",
+      constraints: { maxTurns: 3, maxTimeMinutes: 10 },
+      variables: { scope: { description: "Scope", default: "the current coding request" } },
+      builtin: true,
+    }
+    const debugTemplate = {
+      id: "debug",
+      label: "Debug",
+      condition: "Debug {scope}. Reproduce, isolate, and fix.",
+      constraints: { maxTurns: 8, maxTimeMinutes: 30 },
+      variables: { scope: { description: "Scope", default: "the reported failure" } },
+      builtin: true,
+    }
+    // The UI adds actions with their variable defaults applied (varsForAction),
+    // while the raw {scope} template is retained on the step for re-resolution.
+    const steps = [
+      chainStepFromTemplate(planTemplate, { scope: "the current coding request" }, "plan-1"),
+      chainStepFromTemplate(debugTemplate, { scope: "the reported failure" }, "debug-1"),
+    ]
+
+    // With no objective the steps keep each action's own default.
+    expect(steps[0].condition).toBe("Create a concise implementation plan for the current coding request.")
+    expect(resolveStepConditionWithObjective(steps[0], "")).toBe(
+      "Create a concise implementation plan for the current coding request.",
+    )
+
+    // A run-level objective overrides {scope} in every step at start time.
+    const objective = "make the login page validate emails"
+    expect(resolveStepConditionWithObjective(steps[1], objective)).toBe(
+      `Debug ${objective}. Reproduce, isolate, and fix.`,
+    )
+    const parsed = JSON.parse(chainStartPayload(steps, { maxTurns: 11, maxTimeMinutes: 40 }, objective).payload)
+    expect(parsed.steps[0].condition).toBe(`Create a concise implementation plan for ${objective}.`)
+    expect(parsed.steps[1].condition).toBe(`Debug ${objective}. Reproduce, isolate, and fix.`)
   })
 
   test("builds agent routing options from visible primary and subagent entries", async () => {
@@ -949,6 +1024,28 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       expect(errors).toEqual([])
     })
 
+    test("treats empty default agent/model pins as omitted", async () => {
+      ;({ validateChainDraft } = await load())
+      const errors = validateChainDraft(
+        [
+          {
+            id: "1",
+            actionID: "x",
+            label: "X",
+            condition: "ok",
+            command: "",
+            maxTurns: 5,
+            maxTimeMinutes: 10,
+            builtin: false,
+            agent: "",
+            model: "",
+          },
+        ],
+        { maxTurns: 20, maxTimeMinutes: 60 },
+      )
+      expect(errors).toEqual([])
+    })
+
     test("validates duplicate skills", async () => {
       ;({ validateChainDraft } = await load())
       const errors = validateChainDraft(
@@ -959,14 +1056,14 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
       expect(errors[0].message).toContain("duplicate skill")
     })
 
-    test("validates malformed agent pins", async () => {
+    test("validates overlong agent pins", async () => {
       ;({ validateChainDraft } = await load())
       const errors = validateChainDraft(
-        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 5, maxTimeMinutes: 10, builtin: false, agent: " ".repeat(2) }],
+        [{ id: "1", actionID: "x", label: "X", condition: "ok", command: "", maxTurns: 5, maxTimeMinutes: 10, builtin: false, agent: "x".repeat(81) }],
         { maxTurns: 20, maxTimeMinutes: 60 },
       )
       expect(errors).toHaveLength(1)
-      expect(errors[0].message).toContain("agent cannot be empty")
+      expect(errors[0].message).toContain("agent must be")
     })
 
     test("reports max chain steps exceeded", async () => {

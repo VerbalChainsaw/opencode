@@ -15,9 +15,6 @@
  *       - clearing a goal doesn't blank the panel — the run drops into
  *         history and the empty/create view reappears.
  *
- *   - `shouldShowCreateForm` is the matching form gate. The empty state IS
- *     the create affordance — never a dead end.
- *
  *   - `STATUS_META` is the mission-control status system: semantic accent
  *     colors for the four lifecycle states so status is legible at a glance.
  *
@@ -80,20 +77,6 @@ export function terminalGoal(state: GoalState | null | undefined): GoalState | n
   if (!state) return null
   if (state.status === "achieved" || state.status === "cleared") return state
   return null
-}
-
-/**
- * Whether the create form should be visible.
- *
- * The form is shown when the user explicitly asked for it (`showCreate`),
- * or whenever there's no live goal (the empty state IS the create
- * affordance — never a dead end, including on achieved/cleared goals).
- */
-export function shouldShowCreateForm(
-  state: GoalState | null | undefined,
-  showCreate: boolean,
-): boolean {
-  return showCreate || liveGoal(state) === null
 }
 
 /**

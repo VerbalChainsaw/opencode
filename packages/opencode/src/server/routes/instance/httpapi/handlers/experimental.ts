@@ -36,6 +36,8 @@ const STATE_FILE_GOAL_CONTROL_ACTIONS = new Set([
   "turns",
   "time",
   "tokens",
+  "fresh",
+  "reset-state",
   "pause",
   "resume",
   "clear",
@@ -43,6 +45,8 @@ const STATE_FILE_GOAL_CONTROL_ACTIONS = new Set([
   "steer",
   "unsteer",
   "condition",
+  "handoff",
+  "claim",
   "template",
   "chain",
 ])
@@ -135,11 +139,21 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const goalControlFallback = Effect.fn("ExperimentalHttpApi.goalControlFallback")(function* (
       directory: string,
       command: string,
+      sessionID?: SessionID,
     ) {
-      return yield* Effect.tryPromise({
-        try: () => runGoalControlStateFile(directory, command),
-        catch: () => new HttpApiError.BadRequest({}),
-      })
+      return yield* Effect.tryPromise(() =>
+        runGoalControlStateFile(directory, command, Date.now(), { sessionID }),
+      ).pipe(
+        // Don't swallow the cause. A deterministic goal-control command that
+        // throws is almost always a validation error (→ 400), but the operator
+        // previously saw a bare 400 with no reason. The typed response stays
+        // BadRequest (the error schema carries no message field), while the
+        // actual cause is logged server-side so failures are diagnosable.
+        Effect.tapError((cause) =>
+          Effect.logError("goal_control state-file command failed", { directory, command, cause }),
+        ),
+        Effect.mapError(() => new HttpApiError.BadRequest({})),
+      )
     })
 
     const goalControl = Effect.fn("ExperimentalHttpApi.goalControl")(function* (ctx: {
@@ -151,13 +165,13 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       const command = ctx.payload.arguments.command
       const targetDirectory = ctx.payload.directory ?? ctx.query.directory ?? instance.directory
       if (STATE_FILE_GOAL_CONTROL_ACTIONS.has(goalControlAction(command))) {
-        return yield* goalControlFallback(targetDirectory, command)
+        return yield* goalControlFallback(targetDirectory, command, ctx.payload.sessionID)
       }
 
       const tools = yield* registry.all()
       const item = tools.find((tool) => tool.id === ctx.params.toolID)
       if (!item || targetDirectory !== instance.directory) {
-        return yield* goalControlFallback(targetDirectory, command)
+        return yield* goalControlFallback(targetDirectory, command, ctx.payload.sessionID)
       }
 
       const agent = yield* agents.defaultInfo()
@@ -171,7 +185,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
           metadata: () => Effect.void,
           ask: () => Effect.die("goal_control does not support permission prompts"),
         })
-        .pipe(Effect.catch(() => goalControlFallback(targetDirectory, command)))
+        .pipe(Effect.catch(() => goalControlFallback(targetDirectory, command, ctx.payload.sessionID)))
 
       return {
         title: result.title,

@@ -81,6 +81,22 @@ function emitBlocks(ctx: any, blocks: unknown[]): string {
   }
 }
 
+function sanitizeSessionID(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return sanitizeForPrompt(value).slice(0, 160) || undefined;
+}
+
+function goalBelongsToSession(state: GoalState, sessionID: unknown): boolean {
+  const owner = sanitizeSessionID(state.metadata.sessionId);
+  // An unbound goal (created via the CLI or a chain `start-json` with no owning
+  // session) belongs to whichever session goes idle first — otherwise no
+  // session.idle would ever drive it. Session isolation is only enforced once a
+  // goal HAS an owner, so a bound goal still ignores other sessions' idles.
+  if (!owner) return true;
+  const current = sanitizeSessionID(sessionID);
+  return !!current && owner === current;
+}
+
 const CONFIG = {
   evaluationDebounceSec: 5,
   commandTimeoutMs: 30_000,
@@ -963,6 +979,7 @@ export const server: Plugin = async ({ client, directory }) => {
               maxTurns: args.maxTurns,
               maxMinutes: args.maxMinutes,
               agentName: ctx.agent,
+              sessionId: ctx.sessionID,
             });
             if (!res.ok) {
               return `Could not set the goal (${res.reason}): ${res.error}`;
@@ -979,10 +996,11 @@ export const server: Plugin = async ({ client, directory }) => {
         args: {},
         async execute(_args, ctx) {
           const state = readGoalState(ctx.directory);
-          if (state) {
+          if (state && goalBelongsToSession(state, ctx.sessionID)) {
             const blocks = buildGoalStatusBlocks(state);
             return emitBlocks(ctx, blocks) || plainStatus(ctx.directory);
           }
+          if (state) return "No active goal for this session.";
           return plainStatus(ctx.directory);
         },
       }),
@@ -1454,7 +1472,7 @@ export const server: Plugin = async ({ client, directory }) => {
             return;
           }
           const state = readGoalState(directory);
-          if (!state || state.status !== "active") return;
+          if (!state || state.status !== "active" || !goalBelongsToSession(state, sessionId)) return;
           await evaluate(state, sessionId);
           return;
         }
@@ -1462,7 +1480,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const sessionId = event.properties.sessionID;
           if (!sessionId) return;
           const current = readGoalState(directory);
-          if (!current || current.status !== "active") return;
+          if (!current || current.status !== "active" || !goalBelongsToSession(current, sessionId)) return;
           // Build a human-readable reason. The SDK's `error` is a
           // discriminated union (ProviderAuthError | UnknownError |
           // MessageOutputLengthError | MessageAbortedError | ApiError);
@@ -1540,14 +1558,9 @@ export const server: Plugin = async ({ client, directory }) => {
           return;
         }
         case "session.deleted": {
-          // v0.4.1 (B-3c) — the state file is per-directory, not
-          // per-session, so a deleted session's goal intentionally
-          // persists for the next session in the same directory.
-          // No action needed; the case exists so the event is
-          // explicitly recognized rather than silently falling
-          // through to `default`. The per-session cleanup (the
-          // `pendingPermissions` guard) is already handled by
-          // the host removing the session's entries.
+          // State files are directory-scoped, but active goals are session-owned.
+          // No action needed here: the idle/error/compaction guards prevent a
+          // later session from inheriting a deleted session's live goal.
           return;
         }
         // All other event types are intentionally unhandled. The `default`
@@ -1565,11 +1578,9 @@ export const server: Plugin = async ({ client, directory }) => {
     },
 
     "experimental.session.compacting": async (_input, output) => {
-      // v0.4.1 (B-9) — `_input.sessionID` is intentionally unused.
-      // The goal is per-directory (not per-session), so the compacting
-      // context is the same for every session in the workspace.
       const state = readGoalState(directory);
       if (!state || (state.status !== "active" && state.status !== "paused")) return;
+      if (!goalBelongsToSession(state, (_input as { sessionID?: unknown }).sessionID)) return;
       const steering = Array.isArray(state.metadata.steering) ? state.metadata.steering : [];
       const lastSteer = steering.length > 0 ? steering[steering.length - 1] : null;
       // SECURITY: route the condition + steering note through

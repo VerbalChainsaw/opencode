@@ -70,6 +70,7 @@ import { setGoalFields, readGoalState, validateGoalState } from "../dist/goal-st
 const here = dirname(fileURLToPath(import.meta.url));
 const distDir = join(here, "..", "dist");
 const distServerPath = pathToFileURL(join(distDir, "server.js")).href;
+const TEST_SESSION_ID = "test-session";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -156,7 +157,6 @@ test("validateGoalState: accepts valid shell verification", () => {
   };
   assert.equal(validateGoalState(s), true);
 });
-
 test("validateGoalState: accepts valid http verification (all optional fields)", () => {
   const s = {
     version: 1, id: "a", condition: "x", status: "active",
@@ -279,7 +279,6 @@ test("setGoalFields: stores the verification object verbatim", () => {
     assert.deepEqual(onDisk.verification, v);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-
 test("setGoalFields: stores null verification (explicitly off)", () => {
   const dir = freshDir();
   try {
@@ -322,7 +321,7 @@ test("evaluateGoal: shell verification exit 0 → goal achieved", async () => {
     ({ server } = await startServer(dir));
     await server.tool.set_goal.execute(
       { condition: "shell test", verification: { type: "shell", command: process.platform === "win32" ? "exit 0" : "true" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -339,7 +338,7 @@ test("evaluateGoal: shell verification exit 1 → goal not met", async () => {
     ({ server } = await startServer(dir));
     await server.tool.set_goal.execute(
       { condition: "shell test fail", verification: { type: "shell", command: process.platform === "win32" ? "exit 1" : "false" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -358,7 +357,7 @@ test("evaluateGoal: backward compat — `command` field alone (no verification) 
     // dispatcher fallback "if (!v) and state.command → evaluateDeterministic".
     await server.tool.set_goal.execute(
       { condition: "legacy command", command: process.platform === "win32" ? "exit 0" : "true" },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -376,7 +375,7 @@ test("evaluateGoal: http 200 OK → goal achieved", async () => {
     http = await startHttpServer({ status: 200, body: "ok" });
     await server.tool.set_goal.execute(
       { condition: "http test", verification: { type: "http", url: http.url } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -396,7 +395,7 @@ test("evaluateGoal: http 404 with expectStatus=200 → goal not met", async () =
     http = await startHttpServer({ status: 404, body: "missing" });
     await server.tool.set_goal.execute(
       { condition: "http 404", verification: { type: "http", url: http.url, expectStatus: 200 } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -422,7 +421,7 @@ test("evaluateGoal: http timeout (no listener, unreachable) → goal not met, ha
     const unreachableUrl = "http://192.0.2.1:81";
     await server.tool.set_goal.execute(
       { condition: "http timeout", verification: { type: "http", url: unreachableUrl, timeoutMs: 1 } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -453,7 +452,7 @@ test("evaluateGoal: http connection refused (closed port) → goal not met, hand
     await new Promise((r) => tmpServer.close(r));
     await server.tool.set_goal.execute(
       { condition: "http refused", verification: { type: "http", url: `http://127.0.0.1:${port}`, timeoutMs: 2000 } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -471,7 +470,7 @@ test("evaluateGoal: http expectBody regex match → met", async () => {
     http = await startHttpServer({ status: 200, body: "package status: READY" });
     await server.tool.set_goal.execute(
       { condition: "http body match", verification: { type: "http", url: http.url, expectBody: "READY" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -490,7 +489,7 @@ test("evaluateGoal: http expectBody regex no-match → not met", async () => {
     http = await startHttpServer({ status: 200, body: "package status: NOT_READY" });
     await server.tool.set_goal.execute(
       { condition: "http body no match", verification: { type: "http", url: http.url, expectBody: "^READY$" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -513,7 +512,7 @@ test("evaluateGoal: http custom timeoutMs (50ms against slow server) → timeout
     http = await startHttpServer({ status: 200, body: "ok", sleepMs: 500 });
     await server.tool.set_goal.execute(
       { condition: "http custom timeout", verification: { type: "http", url: http.url, timeoutMs: 50 } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -537,7 +536,7 @@ test("evaluateGoal: file exists, file present → met", async () => {
     writeFileSync(join(dir, "present.txt"), "ok");
     await server.tool.set_goal.execute(
       { condition: "file present", verification: { type: "file", path: "./present.txt" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -552,7 +551,7 @@ test("evaluateGoal: file exists, file absent → not met", async () => {
     ({ server } = await startServer(dir));
     await server.tool.set_goal.execute(
       { condition: "file absent", verification: { type: "file", path: "./missing.txt" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -568,7 +567,7 @@ test("evaluateGoal: file exists=false, file absent → met", async () => {
     ({ server } = await startServer(dir));
     await server.tool.set_goal.execute(
       { condition: "file should not exist", verification: { type: "file", path: "./nope.txt", exists: false } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -585,7 +584,7 @@ test("evaluateGoal: file exists=false, file present → not met", async () => {
     writeFileSync(join(dir, "still-here.txt"), "ok");
     await server.tool.set_goal.execute(
       { condition: "file should not exist but does", verification: { type: "file", path: "./still-here.txt", exists: false } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -606,7 +605,7 @@ test("evaluateGoal: file contains regex match → met", async () => {
     writeFileSync(join(dir, "build.txt"), "build: SUCCESS");
     await server.tool.set_goal.execute(
       { condition: "build success", verification: { type: "file", path: "./build.txt", contains: "^build: SUCCESS$" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -622,7 +621,7 @@ test("evaluateGoal: file contains regex no-match → not met", async () => {
     writeFileSync(join(dir, "build.txt"), "build: FAILED\n");
     await server.tool.set_goal.execute(
       { condition: "build success", verification: { type: "file", path: "./build.txt", contains: "^build: SUCCESS$" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -638,7 +637,7 @@ test("evaluateGoal: file path traversal (../) → not met, blocked", async () =>
     ({ server } = await startServer(dir));
     await server.tool.set_goal.execute(
       { condition: "evil", verification: { type: "file", path: "../../../etc/passwd" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -659,7 +658,7 @@ test("evaluateGoal: file absolute path outside directory → not met, blocked", 
     const absOutside = isWin ? "C:\\Windows\\System32\\drivers\\etc\\hosts" : "/etc/hosts";
     await server.tool.set_goal.execute(
       { condition: "evil abs", verification: { type: "file", path: absOutside } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -692,7 +691,7 @@ test("evaluateGoal: file cross-drive path (Windows regression) → blocked", asy
     const crossDrive = "Z:\\sensitive\\file.txt";
     await server.tool.set_goal.execute(
       { condition: "evil cross-drive", verification: { type: "file", path: crossDrive } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -712,7 +711,7 @@ test("evaluateGoal: file null byte in path → handled gracefully (read fails cl
     // fail-closed default.
     await server.tool.set_goal.execute(
       { condition: "evil null", verification: { type: "file", path: "./subdir\u0000../etc/passwd" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -734,7 +733,7 @@ test("evaluateGoal: file contains check on missing file (ENOENT) → not met, ca
     ({ server } = await startServer(dir));
     await server.tool.set_goal.execute(
       { condition: "missing with contains", verification: { type: "file", path: "./never-was.txt", contains: "anything" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -762,7 +761,7 @@ test("evaluateGoal: marker verification — GOAL_COMPLETE in transcript → met"
     }));
     await server.tool.set_goal.execute(
       { condition: "marker test", verification: { type: "marker" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -785,7 +784,7 @@ test("evaluateGoal: marker verification — no GOAL_COMPLETE in transcript → n
     }));
     await server.tool.set_goal.execute(
       { condition: "marker test", verification: { type: "marker" } },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);
@@ -808,7 +807,7 @@ test("set_goal tool: stores a verification object (shell, http, file, marker) co
       { type: "marker" },
     ];
     for (const v of verifications) {
-      const ctx = { directory: dir };
+      const ctx = { directory: dir, sessionID: TEST_SESSION_ID };
       const r = await server.tool.set_goal.execute(
         { condition: `test ${v.type}`, verification: v },
         ctx,
@@ -819,6 +818,35 @@ test("set_goal tool: stores a verification object (shell, http, file, marker) co
       // Clear before the next iteration so set_goal doesn't report a replace.
       server.tool.clear_goal.execute({}, ctx);
     }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("set_goal tool: binds state to the originating session and ignores other session idle events", async () => {
+  const dir = freshDir();
+  const prompts = [];
+  try {
+    const { server } = await startServer(dir, {
+      prompt: async (input) => {
+        prompts.push(input);
+        return {};
+      },
+      messages: async () => ({ data: [] }),
+    });
+    const ctx = { directory: dir, agent: "build", sessionID: "ses_origin" };
+    await server.tool.set_goal.execute({ condition: "finish this workflow", verification: { type: "marker" } }, ctx);
+
+    let onDisk = readStateFileRaw(dir);
+    assert.equal(onDisk.metadata.sessionId, "ses_origin");
+
+    await fireIdle(server, "ses_other");
+    onDisk = readStateFileRaw(dir);
+    assert.equal(onDisk.turnsEvaluated, 0, "a different session must not evaluate the goal");
+    assert.equal(prompts.length, 0, "a different session must not receive the goal nudge");
+
+    await fireIdle(server, "ses_origin");
+    onDisk = readStateFileRaw(dir);
+    assert.equal(onDisk.turnsEvaluated, 1, "the originating session should still evaluate normally");
+    assert.equal(prompts.length, 1, "the originating session should receive the goal nudge");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -917,7 +945,7 @@ test("setGoal: both command and verification stored; dispatcher picks verificati
         command: process.platform === "win32" ? "exit 1" : "false",
         verification: { type: "shell", command: process.platform === "win32" ? "exit 0" : "true" },
       },
-      { directory: dir }
+      { directory: dir, sessionID: TEST_SESSION_ID }
     );
     await fireIdle(server);
     const final = readStateFileRaw(dir);

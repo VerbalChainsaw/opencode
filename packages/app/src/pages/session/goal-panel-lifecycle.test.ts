@@ -7,7 +7,6 @@ import {
   nodeColor,
   outcomeLabel,
   pauseResumeAction,
-  shouldShowCreateForm,
   statusMeta,
   terminalGoal,
 } from "./goal-panel-lifecycle"
@@ -81,48 +80,6 @@ describe("terminalGoal", () => {
     expect(terminalGoal(withStatus("active"))).toBeNull()
     expect(terminalGoal(withStatus("paused"))).toBeNull()
     expect(terminalGoal(null)).toBeNull()
-  })
-})
-
-// ── shouldShowCreateForm ──────────────────────────────────────────────────
-//
-// The form is the empty-state affordance. The only times it should NOT
-// show are: there is a live goal AND the user did not explicitly ask
-// for the form.
-
-describe("shouldShowCreateForm", () => {
-  test("shows when there is no state at all (empty workspace)", () => {
-    expect(shouldShowCreateForm(null, false)).toBe(true)
-  })
-
-  test("shows when a cleared goal is the current state (Bug A)", () => {
-    // After clear, no live goal → form shows so the user can start
-    // the next goal without hunting for the entry point.
-    expect(shouldShowCreateForm(withStatus("cleared"), false)).toBe(true)
-  })
-
-  test("shows when an achieved goal is the current state (Bug B)", () => {
-    // After one-turn achieve, no live goal → form shows.
-    expect(shouldShowCreateForm(withStatus("achieved"), false)).toBe(true)
-  })
-
-  test("does NOT show when there is a live (active) goal", () => {
-    expect(shouldShowCreateForm(withStatus("active"), false)).toBe(false)
-  })
-
-  test("does NOT show when there is a live (paused) goal", () => {
-    expect(shouldShowCreateForm(withStatus("paused"), false)).toBe(false)
-  })
-
-  test("shows when the user explicitly asked, even with a live goal", () => {
-    // The "New goal" affordance: replace a live goal with a new one.
-    // This keeps the panel from being a dead end on achieved goals.
-    expect(shouldShowCreateForm(withStatus("active"), true)).toBe(true)
-    expect(shouldShowCreateForm(withStatus("paused"), true)).toBe(true)
-  })
-
-  test("shows when the user explicitly asked, with no state at all", () => {
-    expect(shouldShowCreateForm(null, true)).toBe(true)
   })
 })
 

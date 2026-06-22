@@ -30,6 +30,7 @@ const MAX_ROWS = 200;
 const MAX_ROW_CHILDREN = 6;
 const MAX_TOTAL_BLOCKS = 256;
 const MAX_NEST_DEPTH = 1;
+const MAX_SANITIZE_DEPTH = 64;  // cap recursive sanitizeBlock to prevent stack overflow on deep nesting
 
 const RESERVED_KEYS = new Set([
   "__proto__",
@@ -214,16 +215,19 @@ function validateRowDepth(block: RenderBlock, depth: number): boolean {
  * keys from any object at ingress. Called before blocks enter any store.
  * Returns a shallow copy of the block with reserved keys stripped.
  */
-export function sanitizeBlock(obj: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeBlock(obj: Record<string, unknown>, depth = 0): Record<string, unknown> {
+  // Bail out at MAX_SANITIZE_DEPTH to prevent RangeError on deeply nested input.
+  // Return the raw value at that depth — it's already passed outer sanitization.
+  if (depth >= MAX_SANITIZE_DEPTH) return obj;
   const cleaned: Record<string, unknown> = Object.create(null);
   for (const [key, value] of Object.entries(obj)) {
     if (RESERVED_KEYS.has(key)) continue;
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      cleaned[key] = sanitizeBlock(value as Record<string, unknown>);
+      cleaned[key] = sanitizeBlock(value as Record<string, unknown>, depth + 1);
     } else if (Array.isArray(value)) {
       cleaned[key] = value.map((item) =>
         typeof item === "object" && item !== null && !Array.isArray(item)
-          ? sanitizeBlock(item as Record<string, unknown>)
+          ? sanitizeBlock(item as Record<string, unknown>, depth + 1)
           : item,
       );
     } else {

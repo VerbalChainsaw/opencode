@@ -45,6 +45,14 @@ describe("i18n parity", () => {
 
     const zhMerged = mergeDictionaryWithFallback(en, zh)
     expect(zhMerged["session.goal.chainBuilder.shortTitle"]).toBe(zh["session.goal.chainBuilder.shortTitle"])
-    expect(zhMerged["session.goal.action.cancel"]).toBe(en["session.goal.action.cancel"])
+  })
+
+  test("Chinese locales translate every GoalPanel key directly (no English fallback)", () => {
+    const goalKeys = Object.keys(en).filter((key) => key.startsWith("session.goal."))
+    for (const [name, locale] of [["zh", zh], ["zht", zht]] as const) {
+      const entries = locale as Record<string, string | undefined>
+      const missing = goalKeys.filter((key) => entries[key] === undefined)
+      expect(missing, `${name} is missing GoalPanel keys: ${missing.join(", ")}`).toEqual([])
+    }
   })
 })

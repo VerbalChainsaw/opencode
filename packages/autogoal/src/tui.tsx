@@ -217,6 +217,7 @@ const tui: TuiPlugin = async (api) => {
   // stack depth but no per-dialog ownership info, so this is the best
   // we can do without host support.
   let ourDialogOpen = false;
+  let returnTo: TuiRouteCurrent | null = null;
 
   // FIX-18: toast debouncing. Without this, a user mashing a keybind
   // (e.g. spamming /goal-toggle 100 times) would queue 100 toasts in the
@@ -439,9 +440,9 @@ const tui: TuiPlugin = async (api) => {
         namespace: "palette",
         slashName: "goal-dashboard",
         run(_ctx: unknown) {
-          // Stash the current route so close can return to it (the diff-viewer pattern).
-          const returnRoute = api.route.current;
-          api.route.navigate("goal.dashboard", { returnRoute });
+          // Stash current route so close returns to it.
+          returnTo = api.route.current;
+          api.route.navigate("goal.dashboard");
         },
       },
       {
@@ -451,12 +452,10 @@ const tui: TuiPlugin = async (api) => {
         namespace: "palette",
         slashName: "goal-close",
         run(_ctx: unknown) {
-          // No-op when not on our route (esc is bound globally).
-          if (api.route.current.name !== "goal.dashboard") return;
-          const params = api.route.current.params as { returnRoute?: TuiRouteCurrent } | undefined;
-          const ret = params?.returnRoute;
-          if (ret?.name === "session" && "params" in ret && ret.params?.sessionID) {
-            api.route.navigate("session", { sessionID: ret.params.sessionID });
+          const ret = returnTo;
+          returnTo = null;
+          if (ret?.name === "session") {
+            api.route.navigate("session", { sessionID: (ret as { params: { sessionID: string } }).params.sessionID });
           } else {
             api.route.navigate("home");
           }

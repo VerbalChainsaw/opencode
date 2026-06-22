@@ -50,6 +50,10 @@ export interface GoalState {
     maxTimeMinutes: number
     maxTokens: number
   }
+  metadata?: {
+    sessionId?: string
+    [key: string]: unknown
+  }
 }
 
 export interface HistoryRun {
@@ -676,6 +680,13 @@ export interface GoalChainDraftStep {
   actionID: string
   label: string
   condition: string
+  /**
+   * The raw condition before variable substitution (e.g. "Debug {scope}.").
+   * Retained so the chain-level objective can fill `{scope}` at start time,
+   * order-independently, without baking the objective into the saved action.
+   * Optional for back-compat: older drafts/snapshots fall back to `condition`.
+   */
+  conditionTemplate?: string
   command: string
   maxTurns: number
   maxTimeMinutes: number
@@ -709,6 +720,7 @@ export function chainStepFromTemplate(
     actionID: template.id,
     label: template.label,
     condition: draft.condition,
+    conditionTemplate: template.condition,
     command: draft.command,
     maxTurns: clampPositiveInteger(template.constraints?.maxTurns, 5),
     maxTimeMinutes: clampPositiveInteger(template.constraints?.maxTimeMinutes, 20),
@@ -788,9 +800,25 @@ export function completionRuleTranslationKey(input: { command?: string | null })
     : "session.goal.template.completionMarker"
 }
 
+/**
+ * Resolve a chain step's condition for execution. When the operator has typed a
+ * run-level objective, it fills the `{scope}` slot in the step's raw template
+ * ("Debug {scope}." → "Debug <objective>."). With no objective, the step keeps
+ * its already-resolved condition (the per-action default). This is what lets a
+ * generic action chain target a specific goal without editing the saved action.
+ */
+export function resolveStepConditionWithObjective(step: GoalChainDraftStep, objective: string): string {
+  const scope = cleanText(objective).trim()
+  if (!scope) return step.condition
+  const template = step.conditionTemplate ?? step.condition
+  if (!template.includes("{scope}")) return step.condition
+  return template.replace(/\{scope\}/g, scope)
+}
+
 export function chainStartPayload(
   steps: GoalChainDraftStep[],
   master: GoalChainMasterBudget,
+  objective = "",
 ): GoalChainStartPayload {
   const firstStepAgent = agentNameForRuntime(steps[0]?.agent)
   const firstStepModel = pinnedModelForRuntime(steps[0]?.model)
@@ -802,7 +830,7 @@ export function chainStartPayload(
       const agent = agentNameForRuntime(step.agent)
       const model = pinnedModelForRuntime(step.model)
       return {
-        condition: step.condition,
+        condition: resolveStepConditionWithObjective(step, objective),
         ...(verification.mode === "shell" ? { command: verification.command } : {}),
         verification: verification.verification,
         maxTurns: step.maxTurns,
@@ -888,9 +916,7 @@ export function validateChainDraft(
 
     if (step.agent !== undefined) {
       const agent = cleanText(step.agent).trim()
-      if (!agent) {
-        errors.push({ stepIndex: i, message: `${label}: agent cannot be empty.` })
-      } else if (agent.length > MAX_AGENT_NAME_LEN) {
+      if (agent && agent.length > MAX_AGENT_NAME_LEN) {
         errors.push({ stepIndex: i, message: `${label}: agent must be ${MAX_AGENT_NAME_LEN} chars or fewer.` })
       }
     }
@@ -906,9 +932,7 @@ export function validateChainDraft(
         }
       } else if (typeof step.model === "string") {
         const trimmed = step.model.trim()
-        if (!trimmed) {
-          errors.push({ stepIndex: i, message: `${label}: model cannot be empty.` })
-        } else if (trimmed.length > MAX_STEP_MODEL_FIELD_LEN) {
+        if (trimmed && trimmed.length > MAX_STEP_MODEL_FIELD_LEN) {
           errors.push({ stepIndex: i, message: `${label}: model must be ${MAX_STEP_MODEL_FIELD_LEN} chars or fewer.` })
         }
       } else {

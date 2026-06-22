@@ -49,6 +49,7 @@ const validState: GoalState = {
     { met: false, reason: "second try", timestamp: 1_700_000_003_000 },
   ],
   constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100_000 },
+  metadata: { sessionId: "ses_test_goal_panel" },
 }
 
 function mockSdk(overrides: Partial<GoalSdkClient["client"]["file"]> = {}): GoalSdkClient {
@@ -137,8 +138,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("resetGoalWorkspaceState")
     expect(src).toContain('data-component="goal-terminal-reset-state"')
     expect(src).toContain("session.goal.action.resetState")
-    expect(src).toContain("setShowCreate(true)")
     expect(src).toContain("setActivity([])")
+    expect(src).toContain('setChainDraft("steps", [])')
+    expect(src).toContain('setChainDraft("objective", "")')
+    expect(src).toContain("setChainErrors([])")
+    expect(src).toContain('setNewCommand("")')
     expect(src).toContain("setOptimisticStatus(null)")
   })
 
@@ -170,11 +174,11 @@ describe("goal panel mission-control contracts", () => {
 
   test("native bridge controls are not disabled by slash-command registry drift", async () => {
     const src = await goalPanelSource()
-    expect(src).toContain("const goalCommandMissing = createMemo")
-    expect(src).toContain("native bridge directly")
+    expect(src).toContain("executeGoalCommand")
     expect(src).not.toContain("goalCommandUnavailable")
     const disabledLines = src.split("\n").filter((line) => line.includes("disabled="))
     expect(disabledLines.join("\n")).not.toContain("goalCommandMissing")
+    expect(src).not.toContain("const goalCommandMissing = createMemo")
   })
 
   test("native bridge failures are surfaced in the panel instead of failing silently", async () => {
@@ -278,8 +282,14 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-chain-builder-header-strip"')
     expect(src).toContain('data-component="goal-chain-compact-stats"')
     expect(src).toContain('data-component="goal-target-toolbar"')
+    expect(src).toContain('data-component="goal-chain-target-field"')
+    expect(src).toContain("session.goal.chainBuilder.objective")
+    expect(src).toContain("session.goal.chainBuilder.objectivePlaceholder")
+    expect(src).toContain('onInput={(event) => setChainDraft("objective", event.currentTarget.value)}')
     expect(src).toContain('label="Check"')
-    expect(src).toContain('label="Save"')
+    expect(src).toContain('data-component="goal-chain-draft-autosave"')
+    expect(src).toContain("session.goal.chainBuilder.autosave")
+    expect(src).not.toContain('label="Save"')
     expect(src).not.toContain("Chain settings")
     expect(src).not.toContain("session.goal.chainBuilder.stat.commands")
     expect(src).toContain('data-component="goal-method-add"')
@@ -294,7 +304,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toMatch(/data-component="goal-chain-builder"[\s\S]*data-component="goal-chain-builder-header-strip"[\s\S]*data-component="goal-global-budget"[\s\S]*data-component="goal-playbook-chain-pane"/)
     expect(src).toMatch(/data-testid="chain-workspace"[\s\S]*data-testid="chain-builder"[\s\S]*data-component="goal-method-library-rail"/)
     expect(src).toContain('data-component="goal-status-card"')
-    expect(src).toContain('class={showForm() ? "h-fit xl:col-span-2" : "hidden"}')
+    expect(src).toContain('class={unarchivedTerminalGoal() ? "h-fit xl:col-span-2" : "hidden"}')
     expect(src).toContain("templateCategory")
     expect(src).toContain("inferActionCategory")
     expect(src).not.toContain('data-component="goal-action-context-summary"')
@@ -364,6 +374,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("chainBudgetSummary")
     expect(src).toContain("readStoredChainDraft(props.sessionID)")
     expect(src).toContain("writeStoredChainDraft(props.sessionID")
+    expect(src).toContain("const [loadedDraftSessionID, setLoadedDraftSessionID] = createSignal(props.sessionID)")
+    expect(src).toContain("const next = readStoredChainDraft(sessionID)")
+    expect(src).toContain("setLoadedDraftSessionID(sessionID)")
+    expect(src).toContain('setChainDraft("steps", next.steps)')
+    expect(src).toContain('setNewCommand("")')
     expect(src).toContain("window.sessionStorage")
     expect(src).toContain("category === undefined ||")
     expect(src).toContain("...(step.category ? { category: step.category } : {})")
@@ -394,7 +409,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-target-toolbar"')
     expect(src).toContain('data-component="goal-target-stat-strip"')
     expect(src).toContain('data-component="goal-status-card"')
-    expect(src).toContain('class={showForm() ? "h-fit xl:col-span-2" : "hidden"}')
+    expect(src).toContain('class={unarchivedTerminalGoal() ? "h-fit xl:col-span-2" : "hidden"}')
     expect(src).toContain('data-testid="chain-workspace"')
     expect(src).toContain('data-testid="chain-builder"')
     expect(src).toContain('data-testid="action-library"')
@@ -431,10 +446,10 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-method-library-header"')
     expect(src).toContain('data-component="goal-method-rail-filters"')
     expect(src).toContain('data-component="goal-method-edit"')
-    expect(src).toContain("currentGoalTurns")
-    expect(src).toContain("maxGoalTurns")
-    expect(src).toContain("currentGoalMinutes")
-    expect(src).toContain("maxGoalMinutes")
+    expect(src).toContain('data-component="goal-standalone-command-field"')
+    expect(src).toContain("hasRunnableChain()")
+    expect(src).toContain("primaryRunLabel")
+    expect(src).toContain("startGoalOrChain")
     expect(src).not.toContain(">Packs</span>")
     expect(src).not.toContain(">Archived</span>")
     expect(src).not.toContain("session.goal.template.source.builtin")
@@ -498,7 +513,6 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain('data-component="goal-chain-board"')
     expect(src).not.toContain('data-component="goal-activity-block"')
     expect(src).not.toContain("<Match when={liveGoal()} keyed>")
-    expect(src).not.toContain('setChainDraft("steps", [])')
   })
 
   test("active goals with stale activity render a waiting state instead of claiming active work", async () => {
@@ -517,20 +531,19 @@ describe("goal panel mission-control contracts", () => {
     expect(emptyStart).toBeGreaterThan(-1)
     expect(emptyEnd).toBeGreaterThan(emptyStart)
     const emptySrc = src.slice(emptyStart, emptyEnd)
-    expect(emptySrc).toContain("Start Chain writes the ordered steps")
-    expect(emptySrc).toContain("activates step 1")
-    expect(emptySrc).toContain("Draft edits stay local")
+    expect(emptySrc).toContain("No chain items are required")
+    expect(emptySrc).toContain("Start Goal runs the goal above")
+    expect(emptySrc).toContain("Chain item edits stay local")
     expect(emptySrc).not.toContain("border-dashed")
     expect(emptySrc).not.toContain("Plan</span>")
     expect(emptySrc).not.toContain("Build</span>")
     expect(emptySrc).not.toContain("Verify</span>")
   })
 
-  test("goal console uses the four-zone visual architecture from the target mock", async () => {
+  test("goal console uses the unified goal-builder visual architecture", async () => {
     const src = await goalPanelSource()
     expect(src).toContain('data-component="goal-console-section"')
     expect(src).toContain("data-zone={props.zone}")
-    expect(src).toContain('zone="set-goal"')
     expect(src).toContain('zone="chain-builder"')
     expect(src).toContain('zone="action-library"')
     expect(src).toContain('zone="action-editor"')
@@ -541,10 +554,16 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-action-editor-active-state"')
     expect(src).not.toContain('zone="last-result"')
     expect(src).not.toContain("border-rose-400/70")
-    expect(src).toContain("border-blue-400/70")
-    expect(src).toContain("border-violet-500/22")
-    expect(src).toContain("border-emerald-400/70")
-    expect(src).toContain("border-slate-400/28")
+    // GoalConsoleSection accent is single-sourced as inline style: the inline
+    // border-color rgba is the source of truth (the parallel Tailwind border-*
+    // accent classes were dead — overridden by inline — and were removed).
+    expect(src).toContain('"border-color": "rgba(139, 92, 246, 0.20)"')
+    expect(src).toContain('"border-color": "rgba(52, 211, 153, 0.34)"')
+    expect(src).toContain('"border-color": "rgba(148, 163, 184, 0.24)"')
+    expect(src).toContain("markerStyle")
+    // The accent object no longer pairs a Tailwind border class or bg marker
+    // class with its inline style, so the two mechanisms can't drift.
+    expect(src).not.toContain('marker: "bg-')
     expect(src).toContain('title={language.t("session.goal.chainBuilder.shortTitle")}')
     expect(src).toContain("text-[13px] font-black uppercase leading-4 tracking-[0.12em] text-white")
     expect(src).toContain("session.goal.chainBuilder.sectionHint")
@@ -575,6 +594,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-terminal-outcome-badge"')
     expect(src).toContain('role="status"')
     expect(src).toContain("Most recent completed run")
+    expect(src).toContain('data-component="goal-terminal-start-again"')
+    expect(src).toContain("session.goal.terminal.startAgainHint")
+    expect(src).toContain("cursor-default")
+    expect(src).toContain("select-none")
+    expect(src).toContain("hover:border-amber-200/45")
     expect(src).toContain("border-amber-400/35")
     expect(src).toContain("bg-amber-400/8")
     expect(src).toContain("grid-cols-[auto_minmax(0,1fr)_auto]")
@@ -653,7 +677,10 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("border-l border-white/16 pl-2")
     expect(src).toContain("linear-gradient(90deg")
     expect(src).toContain("Most recent completed run")
-    expect(src).toContain("Create one standalone goal outside the chain.")
+    expect(src).toContain('data-component="goal-chain-target-field"')
+    expect(src).toContain('data-component="goal-standalone-command-field"')
+    expect(src).toContain("primaryRunDisabled")
+    expect(src).toContain("startGoalOrChain")
     expect(src).toContain("session.goal.chainBuilder.planChainHint")
     expect(src).toContain("Progress, controls, and step status stay in this workspace.")
     expect(src).toContain('data-component="goal-running-deck-header"')
@@ -676,7 +703,8 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("ticks used")
     expect(src).not.toContain("current item")
     expect(src).toContain('label="Check"')
-    expect(src).toContain('label="Save"')
+    expect(src).toContain('data-component="goal-chain-draft-autosave"')
+    expect(src).not.toContain('label="Save"')
     expect(src).toContain("session.goal.template.librarySubtitle")
     expect(src).toContain("session.goal.template.editorSubtitle")
     expect(src).toContain("Plus adds to Run Order. Edit opens the editor.")
@@ -690,7 +718,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("const [historyOpen, setHistoryOpen] = createSignal(false)")
     expect(src).toMatch(/data-testid="run-history"[\s\S]*aria-expanded={historyOpen\(\)}/)
     expect(src).toContain('data-component="goal-history-panel"')
-    expect(src).toContain("<Show when={archive().length > 0 && !showForm() && !liveGoal()}>")
+    expect(src).toContain("<Show when={archive().length > 0 && !liveGoal()}>")
     expect(src).toContain("session.goal.history.title")
     expect(src).not.toContain("const [historyOpen, setHistoryOpen] = createSignal(true)")
   })
@@ -782,7 +810,6 @@ describe("goal panel mission-control contracts", () => {
     expect(draftSeedStart).toBeGreaterThan(-1)
     expect(draftSeedEnd).toBeGreaterThan(draftSeedStart)
     const draftSeed = src.slice(draftSeedStart, draftSeedEnd)
-    expect(draftSeed).not.toContain("setShowCreate(true)")
     expect(draftSeed).not.toContain("setNewCommand(draft.command)")
   })
 
@@ -831,7 +858,7 @@ describe("goal panel mission-control contracts", () => {
     expect(startChainStart).toBeGreaterThan(-1)
     expect(startChainEnd).toBeGreaterThan(startChainStart)
     const startChain = src.slice(startChainStart, startChainEnd)
-    expect(startChain).toContain("const startPayload = chainStartPayload(steps, chainDraft.master)")
+    expect(startChain).toContain("const startPayload = chainStartPayload(steps, chainDraft.master, chainDraft.objective)")
     expect(startChain).toContain('sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)')
     expect(startChain).toContain("...(startPayload.firstStepAgent ? { agent: startPayload.firstStepAgent } : {})")
     expect(startChain).not.toContain("steps: steps.map((step) => {")
@@ -871,7 +898,8 @@ describe("goal panel mission-control contracts", () => {
 
     expect(src).toContain("validateChainDraft(runnableChainSteps()")
     expect(src).toContain("chainStartControlState")
-    expect(src).toContain("disabled={chainStartControl().disabled}")
+    expect(src).toContain("if (hasRunnableChain()) return chainStartControl().disabled")
+    expect(src).toContain("disabled={primaryRunDisabled()}")
     expect(src).not.toContain("runnableChainSteps().length === 0")
   })
 
@@ -995,15 +1023,19 @@ describe("goal panel mission-control contracts", () => {
     expect(claimGoal).not.toContain("startGoalRun")
   })
 
-  test("chain header exposes a persistent Set Goal action that jumps to the standalone form", async () => {
+  test("main goal form starts a goal when no chain items exist", async () => {
     const src = await goalPanelSource()
-    expect(src).toContain("const openSetGoalForm = () => {")
-    expect(src).toContain("const showForm = createMemo(() => shouldShowCreateFormOf(state(), showCreate()))")
-    expect(src).toContain('class={showForm() ? "h-fit xl:col-span-2" : "hidden"}')
-    expect(src).toContain("setGoalSection?.scrollIntoView")
-    expect(src).toContain("session.goal.create.quickHint")
-    expect(src).toContain("onClick={openSetGoalForm}")
-    expect(src).toContain('ref={(el) => (setGoalSection = el)}')
+    expect(src).toContain("const hasRunnableChain = () => runnableChainSteps().length > 0")
+    expect(src).toContain("if (hasRunnableChain()) return language.t(\"session.goal.chainBuilder.start\")")
+    expect(src).toContain("return language.t(\"session.goal.create.waiting\")")
+    expect(src).toContain("return language.t(\"session.goal.create.submit\")")
+    expect(src).toContain("if (hasRunnableChain()) return startGoalChain()")
+    expect(src).toContain("return createGoal()")
+    expect(src).toContain("const condition = chainDraft.objective.trim().replace")
+    expect(src).toContain('data-component="goal-chain-target-field"')
+    expect(src).toContain('data-component="goal-standalone-command-field"')
+    expect(src).not.toContain("openSetGoalForm")
+    expect(src).not.toContain("session.goal.create.open")
   })
 
   test("handoff claim builds a structured fresh-session prompt instead of continuing the current thread", async () => {

@@ -31,7 +31,7 @@ if (typeof window !== "undefined" && DOMPurify.isSupported) {
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
   SANITIZE_NAMED_PROPS: true,
-  FORBID_TAGS: ["style"],
+  FORBID_TAGS: ["style", "script"],
   FORBID_CONTENTS: ["style", "script"],
   ADD_TAGS: ["svg", "path"],
   ADD_ATTR: ["d", "viewBox", "preserveAspectRatio", "xmlns", "target"],
@@ -44,7 +44,7 @@ const iconPaths = {
 
 function sanitize(html: string) {
   if (!DOMPurify.isSupported) return ""
-  return DOMPurify.sanitize(html, config)
+  return DOMPurify.sanitize(html, { ...config })
 }
 
 function escape(text: string) {

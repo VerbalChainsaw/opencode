@@ -1,12 +1,36 @@
+// ─── PARITY CONTRACT ───
+// This file is the Desktop bridge for the goal-control command language.
+// It is the experimental-HTTP-API surface the GUI calls via
+// /experimental/goal/control. Its public entry point is
+// `runGoalControlStateFile`, and its return shape is
+// {title, output, metadata}. Its behavior must match `command.ts` (the
+// CLI dispatcher) on the shared command set so a GUI-set goal behaves
+// identically to a /goal-set goal.
+//
+// That contract is locked by:
+//   - test/dispatcher-parity.test.mjs
+//   - test/control-state-bridge.test.mjs
+// If you change action grammar, error mapping, or state-mutating
+// primitive calls, BOTH test files must stay green UNCHANGED. Do not
+// edit the parity tests to make a refactor pass.
+//
+// Atomic-write layer note: this file owns the randomUUID() tmp-rename
+// pattern for the bridge's state files. The string-match test
+// `test/v042-corrupt-surfacing.test.mjs:165-191` scans this file's
+// source for the pattern, so the atomic-write code must stay here and
+// must keep using randomUUID() (not Date.now()).
+// ────────────────────────
+
 import { randomUUID } from "node:crypto"
 import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
+import { splitGoalCommand } from "./dispatcher.js"
 
 // Canonical types from the plugin's state layer — single source of truth.
 // control-state.ts is the EXPERIMENTAL API backend; it delegates type
 // authority to goal-state.ts so the two implementations cannot drift.
-import type { GoalStatus, Verification } from "./goal-state.js"
+import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, type GoalStatus, type Verification } from "./goal-state.js"
 import type { GoalPinnedModel } from "./goal-chain.js"
 
 // Type aliases for backward compat with existing control-state callers.
@@ -49,15 +73,23 @@ interface GoalControlChain {
   id: string
   steps: GoalControlChainStep[]
   current: number
+  // `cycles` and the master usage counters are REQUIRED by the runtime's
+  // validateGoalChain (goal-chain.ts) — server.ts reads/advances chains through
+  // that strict reader. A bridge chain missing them is rejected as corrupt and
+  // never auto-advances. Keep these in lockstep with goal-chain.ts's GoalChain.
+  cycles: number
   maxCycles: number
   onComplete: "stop" | "loop"
   master?: {
     maxTurns?: number
     maxMinutes?: number
+    turnsUsed: number
+    minutesUsed: number
   }
   metadata: {
     createdAt: number
     setBy: "chain"
+    sessionId?: string
   }
 }
 
@@ -90,6 +122,7 @@ export interface GoalControlState {
   }
   metadata: Record<string, unknown> & {
     setBy: GoalControlSetBy
+    sessionId?: string
     steering?: Array<{ at: number; note: string }>
     previousId?: string
     restartedAt?: number
@@ -100,6 +133,10 @@ export interface GoalControlStateFileResult {
   title: string
   output: string
   metadata: Record<string, unknown>
+}
+
+export interface GoalControlStateFileOptions {
+  sessionID?: string
 }
 
 const DEFAULT_CONSTRAINTS = {
@@ -142,12 +179,14 @@ export async function runGoalControlStateFile(
   directory: string,
   command: string,
   now = Date.now(),
+  options: GoalControlStateFileOptions = {},
 ): Promise<GoalControlStateFileResult> {
   const tokens = splitGoalCommand(command)
   const action = tokens[0]?.toLowerCase()
   if (!action) throw new Error("Goal control command is empty.")
 
-  if (action === "set") return setGoalState(directory, tokens, now)
+  if (action === "fresh" || action === "reset-state") return freshGoalState(directory, now)
+  if (action === "set") return setGoalState(directory, tokens, now, options)
   if (action === "turns") return editConstraint(directory, "turns", parseBoundedInt(tokens[1], "turns"), now)
   if (action === "time") return editConstraint(directory, "time", parseBoundedInt(tokens[1], "time"), now)
   if (action === "tokens") return editConstraint(directory, "tokens", parseBoundedInt(tokens[1], "tokens"), now)
@@ -161,17 +200,27 @@ export async function runGoalControlStateFile(
   if (action === "handoff") return createHandoff(directory, tokens.slice(1).join(" "), now)
   if (action === "claim") return claimHandoff(directory, now)
   if (action === "template") return editTemplate(directory, command, now)
-  if (action === "chain") return editChain(directory, command, tokens, now)
+  if (action === "chain") return editChain(directory, command, tokens, now, options)
 
   throw new Error(`Goal control action is not available in the native AutoGoal bridge: ${action}`)
 }
 
-async function setGoalState(directory: string, tokens: string[], now: number) {
+async function setGoalState(
+  directory: string,
+  tokens: string[],
+  now: number,
+  options: GoalControlStateFileOptions = {},
+) {
   const commandIndex = tokens.indexOf("--command")
-  const condition = sanitizePromptText(tokens.slice(1, commandIndex === -1 ? undefined : commandIndex).join(" "))
+  // Bound condition (4000) and verification command (1000) to match editCondition
+  // and the template/chain paths — the CLI's `set` rejects over-length conditions,
+  // so the bridge must not silently store an unbounded one.
+  const condition = sanitizePromptText(
+    tokens.slice(1, commandIndex === -1 ? undefined : commandIndex).join(" "),
+  ).slice(0, 4000)
   if (!condition) throw new Error("Goal condition cannot be empty.")
   const verificationCommand =
-    commandIndex === -1 ? null : sanitizePromptText(tokens.slice(commandIndex + 1).join(" ")) || null
+    commandIndex === -1 ? null : sanitizePromptText(tokens.slice(commandIndex + 1).join(" ")).slice(0, 1000) || null
 
   const existing = await readGoalStateOptional(directory)
   const next: GoalControlState = {
@@ -193,179 +242,90 @@ async function setGoalState(directory: string, tokens: string[], now: number) {
     constraints: { ...DEFAULT_CONSTRAINTS },
     metadata: { setBy: "user" },
   }
+  const sessionId = sanitizeSessionID(options.sessionID)
+  if (sessionId) next.metadata.sessionId = sessionId
   if (existing?.metadata.webhook) next.metadata.webhook = existing.metadata.webhook
 
   await writeGoalState(directory, next)
   return result(formatGoalSet(next, existing), "set")
 }
 
-async function editConstraint(directory: string, field: "turns" | "time" | "tokens", value: number, now: number) {
-  const state = await requireMutableGoal(directory)
-  if (field === "turns") {
-    if (value < CONSTRAINT_BOUNDS.minTurns || value > CONSTRAINT_BOUNDS.maxTurns) {
-      throw new Error(`maxTurns must be in [${CONSTRAINT_BOUNDS.minTurns}, ${CONSTRAINT_BOUNDS.maxTurns}].`)
+async function freshGoalState(directory: string, now: number) {
+  const paths = [
+    goalStatePath(directory),
+    goalChainPath(directory),
+    goalHandoffPath(directory),
+    sessionEventsPath(directory),
+    stepTimelinePath(directory),
+  ]
+  let removed = 0
+  for (const path of paths) {
+    try {
+      await unlinkWithRetry(path)
+      removed += 1
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
     }
-    const oldValue = state.constraints.maxTurns
-    state.constraints.maxTurns = value
-    await writeGoalState(directory, state)
-    return result(
-      `Max turns: ${oldValue} -> ${value}${value <= state.turnsEvaluated ? " (loop will trip on next idle)" : ""}`,
-      field,
-      now,
-    )
   }
-  if (field === "time") {
-    if (value < CONSTRAINT_BOUNDS.minMinutes || value > CONSTRAINT_BOUNDS.maxMinutes) {
-      throw new Error(`maxTimeMinutes must be in [${CONSTRAINT_BOUNDS.minMinutes}, ${CONSTRAINT_BOUNDS.maxMinutes}].`)
-    }
-    const oldValue = state.constraints.maxTimeMinutes
-    state.constraints.maxTimeMinutes = value
-    await writeGoalState(directory, state)
-    return result(`Max time: ${oldValue} -> ${value} min`, field, now)
-  }
+  return result(
+    `OpenGoal state reset. Removed ${removed} live state file(s). Templates and history were left intact.`,
+    "fresh",
+    now,
+  )
+}
 
-  if (value < CONSTRAINT_BOUNDS.minTokens || value > CONSTRAINT_BOUNDS.maxTokens) {
-    throw new Error(`maxTokens must be in [${CONSTRAINT_BOUNDS.minTokens}, ${CONSTRAINT_BOUNDS.maxTokens}].`)
-  }
-  const oldValue = state.constraints.maxTokens
-  state.constraints.maxTokens = value
-  await writeGoalState(directory, state)
-  return result(`Max tokens: ${oldValue} -> ${value}`, field, now)
+async function editConstraint(directory: string, field: "turns" | "time" | "tokens", value: number, now: number) {
+  const edit = field === "turns" ? editMaxTurns : field === "time" ? editMaxTime : editMaxTokens
+  const res = edit(directory, value, now)
+  if (!res.ok) throw new Error(res.error ?? `Cannot edit ${field}.`)
+  return result(res.message, field, now)
 }
 
 async function transitionGoal(directory: string, action: "pause" | "resume" | "clear", now: number) {
-  const state = await requireGoal(directory)
-  if (action === "clear") {
-    if (state.status !== "active" && state.status !== "paused") throw new Error("No active goal to clear.")
-    state.status = "cleared"
-    state.completedAt = now
-    await writeGoalState(directory, state)
-    return result(`Goal cleared. ${state.turnsEvaluated} turns were evaluated before clearing.`, action, now)
+  const res = goalTransitionGoal(directory, action, now)
+  // "already-in-state" is not a hard error — it means the goal was already
+  // paused/active, which the bridge surfaces as a success with an info message.
+  if (!res.ok && res.reason !== "already-in-state") {
+    throw new Error(res.error ?? `Cannot ${action} goal.`)
   }
-  if (action === "pause") {
-    if (state.status === "paused") return result("Goal is already paused.", action, now)
-    if (state.status !== "active") throw new Error("No active goal to pause.")
-    state.status = "paused"
-    state.pausedAt = now
-    await writeGoalState(directory, state)
-    return result("Goal paused. Resume with `/goal resume`.", action, now)
-  }
-
-  if (state.status === "active") return result("Goal is already active.", action, now)
-  if (state.status === "achieved") throw new Error("This goal was already achieved. Set a new goal instead.")
-  if (state.status === "cleared") throw new Error("This goal was cleared. Set a new goal instead.")
-  state.startedAt += state.pausedAt == null ? 0 : Math.max(0, now - state.pausedAt)
-  state.status = "active"
-  state.resumedAt = now
-  await writeGoalState(directory, state)
-  return result(`Goal resumed. ${state.turnsEvaluated} turns completed so far.`, action, now)
+  const message = res.ok ? res.message! : res.error!
+  return result(message, action, now)
 }
 
 async function restartGoal(directory: string, now: number) {
-  const state = await requireMutableGoal(directory)
-  const next: GoalControlState = {
-    ...state,
-    id: randomUUID(),
-    status: "active",
-    createdAt: now,
-    startedAt: now,
-    completedAt: null,
-    pausedAt: null,
-    resumedAt: null,
-    turnsEvaluated: 0,
-    tokensUsed: 0,
-    lastEvaluation: null,
-    evaluationHistory: [],
-    metadata: {
-      ...state.metadata,
-      previousId: state.id,
-      restartedAt: now,
-      steering: undefined,
-    },
-  }
-  delete next.metadata.steering
-  await writeGoalState(directory, next)
-  return result(`Goal restarted. New id: ${next.id.slice(0, 8)}.`, "restart", now)
+  const res = goalRestartGoal(directory, now)
+  if (!res.ok) throw new Error(res.error ?? "Cannot restart goal.")
+  return result(res.message, "restart", now)
 }
 
 async function appendSteering(directory: string, note: string, now: number) {
-  const cleaned = sanitizePromptText(note).slice(0, 500)
-  if (!cleaned) throw new Error("Steering note is empty after sanitization.")
-  const state = await requireMutableGoal(directory)
-  const existing = Array.isArray(state.metadata.steering) ? state.metadata.steering : []
-  const next = [...existing, { at: now, note: cleaned }].slice(-20)
-  state.metadata.steering = next
-  await writeGoalState(directory, state)
-  return result(`Steering note added (${next.length} total).`, "steer", now)
+  const res = goalAppendSteering(directory, note, now)
+  if (!res.ok) throw new Error(res.error ?? "Cannot append steering note.")
+  return result(res.message, "steer", now)
 }
 
 async function clearSteering(directory: string, now: number) {
-  const state = await requireGoal(directory)
-  const cleared = Array.isArray(state.metadata.steering) ? state.metadata.steering.length : 0
-  delete state.metadata.steering
-  await writeGoalState(directory, state)
-  return result(cleared === 0 ? "No steering notes to clear." : `Cleared ${cleared} steering notes.`, "unsteer", now)
+  const res = goalClearSteering(directory, now)
+  if (!res.ok) throw new Error(res.error ?? "Cannot clear steering notes.")
+  return result(res.message, "unsteer", now)
 }
 
 async function editCondition(directory: string, condition: string, now: number) {
-  const cleaned = sanitizePromptText(condition).slice(0, 4000)
-  if (!cleaned) throw new Error("Condition is empty after sanitization.")
-  const state = await requireMutableGoal(directory)
-  const oldValue = state.condition
-  state.condition = cleaned
-  state.metadata.conditionEditedAt = now
-  await writeGoalState(directory, state)
-  return result(`Condition updated (${oldValue.length} -> ${cleaned.length} chars).`, "condition", now)
+  const res = goalEditCondition(directory, condition, now)
+  if (!res.ok) throw new Error(res.error ?? "Cannot edit condition.")
+  return result(res.message, "condition", now)
 }
 
 async function createHandoff(directory: string, note: string, now: number) {
-  const state = await requireGoal(directory)
-  if (state.status === "cleared" || state.status === "achieved") {
-    throw new Error(`Cannot handoff a ${state.status} goal.`)
-  }
-  if (await fileExists(goalHandoffPath(directory))) {
-    throw new Error("A handoff is already pending. Claim it first or delete the file.")
-  }
-  const cleanNote = sanitizePromptText(note).slice(0, 500).trim()
-  const payload: GoalControlHandoff = {
-    createdAt: new Date(now).toISOString(),
-    state: {
-      ...state,
-      condition: sanitizePromptText(state.condition),
-      command: typeof state.command === "string" ? sanitizePromptText(state.command) : state.command,
-      evaluationHistory: state.evaluationHistory.slice(-10),
-    },
-    ...(cleanNote ? { note: cleanNote } : {}),
-  }
-  await writeJsonAtomic(goalHandoffPath(directory), payload)
-  return result("Handoff written. A future session can claim it with `/goal claim`.", "handoff", now)
+  const res = goalCreateHandoff(directory, note, now)
+  if (!res.ok) throw new Error(res.error ?? "Cannot create handoff.")
+  return result(res.message, "handoff", now)
 }
 
 async function claimHandoff(directory: string, now: number) {
-  const current = await readGoalStateOptional(directory)
-  if (current && (current.status === "active" || current.status === "paused")) {
-    throw new Error("A goal is already active. Clear it before claiming the handoff.")
-  }
-  const handoff = await readHandoffOptional(directory)
-  if (!handoff) throw new Error("No handoff to claim.")
-  const resumed: GoalControlState = {
-    ...handoff.state,
-    condition: sanitizePromptText(handoff.state.condition),
-    command:
-      typeof handoff.state.command === "string" ? sanitizePromptText(handoff.state.command) : handoff.state.command,
-    status: "active",
-    startedAt: now,
-    resumedAt: now,
-    completedAt: null,
-    pausedAt: null,
-    evaluationHistory: handoff.state.evaluationHistory.slice(-10),
-    metadata: sanitizeControlMetadata(handoff.state.metadata),
-  }
-  await writeGoalState(directory, resumed)
-  await unlink(goalHandoffPath(directory)).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-  })
-  return result("Handoff claimed. Goal resumed.", "claim", now)
+  const res = goalClaimHandoff(directory, now)
+  if (!res.ok) throw new Error(res.error ?? "Cannot claim handoff.")
+  return result(res.message, "claim", now)
 }
 
 async function editTemplate(directory: string, command: string, now: number) {
@@ -393,31 +353,62 @@ async function editTemplate(directory: string, command: string, now: number) {
   throw new Error("Usage: /goal template import <id> <json> or /goal template delete <id>.")
 }
 
-async function editChain(directory: string, command: string, tokens: string[], now: number) {
+async function editChain(
+  directory: string,
+  command: string,
+  tokens: string[],
+  now: number,
+  options: GoalControlStateFileOptions = {},
+) {
   const trimmed = command.trim()
   if (trimmed.startsWith(CHAIN_START_JSON_PREFIX))
-    return startGoalChain(directory, trimmed.slice(CHAIN_START_JSON_PREFIX.length), now)
+    return startGoalChain(directory, trimmed.slice(CHAIN_START_JSON_PREFIX.length), now, options)
   if (tokens[1] === "add") return addChainStep(directory, tokens.slice(2).join(" "), now)
+  // GUI sends 1-based positions; convert to 0-based for the move/remove ops
+  // (move was previously passing 1-based straight through, so a 3-step chain's
+  // `chain move 2 3` silently threw "out of range" and never moved anything).
   if (tokens[1] === "move")
-    return moveChainStep(directory, parseIndex(tokens[2], "from"), parseIndex(tokens[3], "to"), now)
-  throw new Error("Usage: /goal chain start-json <json>, /goal chain add <condition>, or /goal chain move <from> <to>.")
+    return moveChainStep(
+      directory,
+      parseIndex(tokens[2], "from") - 1,
+      parseIndex(tokens[3], "to") - 1,
+      now,
+    )
+  if (tokens[1] === "remove")
+    return removeChainStep(directory, parseIndex(tokens[2], "index") - 1, now)
+  throw new Error(
+    "Usage: /goal chain start-json <json>, /goal chain add <condition>, /goal chain move <from> <to>, or /goal chain remove <index>.",
+  )
 }
 
-async function startGoalChain(directory: string, payload: string, now: number) {
+async function startGoalChain(
+  directory: string,
+  payload: string,
+  now: number,
+  options: GoalControlStateFileOptions = {},
+) {
   const chainPayload = sanitizeChainPayload(parseJsonObject(payload, "chain payload"))
   const path = goalChainPath(directory)
   const previousChain = await readFile(path, "utf8").catch(() => null)
+  const sessionId = sanitizeSessionID(options.sessionID)
   const chain: GoalControlChain = {
     version: 1,
     id: randomUUID(),
     steps: chainPayload.steps,
     current: 0,
-    maxCycles: 1,
+    cycles: 0,
+    // Default 10 cycles (matches goal-chain.ts createGoalChain / CLI parity),
+    // not 1 — a chain with onComplete:"loop" must actually be able to loop, and
+    // a bridge-started chain with no cycle limit set shouldn't stop at one pass.
+    maxCycles: 10,
     onComplete: "stop",
-    ...(chainPayload.master ? { master: chainPayload.master } : {}),
+    ...(chainPayload.master
+      ? { master: { ...chainPayload.master, turnsUsed: 0, minutesUsed: 0 } }
+      : {}),
     metadata: {
       createdAt: now,
       setBy: "chain",
+      ...(sessionId ? { sessionId } : {}),
     },
   }
   await writeJsonAtomic(path, chain)
@@ -436,6 +427,9 @@ async function addChainStep(directory: string, condition: string, now: number) {
   if (!cleaned) throw new Error("Chain step condition cannot be empty.")
   chain.steps = [...chain.steps, { condition: cleaned }]
   await writeJsonAtomic(goalChainPath(directory), chain)
+  // The active step's metadata.chainTotal must reflect the new total so the
+  // GUI's "step X of N" display doesn't go stale after an add.
+  await updateActiveChainMetadata(directory, chain)
   return result(`Chain step added: ${chain.steps.length} - ${cleaned}`, "chain", now)
 }
 
@@ -455,6 +449,29 @@ async function moveChainStep(directory: string, from: number, to: number, now: n
   await writeJsonAtomic(goalChainPath(directory), chain)
   await updateActiveChainMetadata(directory, chain)
   return result(`Chain step moved: ${from + 1} -> ${to + 1}`, "chain", now)
+}
+
+async function removeChainStep(directory: string, index: number, now: number) {
+  const chain = await requireGoalChain(directory)
+  if (index < 0 || index >= chain.steps.length) {
+    throw new Error("Chain remove index is out of range.")
+  }
+  if (chain.steps.length <= 1) {
+    throw new Error("Cannot remove the only step in the chain; clear the goal instead.")
+  }
+  if (index === chain.current) {
+    throw new Error("Cannot remove the step that is currently running.")
+  }
+  // Preserve which step is active by identity, then re-derive its index after splice.
+  const active = chain.steps[chain.current]
+  const next = [...chain.steps]
+  next.splice(index, 1)
+  const current = active ? next.indexOf(active) : Math.min(chain.current, next.length - 1)
+  chain.steps = next
+  chain.current = current < 0 ? 0 : current
+  await writeJsonAtomic(goalChainPath(directory), chain)
+  await updateActiveChainMetadata(directory, chain)
+  return result(`Chain step removed: ${index + 1}`, "chain", now)
 }
 
 function result(output: string, command: string, now = Date.now()): GoalControlStateFileResult {
@@ -580,6 +597,7 @@ async function setActiveChainGoal(directory: string, chain: GoalControlChain, no
       chainId: chain.id,
       chainStep: chain.current,
       chainTotal: chain.steps.length,
+      ...(chain.metadata.sessionId ? { sessionId: chain.metadata.sessionId } : {}),
     },
   }
   if (existing?.metadata.webhook) next.metadata.webhook = existing.metadata.webhook
@@ -639,6 +657,23 @@ function isTransientRenameError(error: unknown) {
   return code === "EPERM" || code === "EACCES" || code === "EBUSY"
 }
 
+// Reset (`fresh`) deletes the live state files. On Windows the state/chain files
+// are frequently held open by the plugin reader/watcher, so a bare unlink throws
+// EPERM/EBUSY and the bridge maps it to a 400. Retry transient locks (ENOENT and
+// other errors still throw so the caller can treat "already gone" as success).
+async function unlinkWithRetry(path: string) {
+  const delays = [25, 50, 100, 200]
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await unlink(path)
+      return
+    } catch (error) {
+      if (!isTransientRenameError(error) || attempt >= delays.length) throw error
+      await sleep(delays[attempt]!)
+    }
+  }
+}
+
 function goalStatePath(directory: string) {
   return join(directory, ".opencode", ".goal-state.json")
 }
@@ -649,6 +684,14 @@ function goalChainPath(directory: string) {
 
 function goalHandoffPath(directory: string) {
   return join(directory, ".opencode", ".goal-handoff.json")
+}
+
+function sessionEventsPath(directory: string) {
+  return join(directory, ".opencode", ".session-events.jsonl")
+}
+
+function stepTimelinePath(directory: string) {
+  return join(directory, ".opencode", ".step-timeline.jsonl")
 }
 
 function templatePath(directory: string, id: string) {
@@ -709,8 +752,39 @@ function requireTemplateID(id: string | undefined) {
   return id
 }
 
+// Hardening caps for inline JSON command payloads (chain start-json, template
+// import). The bridge accepts an unbounded command string, so a hostile/buggy
+// client could otherwise feed a huge or deeply-nested payload straight into
+// JSON.parse (CPU/memory DoS). Mirrors the CLI's parseInlineChainStartPayload.
+const MAX_COMMAND_JSON_BYTES = 256 * 1024;
+const MAX_COMMAND_JSON_DEPTH = 256;
+
+/** Maximum bracket-nesting depth, counted outside JSON strings (pre-parse). */
+function jsonNestingDepth(raw: string): number {
+  let depth = 0;
+  let maxDepth = 0;
+  let inString = false;
+  let escape = false;
+  for (const ch of raw) {
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{" || ch === "[") { depth++; if (depth > maxDepth) maxDepth = depth; }
+    else if (ch === "}" || ch === "]") { depth--; }
+  }
+  return maxDepth;
+}
+
 function parseJsonObject(value: string | undefined, label: string) {
   if (!value) throw new Error(`${label} is required.`)
+  // Bound size + nesting BEFORE JSON.parse to prevent CPU/memory DoS.
+  if (Buffer.byteLength(value, "utf-8") > MAX_COMMAND_JSON_BYTES) {
+    throw new Error(`${label} too large (max ${MAX_COMMAND_JSON_BYTES} bytes / 256KB).`)
+  }
+  if (jsonNestingDepth(value) > MAX_COMMAND_JSON_DEPTH) {
+    throw new Error(`${label} exceeds maximum nesting depth of ${MAX_COMMAND_JSON_DEPTH} levels.`)
+  }
   const parsed: unknown = JSON.parse(value)
   if (!isRecord(parsed)) throw new Error(`${label} must be a JSON object.`)
   return parsed
@@ -859,12 +933,16 @@ function sanitizeGoalChain(value: unknown): GoalControlChain {
     id: value.id,
     steps,
     current: Math.max(0, Math.min(steps.length - 1, current)),
+    // Preserve cycles (required by goal-chain.ts validateGoalChain). Re-reading
+    // a chain for an edit op must not strip it, or the chain becomes invalid.
+    cycles: isNumber(value.cycles) && value.cycles >= 0 ? Math.floor(value.cycles) : 0,
     maxCycles: clampPositiveInteger(Reflect.get(value, "maxCycles"), 1),
     onComplete: Reflect.get(value, "onComplete") === "loop" ? "loop" : "stop",
     ...(master ? { master } : {}),
     metadata: {
       createdAt: isNumber(metadata.createdAt) ? metadata.createdAt : Date.now(),
       setBy: "chain",
+      ...(sanitizeSessionID(metadata.sessionId) ? { sessionId: sanitizeSessionID(metadata.sessionId) } : {}),
     },
   }
 }
@@ -874,9 +952,14 @@ function sanitizeChainMaster(value: unknown) {
   const maxTurns = readPositiveInteger(value.maxTurns)
   const maxMinutes = readPositiveInteger(value.maxMinutes)
   if (!maxTurns && !maxMinutes) return undefined
+  // turnsUsed/minutesUsed are REQUIRED by goal-chain.ts validateGoalChain when a
+  // master budget is present — preserve them across reads (default 0) so an
+  // advancing chain's accumulated usage survives an edit op.
   return {
     ...(maxTurns ? { maxTurns } : {}),
     ...(maxMinutes ? { maxMinutes } : {}),
+    turnsUsed: isNumber(value.turnsUsed) && value.turnsUsed >= 0 ? Math.floor(value.turnsUsed) : 0,
+    minutesUsed: isNumber(value.minutesUsed) && value.minutesUsed >= 0 ? Math.floor(value.minutesUsed) : 0,
   }
 }
 
@@ -913,6 +996,10 @@ function sanitizeControlMetadata(value: unknown): GoalControlState["metadata"] {
     setBy: isSetBy(metadata.setBy) ? metadata.setBy : "user",
   }
   if (typeof metadata.previousId === "string") out.previousId = sanitizePromptText(metadata.previousId).slice(0, 160)
+  if (typeof metadata.sessionId === "string") {
+    const sessionId = sanitizeSessionID(metadata.sessionId)
+    if (sessionId) out.sessionId = sessionId
+  }
   if (isNumber(metadata.restartedAt)) out.restartedAt = metadata.restartedAt
   if (typeof metadata.chainId === "string") out.chainId = sanitizePromptText(metadata.chainId).slice(0, 160)
   if (isNumber(metadata.chainStep)) out.chainStep = metadata.chainStep
@@ -974,42 +1061,17 @@ function parseBoundedInt(value: string | undefined, action: string) {
   return parsed
 }
 
-function splitGoalCommand(command: string) {
-  const tokens: string[] = []
-  let current = ""
-  let quote: '"' | "'" | null = null
-  for (const char of command.trim()) {
-    if (quote) {
-      if (char === quote) {
-        quote = null
-        continue
-      }
-      current += char
-      continue
-    }
-    if (char === '"' || char === "'") {
-      quote = char
-      continue
-    }
-    if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current)
-        current = ""
-      }
-      continue
-    }
-    current += char
-  }
-  if (quote) throw new Error("Unclosed quote in goal control command.")
-  if (current) tokens.push(current)
-  return tokens
-}
-
 function sanitizePromptText(value: string) {
   return value
     .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\ufeff\ufff9-\ufffb]/g, " ")
     .replace(/ {2,}/g, " ")
     .trim()
+}
+
+function sanitizeSessionID(value: unknown) {
+  if (typeof value !== "string") return undefined
+  const sessionId = sanitizePromptText(value).slice(0, 160)
+  return sessionId || undefined
 }
 
 function isGoalControlState(value: unknown): value is GoalControlState {

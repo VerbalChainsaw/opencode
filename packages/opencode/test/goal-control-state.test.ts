@@ -56,7 +56,7 @@ describe("runGoalControlStateFile", () => {
     const result = await runGoalControlStateFile(tmp.path, "turns 25", 2000)
     const next = await readGoal(tmp.path)
 
-    expect(result.output).toBe("Max turns: 20 -> 25")
+    expect(result.output).toBe("Max turns: 20 → 25")
     expect(result.metadata).toMatchObject({ source: "state-file", command: "turns" })
     expect(next.constraints.maxTurns).toBe(25)
     expect(next.turnsEvaluated).toBe(2)
@@ -82,7 +82,9 @@ describe("runGoalControlStateFile", () => {
   test("sets a fresh goal from the create form command without agent-only instructions", async () => {
     await using tmp = await tmpdir()
 
-    const result = await runGoalControlStateFile(tmp.path, 'set "make tests pass" --command "bun test"', 3000)
+    const result = await runGoalControlStateFile(tmp.path, 'set "make tests pass" --command "bun test"', 3000, {
+      sessionID: "ses_goal_panel",
+    })
     const next = await readGoal(tmp.path)
 
     expect(result.output).toContain("A goal has been set")
@@ -91,6 +93,35 @@ describe("runGoalControlStateFile", () => {
     expect(next.condition).toBe("make tests pass")
     expect(next.command).toBe("bun test")
     expect(next.constraints.maxTurns).toBe(20)
+    expect(next.metadata.sessionId).toBe("ses_goal_panel")
+  })
+
+  test("fresh clears live state files while preserving templates and history", async () => {
+    await using tmp = await tmpdir()
+    await mkdir(join(tmp.path, ".opencode"), { recursive: true })
+
+    const liveFiles = [
+      ".goal-state.json",
+      ".goal-chain.json",
+      ".goal-handoff.json",
+      ".session-events.jsonl",
+      ".step-timeline.jsonl",
+    ]
+    for (const file of liveFiles) {
+      await Bun.write(join(tmp.path, ".opencode", file), file.includes(".json") ? "{}\n" : "event\n")
+    }
+    await Bun.write(join(tmp.path, ".opencode", "goal-templates.json"), '{"templates":[]}\n')
+    await Bun.write(join(tmp.path, ".opencode", "goal-history.json"), '{"runs":[]}\n')
+
+    const result = await runGoalControlStateFile(tmp.path, "fresh", 4000)
+
+    expect(result.output).toContain("OpenGoal state reset")
+    expect(result.metadata).toMatchObject({ source: "state-file", command: "fresh" })
+    for (const file of liveFiles) {
+      expect(await Bun.file(join(tmp.path, ".opencode", file)).exists()).toBe(false)
+    }
+    expect(await Bun.file(join(tmp.path, ".opencode", "goal-templates.json")).text()).toBe('{"templates":[]}\n')
+    expect(await Bun.file(join(tmp.path, ".opencode", "goal-history.json")).text()).toBe('{"runs":[]}\n')
   })
 
   test("adds steering and restarts the current goal", async () => {
@@ -222,12 +253,14 @@ describe("runGoalControlStateFile", () => {
       ],
     }
 
-    const result = await runGoalControlStateFile(tmp.path, `chain start-json ${JSON.stringify(payload)}`, 6000)
+    const result = await runGoalControlStateFile(tmp.path, `chain start-json ${JSON.stringify(payload)}`, 6000, {
+      sessionID: "ses_chain_panel",
+    })
     const chain = await readJson<{
       version: number
       current: number
       maxCycles: number
-      master: { maxTurns: number; maxMinutes: number }
+      master: { maxTurns: number; maxMinutes: number; turnsUsed: number; minutesUsed: number }
       steps: typeof payload.steps
       metadata: { setBy: string; sessionId?: string }
     }>(tmp.path, ".opencode/.goal-chain.json")
@@ -236,15 +269,19 @@ describe("runGoalControlStateFile", () => {
     expect(result.output).toBe("Chain started: step 1/2 - Plan the sidepanel")
     expect(chain.version).toBe(1)
     expect(chain.current).toBe(0)
-    expect(chain.maxCycles).toBe(1)
-    expect(chain.master).toEqual(payload.master)
+    expect(chain.maxCycles).toBe(10)
+    // master must carry the validator-required runtime counters: readGoalChain
+    // rejects a bridge chain whose master lacks turnsUsed/minutesUsed (the #1
+    // critical drift fix), so the chain would never auto-advance past step 0.
+    expect(chain.master).toEqual({ ...payload.master, turnsUsed: 0, minutesUsed: 0 })
     expect(chain.steps).toEqual(payload.steps)
+    expect(chain.metadata.sessionId).toBe("ses_chain_panel")
     expect(goal.condition).toBe("Plan the sidepanel")
     expect(goal.command).toBe("bun test sidepanel")
     expect(goal.verification).toEqual({ type: "shell", command: "bun test sidepanel" })
     expect(goal.constraints.maxTurns).toBe(2)
     expect(goal.constraints.maxTimeMinutes).toBe(5)
-    expect(goal.metadata).toMatchObject({ setBy: "chain", chainStep: 0, chainTotal: 2 })
+    expect(goal.metadata).toMatchObject({ setBy: "chain", chainStep: 0, chainTotal: 2, sessionId: "ses_chain_panel" })
   })
 
   test("does not leave an orphan chain when activating the first step fails", async () => {
@@ -310,7 +347,9 @@ describe("runGoalControlStateFile", () => {
     )
 
     await runGoalControlStateFile(tmp.path, 'chain add "Second step"', 7000)
-    await runGoalControlStateFile(tmp.path, "chain move 1 0", 8000)
+    // Command language is 1-based (locked by dispatcher-parity.test.mjs `chain
+    // move 2 3`): move step 2 ("Second step") to position 1.
+    await runGoalControlStateFile(tmp.path, "chain move 2 1", 8000)
     const chain = await readJson<{ current: number; steps: Array<{ condition: string }> }>(
       tmp.path,
       ".opencode/.goal-chain.json",

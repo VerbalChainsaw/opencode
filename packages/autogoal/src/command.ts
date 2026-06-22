@@ -4,6 +4,18 @@
  * Given the raw `$ARGUMENTS` string, this performs the state operation and
  * returns the text the agent should act on (or relay to the user). It is kept
  * out of `server.ts` precisely so it can be tested without a running OpenCode.
+ *
+ * ─── PARITY CONTRACT ───
+ * This file and `control-state.ts` (the Desktop bridge) are two
+ * implementations of the same goal-control command language. They must
+ * produce equivalent state for the shared command set. That contract is
+ * locked by:
+ *   - test/dispatcher-parity.test.mjs
+ *   - test/control-state-bridge.test.mjs
+ * If you change action grammar, result-shape mapping, or state-mutating
+ * primitive calls in EITHER file, both test files must stay green
+ * UNCHANGED. Do not edit the parity tests to make a refactor pass.
+ * ────────────────────────
  */
 
 import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
@@ -589,7 +601,7 @@ export function dispatchGoalCommandStructured(
   }
 
   if (action === "handoff") {
-    const note = payload || undefined;
+    const note = payload ? unwrapQuotes(payload) : undefined;
     const res = createHandoff(directory, note);
     if (!res.ok) {
       // A1: terminal-state case was missing (see restart above).

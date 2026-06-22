@@ -97,6 +97,17 @@ export interface ProgressBar {
 }
 
 export function computeProgress(state: GoalState, now: number = Date.now()): ProgressBar {
+  // Terminal states are always 100% — the goal is done regardless of budget.
+  if (state.status === "achieved" || state.status === "cleared") {
+    const elapsedMs = Math.max(0, now - state.startedAt)
+    return {
+      elapsedMinutes: elapsedMs > 0 ? Math.max(1, Math.round(elapsedMs / 60_000)) : 0,
+      pct: 100,
+      filledBlocks: 20,
+      bar: "█".repeat(20),
+    }
+  }
+
   // All inputs are validated by readGoalState (which calls validateGoalState)
   // before they reach this function, so a negative turnsEvaluated or a missing
   // constraints.maxTurns cannot reach here in production. The clamps below

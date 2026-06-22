@@ -1,5 +1,5 @@
 import { glob, globSync, type GlobOptions } from "glob"
-import { minimatch } from "minimatch"
+import micromatch from "micromatch"
 
 export namespace Glob {
   export interface Options {
@@ -29,6 +29,6 @@ export namespace Glob {
   }
 
   export function match(pattern: string, filepath: string): boolean {
-    return minimatch(filepath, pattern, { dot: true })
+    return micromatch.isMatch(filepath, pattern, { dot: true })
   }
 }
