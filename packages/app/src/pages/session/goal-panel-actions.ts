@@ -63,7 +63,32 @@ const START_GOAL_PROMPT =
   "Begin working toward the current OpenGoal goal now. Read .opencode/.goal-state.json for the condition, constraints, steering, and verification command. Continue until the goal is achieved, blocked, or the constraints require stopping."
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  if (error instanceof Error) {
+    // The opencode HTTP API returns typed errors as JSON bodies like
+    // { _tag: "GoalControlError", data: { message: "<reason>" } }. If the
+    // SDK surfaces the response body in error.message, parse it for the
+    // real reason instead of dumping the full envelope string.
+    const parsed = tryParseGoalControlErrorBody(error.message)
+    if (parsed) return parsed
+    return error.message
+  }
+  return String(error)
+}
+
+function tryParseGoalControlErrorBody(raw: string): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith("{")) return null
+  try {
+    const obj = JSON.parse(trimmed)
+    const data = obj?.data
+    if (data && typeof data === "object" && typeof data.message === "string" && data.message) {
+      return data.message
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 function cleanPinnedSkills(skills: string[] | undefined) {

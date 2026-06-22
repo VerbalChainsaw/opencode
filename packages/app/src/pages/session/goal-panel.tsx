@@ -348,6 +348,7 @@ export interface ChainStep {
   model?: GoalTemplateModel
 }
 export interface ChainData {
+  id: string
   steps: ChainStep[]
   current: number
 }
@@ -410,8 +411,10 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
         ...(templateModelFromSnapshot(s.model) ? { model: templateModelFromSnapshot(s.model) } : {}),
       }))
     if (steps.length === 0) return null
+    const id = typeof c.id === "string" && c.id.trim().length > 0 ? cleanText(c.id) : ""
+    if (!id) return null
     const current = typeof c.current === "number" && Number.isFinite(c.current) ? c.current : 0
-    return { steps, current }
+    return { id, steps, current }
   } catch {
     return null
   }
@@ -2252,6 +2255,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const runningChain = chain()
     if (!runningChain) return []
     const s = state()
+    // A chain snapshot belongs to exactly one goal/session. If the current
+    // session has no matching goal (new session, cleared goal from another
+    // session, etc.), the snapshot is stale and must not leak into the runtime
+    // chain or the chain builder display.
+    const chainId = s?.metadata?.chainId
+    if (typeof chainId !== "string" || chainId !== runningChain.id) return []
     return runningChain.steps.map((step, index) => {
       const agent = agentNameForRuntime(step.agent)
       const skills = Array.isArray(step.skills)
