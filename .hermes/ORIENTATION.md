@@ -10,13 +10,18 @@ Last verified: full green across all packages (see Gates below).
 
 OpenGoal/AutoGoal keeps an OpenCode agent working toward a goal until a condition is met (auto-loop on `session.idle`). Goals can be single, or **chains** of ordered steps. Two surfaces drive it: a terminal CLI/TUI and the **Desktop GoalPanel GUI**.
 
-### Two repos — BOTH ship to production
+### Two repos — one is retired (2026-06-22)
 | Repo | Package | Ships as | Role |
 |---|---|---|---|
-| `C:\Users\zerop\Development\OpenGoal` | `opencode-autogoal` | published npm | CLI / TUI / terminal users |
-| `C:\Users\zerop\Development\opencode-source` | monorepo | Electron Desktop app | the GUI users actually run |
+| `C:\Users\zerop\Development\opencode-source` | monorepo (contains `@opencode-ai/autogoal` in `packages/autogoal`) | Electron Desktop app | the GUI users actually run; **the sole authoritative AutoGoal implementation** |
+| ~~`C:\Users\zerop\Development\OpenGoal`~~ | ~~`opencode-autogoal`~~ | ~~published npm~~ | **RETIRED 2026-06-22. Do not recreate, edit, test, or commit to it.** The bundle at `C:\Users\zerop\Archives\Retired-Repositories\OpenGoal-legacy-2026-06-22\OpenGoal-complete.bundle` is historical, read-only. |
 
-They share ~the same runtime but have ~380 lines of internal code drift. **This is NOT a blocker:** command *behavior* is confirmed byte-identical across both (verified by running the same commands through each `dist/command.js` and diffing state/chain files). The drift is in internal plumbing only; both are independently green.
+AutoGoal code, tests, specs, and design docs now live entirely in this
+monorepo under `packages/autogoal/` (source), `packages/autogoal/test/`
+(tests), `packages/autogoal/specs/` (specs), and `packages/autogoal/docs/`
+(design notes). There is no dual-repo mirroring. If a chat message or
+older scratchpad still references `../OpenGoal` or the path
+`C:\Users\zerop\Development\OpenGoal`, that text is stale.
 
 ### opencode-source packages that matter
 - `packages/autogoal` — `@opencode-ai/autogoal`, the goal runtime (server plugin + CLI + the Desktop bridge runner). **Most runtime work happens here.**
@@ -117,7 +122,12 @@ GoalPanel GUI is being actively polished by the parallel worker (recent commits:
 
 Priority order. Each is self-contained.
 
-**A. Verify npm repo has the command fixes** (`C:\Users\zerop\Development\OpenGoal`, cheap). Confirm `src/command.ts`/`goal-chain.ts` have: chain `move` 1-based→0-based, chain `add` chainTotal refresh, `maxCycles` default 10. Port if missing. Verify: `node --test` green.
+**A. Verify autogoal package has the command fixes** (`packages/autogoal`, cheap). Confirm `src/command.ts`/`goal-chain.ts` have: chain `move` 1-based→0-based, chain `add` chainTotal refresh, `maxCycles` default 10. Add if missing. Verify: `npm test` green.
+
+> **Historical note:** a prior copy of item A pointed at
+> `C:\Users\zerop\Development\OpenGoal`. That repository was retired on
+> 2026-06-22. The work now lives entirely in `packages/autogoal/` inside
+> this monorepo.
 
 **B. Structural dispatcher merge** (`packages/autogoal`, medium, SAFE now). Make `control-state.ts` delegate to `goal-state.ts`/`goal-chain.ts` primitives instead of reimplementing, OR extract one shared dispatcher. Keep bridge's `{title,output,metadata}` return. Verify: parity tests green **unchanged**.
 

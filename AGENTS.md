@@ -1,37 +1,68 @@
-# AGENTS.md — OpenCode Desktop & OpenGoal (Mission Control)
+# AGENTS.md — OpenCode Desktop & Mission Control
 
 Codex / Claude Code session-load file. Loaded at session start.
-Covers the dual-repo surface: this repo (GUI) + sibling OpenGoal (plugin).
-Current as of 2026-06-17. Sources cited inline.
+Covers the monorepo surface: this repo (GUI + AutoGoal plugin + Desktop shell).
+Current as of 2026-06-22. Sources cited inline.
 
 ---
 
-## Dual-Repo Landscape
+## AutoGoal repository authority
 
-| Concern | This repo (`opencode-source`) | Sibling (`../OpenGoal`) |
-|---------|-------------------------------|--------------------------|
-| Role | Desktop app UI (SolidJS + Electron) | Server plugin (goal loop, budget, blocks) |
-| Branch | `dev` | `main` |
-| Test runner | `bun test --preload ./happydom.ts` | `node --test test/**/*.test.mjs` |
-| Typecheck | `bun run typecheck` (tsgo -b) | `npx tsc -p tsconfig.json` |
-| Package dirs | `packages/app`, `packages/desktop`, `packages/ui` | Single package (root) |
-| Key dep | `@opencode-ai/sdk` (1.17.6), SolidJS, Kobalte | `@opencode-ai/plugin` |
+**The sole authoritative AutoGoal implementation lives in this monorepo.**
 
-**Design docs live in OpenGoal**: `MISSION_CONTROL_UI_DESIGN.md`, `MISSION_CONTROL_UI_IMPLEMENTATION_PLAN.md`.
+| Resource | Location |
+|----------|----------|
+| AutoGoal source | `packages/autogoal/src/` |
+| AutoGoal tests | `packages/autogoal/test/` |
+| AutoGoal specifications | `packages/autogoal/specs/` |
+| AutoGoal docs / design notes | `packages/autogoal/docs/` |
+| AutoGoal entry AGENTS.md | `packages/autogoal/AGENTS.md` |
+
+The former sibling repository `../OpenGoal` was retired on 2026-06-22. It
+must not be recreated, cloned, edited, tested, committed to, or used as a
+task working directory. Any text in chat, scratchpads, or handoffs that
+references it is stale. Verify repo identity before AutoGoal work:
+
+```bash
+git rev-parse --show-toplevel
+# Must print: <something>/opencode-source
+test -d packages/autogoal/src && test -d packages/autogoal/test && test -d packages/autogoal/specs
+```
+
+If either check fails, abort. Do not proceed under the assumption that the
+legacy sibling can be re-created or substituted.
+
+---
+
+## Package layout
+
+| Concern | Path |
+|---------|------|
+| Role | Desktop app UI (SolidJS + Electron) + AutoGoal plugin + HTTP bridge |
+| Branch | `dev` |
+| Test runner | `bun test --preload ./happydom.ts` (app/desktop), `node --test test/*.test.mjs` (autogoal) |
+| Typecheck | `bun run typecheck` (tsgo -b), `npx tsc -p tsconfig.json` (autogoal) |
+| Package dirs | `packages/app`, `packages/autogoal`, `packages/desktop`, `packages/opencode`, `packages/ui`, `packages/core` |
+| Key deps | `@opencode-ai/sdk` (1.17.6), `@opencode-ai/plugin`, SolidJS, Kobalte, Electron |
+
 The plugin defines the DATA; this app DRAWS the data.
 
 ---
 
 ## Spec Surface (read before any non-trivial work)
 
-In `../OpenGoal/specs/`:
+In `packages/autogoal/specs/` (canonical, this repo only):
 - `desktop-ui-design.md` — GUI feature work orders (426 lines)
 - `v0.4.0-roadmap.md` — Phase planning (635 lines)
 - `v0.5.0-feature-work-orders.md` — Feature specs (301 lines)
 - `cli-hardening-work-order.md` — CLI/budget hardening (326 lines)
+- `README.md` — directory purpose and retirement notice
 
-In `../OpenGoal/` (root-level):
-- `MISSION_CONTROL_UI_DESIGN.md` — visual spec: steel-and-signal dark aesthetic, Global Ops Board, Dual-Band Dock (386 lines)
+In `packages/autogoal/docs/` (design notes, secondary):
+- `MISSION_CONTROL_UI_DESIGN.md` — visual spec: steel-and-signal dark aesthetic, Global Ops Board, Dual-Band Dock
+- `MISSION_CONTROL_UI_IMPLEMENTATION_PLAN.md` — implementation sequence
+
+Other `specs/` directories in this monorepo (e.g. `specs/`, `packages/opencode/specs/`) are unrelated to AutoGoal. Cite the AutoGoal-specific spec by its relative path from the package root (e.g. `specs/v0.5.0-feature-work-orders.md §F-1`).
 
 **Rule:** Read the relevant spec file fully before writing code. The spec wins over chat instructions.
 If the spec and the user's words conflict, surface the conflict before coding.
@@ -67,21 +98,12 @@ cd packages/desktop && bun dev
 
 ### Sibling repo (OpenGoal)
 
-```bash
-# Full test pipeline (typecheck → build → test)
-cd ../OpenGoal && npm test
+The sibling repository was retired on 2026-06-22. The commands below are
+intentionally NOT provided — they were removed because invoking them
+recreates or references the legacy checkout, which is forbidden. All
+AutoGoal work runs in `packages/autogoal/` against this monorepo.
 
-# Build only
-cd ../OpenGoal && npm run build
-
-# Rails verification (agent guardrails)
-cd ../OpenGoal && npm run rails:verify
-
-# Rails preflight (run before non-trivial work)
-cd ../OpenGoal && npm run rails:preflight
-```
-
-### OpenCode SDK (used by both repos)
+### OpenCode SDK (used by this repo)
 
 ```bash
 npm install @opencode-ai/sdk   # v1.17.6 current
@@ -220,7 +242,7 @@ Every key added to `en.ts` MUST also be added to `zh.ts` and `zht.ts`.
 A task is complete when ALL pass:
 1. `bun run typecheck` exits 0 (from the changed package dir)
 2. `bun test --preload ./happydom.ts` exits 0 (app) or `bun test src/...` exits 0 (desktop)
-3. If plugin code changed: `cd ../OpenGoal && npm test` exits 0
+3. If plugin code changed: `cd packages/autogoal && npm test` exits 0
 4. Changed files staged, commit message follows `type(scope): summary` format
 5. No new hardcoded English strings in JSX (grep check)
 6. No new `!` non-null assertions on signals (grep check)
