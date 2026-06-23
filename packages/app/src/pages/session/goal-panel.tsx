@@ -621,6 +621,7 @@ function GoalConsoleSection(props: {
     | "action-editor"
     | "activity"
     | "history"
+    | "terminal-result"
   title: string
   subtitle?: string
   class?: string
@@ -703,6 +704,17 @@ function GoalConsoleSection(props: {
       markerStyle: { "background-color": "rgb(165, 243, 252)" },
     },
     history: {
+      style: {
+        "border-color": "rgba(148, 163, 184, 0.24)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(39, 39, 42, 0.88), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(148, 163, 184, 0.20)",
+      },
+      markerStyle: { "background-color": "rgba(203, 213, 225, 0.8)" },
+    },
+    "terminal-result": {
       style: {
         "border-color": "rgba(148, 163, 184, 0.24)",
         "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14)",
@@ -2477,7 +2489,21 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return "queued"
   }
   const removeLiveChainStep = async (index: number) => {
-    if (index <= runningStepIndex()) return false
+    // v0.7.3 / audit June 2026 — terminal-state escape hatch.
+    // The default guard below blocks deletion of "running or done"
+    // steps because the engine may still be driving them. But
+    // when the live run is in a terminal state (achieved /
+    // cleared) the engine is no longer driving the run — the
+    // chain isn't going to advance, and the user should be able
+    // to clear leftover steps from a previous run. The chain
+    // file's `current` index is the last ADVANCED step, not the
+    // last ACHIEVED step, so a chain whose step 0 was achieved
+    // but never advanced can still have `current === 0` and
+    // block the user from deleting step 0.
+    const liveStatus = liveRunStatus();
+    if (index <= runningStepIndex() && liveStatus !== "achieved" && liveStatus !== "cleared") {
+      return false;
+    }
     return sendGoalCommand("chain", `chain remove ${index + 1}`)
   }
   const removeVisibleStep = (step: GoalChainDraftStep, index: number) => {
@@ -2571,85 +2597,89 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 class={unarchivedTerminalGoal() ? "h-fit xl:col-span-2" : "hidden"}
             >
             <Show when={unarchivedTerminalGoal()} keyed>
-              {(terminal) => (
-                <>
-                <div
-                  data-component="goal-terminal-result-banner"
-                  role="status"
-                  aria-live="polite"
-                  class="mb-3 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-amber-400/35 bg-amber-400/8 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-                >
-                  <span
-                    data-component="goal-terminal-outcome-badge"
-                    class="inline-flex shrink-0 cursor-default select-none items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-weak"
+              {(terminal) => {
+                const elapsedMs = (terminal.completedAt ?? Date.now()) - terminal.startedAt
+                const elapsedLabel = formatElapsed(elapsedMs)
+                const turns = terminal.turnsEvaluated
+                const maxTurns = terminal.constraints.maxTurns
+                const isAchieved = terminal.status === "achieved"
+                const outcome = statusMeta(terminal.status)
+                const tone = terminalOutcomeTone(terminal.status)
+                return (
+                  <GoalConsoleSection
+                    zone="terminal-result"
+                    title={language.t("session.goal.lastResult")}
+                    subtitle={language.t(
+                      isAchieved
+                        ? "session.goal.terminal.subtitleAchieved"
+                        : "session.goal.terminal.subtitleCleared",
+                      { elapsed: elapsedLabel },
+                    )}
                   >
-                    <span
-                      class="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ "background-color": terminalOutcomeTone(terminal.status).style["border-color"] as string }}
-                      aria-hidden
-                    />
-                    {statusMeta(terminal.status).label}
-                  </span>
-                  <div data-component="goal-terminal-summary" class="min-w-0">
-                    <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span class="shrink-0 text-[10px] font-semibold uppercase leading-4 tracking-[0.12em] text-text-weaker">
-                        {language.t("session.goal.lastResult")}
-                      </span>
-                      <span class="min-w-0 truncate text-[11px] leading-4 text-text-weaker">
-                        Most recent completed run
-                      </span>
-                    </div>
-                    <div class="truncate text-13-medium leading-5 text-text-base" title={cleanText(terminal.condition)}>
-                      {cleanText(terminal.condition)}
-                    </div>
-                    <Show when={terminal.lastEvaluation?.reason}>
-                      {(reason) => (
-                        <div class="truncate text-11-regular leading-4 text-text-weak">
-                          {cleanText(reason())}
-                        </div>
-                      )}
-                    </Show>
-                  </div>
-                  <div class="flex shrink-0 items-center gap-2">
                     <div
-                      data-component="goal-terminal-banner-metrics"
-                      class="hidden shrink-0 grid-cols-2 gap-1.5 text-11-regular text-text-weak sm:grid"
+                      data-component="goal-terminal-result-banner"
+                      role="status"
+                      aria-live="polite"
+                      class="flex h-full min-h-0 min-w-0 flex-col gap-2.5 p-3"
                     >
-                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-base/60 px-2 py-1">
-                        <div class="text-[9px] uppercase leading-3 tracking-[0.08em] text-text-weaker">Turns</div>
-                        <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
-                          {terminal.turnsEvaluated}/{terminal.constraints.maxTurns}
+                      <div class="flex min-w-0 items-start gap-2">
+                        <span
+                          data-component="goal-terminal-outcome-badge"
+                          class={`inline-flex shrink-0 cursor-default select-none items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.class}`}
+                          style={tone.style}
+                        >
+                          <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden />
+                          {outcome.label}
+                        </span>
+                        <div data-component="goal-terminal-summary" class="min-w-0 flex-1">
+                          <div class="truncate text-13-medium leading-5 text-text-base" title={cleanText(terminal.condition)}>
+                            {cleanText(terminal.condition)}
+                          </div>
+                          <Show when={terminal.lastEvaluation?.reason}>
+                            {(reason) => (
+                              <div class="mt-0.5 truncate text-11-regular leading-4 text-text-weak">
+                                {cleanText(reason())}
+                              </div>
+                            )}
+                          </Show>
                         </div>
                       </div>
-                      <div class="min-w-[72px] rounded border border-border-base/70 bg-background-base/60 px-2 py-1">
-                        <div class="text-[9px] uppercase leading-3 tracking-[0.08em] text-text-weaker">Time</div>
-                        <div class={numericHighlightClass("mt-1")} style={numericHighlightStyle("blue")}>
-                          {formatElapsed((terminal.completedAt ?? Date.now()) - terminal.startedAt)}/
-                          {terminal.constraints.maxTimeMinutes}m
+                      <div data-component="goal-terminal-banner-metrics" class="grid min-w-0 grid-cols-2 gap-2">
+                        <RunMetricPill
+                          label={language.t("session.goal.history.turns")}
+                          value={`${turns}/${maxTurns}`}
+                          detail={language.t("session.goal.history.evaluated")}
+                          tone={isAchieved ? "success" : "default"}
+                        />
+                        <RunMetricPill
+                          label={language.t("session.goal.history.elapsed")}
+                          value={elapsedLabel}
+                          detail={language.t("session.goal.history.runtime")}
+                        />
+                      </div>
+                      <div class="flex min-w-0 items-center justify-between gap-2 pt-0.5">
+                        <p
+                          data-component="goal-terminal-start-again"
+                          class="min-w-0 flex-1 truncate text-11-regular leading-4 text-text-weak"
+                        >
+                          {language.t("session.goal.terminal.startAgainHint")}
+                        </p>
+                        <div data-component="goal-terminal-reset-state" class="shrink-0">
+                          <ActionButton
+                            label={language.t("session.goal.action.resetState")}
+                            variant="ghost"
+                            busy={busy() === "fresh"}
+                            disabled={busy() !== null || !props.sessionID}
+                            class="h-7 px-2 text-11-medium"
+                            title={language.t("session.goal.action.resetStateHint")}
+                            onClick={() => void resetGoalState()}
+                          />
                         </div>
                       </div>
                     </div>
-                    <div data-component="goal-terminal-reset-state" class="shrink-0">
-                      <ActionButton
-                        label={language.t("session.goal.action.resetState")}
-                        variant="ghost"
-                        busy={busy() === "fresh"}
-                        disabled={busy() !== null || !props.sessionID}
-                        class="h-7 border border-border-base/80 bg-background-base/70 px-2 text-11-medium text-text-base hover:border-amber-200/45 hover:bg-amber-400/10"
-                        title={language.t("session.goal.action.resetStateHint")}
-                        onClick={() => void resetGoalState()}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <p
-                  data-component="goal-terminal-start-again"
-                  class="mb-3 px-1 text-11-regular leading-4 text-text-weak"
-                >
-                  {language.t("session.goal.terminal.startAgainHint")}
-                </p>
-                </>
-              )}
+                  </GoalConsoleSection>
+                )
+              }}
             </Show>
               </section>
               <Show when={controlError()}>

@@ -1050,13 +1050,44 @@ describe("goal panel mission-control contracts", () => {
   test("live run-order delete removes only pending steps through the chain command", async () => {
     const src = await goalPanelSource()
     expect(src).toContain("const removeLiveChainStep = async (index: number) => {")
-    expect(src).toContain("if (index <= runningStepIndex()) return false")
+    // v0.7.3 — the original guard is now extended with a
+    // terminal-state escape hatch. The substring
+    // `index <= runningStepIndex()` is still present (the
+    // in-flight non-terminal case still blocks deletion).
+    expect(src).toContain("index <= runningStepIndex()")
     expect(src).toContain('sendGoalCommand("chain", `chain remove ${index + 1}`)')
     expect(src).toContain("if (liveGoal()) return void removeLiveChainStep(index)")
     expect(src).toContain("removeDraftStep(step.id)")
     expect(src).toContain('aria-label={liveGoal() ? "Remove pending step" : "Remove"}')
     expect(src).toContain("disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}")
     expect(src).toContain("onClick={() => removeVisibleStep(step, i())}")
+  })
+
+  test("live run-order delete permits deleting a done step when the run is terminal (v0.7.3)", async () => {
+    // v0.7.3 / audit June 2026: the original guard at
+    // `removeLiveChainStep` blocked deletion of `index <= runningStepIndex()`
+    // unconditionally. When the active goal is `achieved` or `cleared`
+    // the run is terminal, the chain is not advancing further, and
+    // the user should be able to delete any step (including the
+    // running one — the chain isn't going to use it).
+    //
+    // PRE-FIX: the test below fails because the production source has
+    // `if (index <= runningStepIndex()) return false` with no escape.
+    // POST-FIX: the source has the original guard PLUS a terminal-state
+    // escape hatch — the guard's return condition is augmented with
+    // a liveRunStatus() check that exempts `achieved` and `cleared`.
+    const src = await goalPanelSource()
+    // The original guard is still present (the in-flight non-terminal
+    // case must still block deletion — we don't want users to delete
+    // the step the engine is currently driving).
+    expect(src).toContain("index <= runningStepIndex()")
+    // The escape hatch: the guard's return condition must include
+    // a check against `achieved` or `cleared`. We assert both
+    // substrings appear in proximity to `runningStepIndex()`.
+    const guardIndex = src.indexOf("index <= runningStepIndex()")
+    expect(guardIndex).toBeGreaterThan(0)
+    const window = src.slice(guardIndex, guardIndex + 200)
+    expect(window).toMatch(/achieved|cleared/)
   })
 
   test("live chain reader preserves model and skill pins for chained rows", async () => {
