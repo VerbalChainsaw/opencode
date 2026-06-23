@@ -625,6 +625,11 @@ function GoalConsoleSection(props: {
   title: string
   subtitle?: string
   class?: string
+  accent?: {
+    style: JSX.CSSProperties
+    headerStyle: JSX.CSSProperties
+    markerStyle: JSX.CSSProperties
+  }
   children: JSX.Element
 }) {
   // Single inline-style accent system. Inline is the source of truth because
@@ -729,7 +734,7 @@ function GoalConsoleSection(props: {
   // HMR can keep a stale component instance whose zone no longer exists in the
   // current accent map (e.g. after a zone rename). Fall back to chain-builder
   // so the app survives the mismatch instead of white-screening.
-  const accent = accentByZone[props.zone] ?? accentByZone["chain-builder"]
+  const accent = props.accent ?? accentByZone[props.zone] ?? accentByZone["chain-builder"]
 
   return (
     <section
@@ -1169,7 +1174,7 @@ function runningMetricValueClass(tone: "time" | "turns" | "step") {
   return "text-emerald-50"
 }
 
-function runningInlinePanelStyle(tone: "stop" | "steer" | "handoff" | "activity"): JSX.CSSProperties {
+function runningInlinePanelStyle(tone: "stop" | "steer" | "handoff" | "activity" | "evidence" | "steering"): JSX.CSSProperties {
   if (tone === "stop") {
     return {
       "background-color": "rgba(124, 45, 18, 0.18)",
@@ -1189,6 +1194,20 @@ function runningInlinePanelStyle(tone: "stop" | "steer" | "handoff" | "activity"
       "background-color": "rgba(67, 56, 202, 0.16)",
       "border-color": "rgba(129, 140, 248, 0.24)",
       "box-shadow": "inset 3px 0 0 rgba(129, 140, 248, 0.52), inset 0 1px 0 rgba(255,255,255,0.03)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "evidence") {
+    return {
+      "background-color": "rgba(30, 58, 138, 0.18)",
+      "border-color": "rgba(96, 165, 250, 0.22)",
+      "box-shadow": "inset 3px 0 0 rgba(96, 165, 250, 0.50), inset 0 1px 0 rgba(255,255,255,0.03)",
+    } satisfies JSX.CSSProperties
+  }
+  if (tone === "steering") {
+    return {
+      "background-color": "rgba(67, 20, 88, 0.18)",
+      "border-color": "rgba(192, 132, 252, 0.22)",
+      "box-shadow": "inset 3px 0 0 rgba(192, 132, 252, 0.50), inset 0 1px 0 rgba(255,255,255,0.03)",
     } satisfies JSX.CSSProperties
   }
   return {
@@ -1268,6 +1287,63 @@ function terminalOutcomeTone(status: GoalState["status"]): { class: string; styl
       "background-color": "rgba(14, 165, 233, 0.24)",
       color: "rgb(224, 242, 254)",
     },
+  }
+}
+
+function terminalResultAccent(status: GoalState["status"]): {
+  style: JSX.CSSProperties
+  headerStyle: JSX.CSSProperties
+  markerStyle: JSX.CSSProperties
+} {
+  if (status === "achieved") {
+    return {
+      style: {
+        "border-color": "rgba(52, 211, 153, 0.32)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14), 0 0 24px rgba(16, 185, 129, 0.08)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(6, 78, 59, 0.42), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(52, 211, 153, 0.24)",
+      },
+      markerStyle: { "background-color": "rgb(110, 231, 183)" },
+    }
+  }
+  if (status === "cleared") {
+    return {
+      style: {
+        "border-color": "rgba(251, 146, 60, 0.30)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14), 0 0 24px rgba(249, 115, 22, 0.06)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(124, 45, 18, 0.38), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(251, 146, 60, 0.22)",
+      },
+      markerStyle: { "background-color": "rgb(253, 186, 116)" },
+    }
+  }
+  if (status === "paused") {
+    return {
+      style: {
+        "border-color": "rgba(251, 191, 36, 0.28)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14), 0 0 24px rgba(245, 158, 11, 0.06)",
+      },
+      headerStyle: {
+        "background": "linear-gradient(90deg, rgba(120, 53, 15, 0.36), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(251, 191, 36, 0.20)",
+      },
+      markerStyle: { "background-color": "rgb(252, 211, 77)" },
+    }
+  }
+  return {
+    style: {
+      "border-color": "rgba(148, 163, 184, 0.24)",
+      "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14)",
+    },
+    headerStyle: {
+      "background": "linear-gradient(90deg, rgba(39, 39, 42, 0.88), rgba(24, 24, 27, 0.94))",
+      "border-color": "rgba(148, 163, 184, 0.20)",
+    },
+    markerStyle: { "background-color": "rgba(203, 213, 225, 0.8)" },
   }
 }
 
@@ -1403,6 +1479,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   // of lagging the 2s poll (and risking a stale command). Cleared once the
   // polled status catches up — or reverted if the command failed.
   const [optimisticStatus, setOptimisticStatus] = createSignal<"active" | "paused" | null>(null)
+  const [now, setNow] = createSignal(Date.now())
   const [controlError, setControlError] = createSignal<string | null>(null)
   const [confirmingClear, setConfirmingClear] = createSignal(false)
   const [newCommand, setNewCommand] = createSignal("")
@@ -1461,6 +1538,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     ].join("\n")
   }
   const [historyOpen, setHistoryOpen] = createSignal(false)
+  const [activityExpanded, setActivityExpanded] = createSignal(false)
+  const [confirmingReset, setConfirmingReset] = createSignal(false)
   const [selectedHistoryGoalID, setSelectedHistoryGoalID] = createSignal<string | null>(null)
 
   createEffect(() => {
@@ -1486,6 +1565,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       objective: chainDraft.objective,
     })
   })
+
+  let errorDismissTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    const err = controlError()
+    clearTimeout(errorDismissTimer)
+    if (err) {
+      errorDismissTimer = setTimeout(() => setControlError(null), 8000)
+    }
+  })
+  onCleanup(() => clearTimeout(errorDismissTimer))
 
   const ignoreRefreshError = (_error?: unknown) => undefined
 
@@ -1539,6 +1628,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   onMount(() => {
     refreshSkills()
     const tick = () => {
+      setNow(Date.now())
       void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)
       void readChain(sdk).then(setChain).catch(ignoreRefreshError)
       refreshHandoff()
@@ -1950,7 +2040,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (agentModel?.providerID && agentModel.modelID) {
       return modelLabel(agentModel) || `${agentModel.providerID} / ${agentModel.modelID}`
     }
-    return "Session default model"
+    return language.t("session.goal.template.sessionDefaultModelFallback")
   }
   const sessionAgentLabel = () =>
     agentOptions().find((option) => option.mode === "primary")?.label ||
@@ -1959,12 +2049,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const stepRuntimeAgentLabel = (step: GoalChainDraftStep) => agentLabel(step.agent) || sessionAgentLabel()
   const stepRuntimeSkillLabel = (step: GoalChainDraftStep) => {
     const count = step.skills?.length ?? 0
-    if (count <= 0) return "No pinned skills"
-    if (count === 1) return step.skills?.[0] ?? "1 skill"
-    return `${count} skills`
+    if (count <= 0) return language.t("session.goal.template.noPinnedSkills")
+    if (count === 1) return step.skills?.[0] ?? language.t("session.goal.template.skillCount", { count: 1 })
+    return language.t("session.goal.template.skillCount", { count })
   }
   const stepRuntimeTitle = (step: GoalChainDraftStep) => {
-    const skills = step.skills?.length ? step.skills.join(", ") : "no pinned skills"
+    const skills = step.skills?.length ? step.skills.join(", ") : language.t("session.goal.template.noPinnedSkills")
     return `${stepRuntimeAgentLabel(step)}; ${stepRuntimeModelLabel(step)}; ${skills}; ${language.t(completionRuleKey(step))}`
   }
   const skillOptionsForDraft = createMemo(() => {
@@ -2172,7 +2262,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       setActionDraft("sourceID", id)
       setActionDraft("id", id)
     } else {
-      setSaveError("Save failed — check session or retry")
+      setSaveError(language.t("session.goal.template.saveFailed"))
       setTimeout(() => setSaveError(""), 4000)
     }
   }
@@ -2388,18 +2478,395 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
   }
 
-  const progressPct = createMemo(() => {
-    const s = state()
-    if (!s || s.constraints.maxTurns <= 0) return 0
-    return Math.min(100, Math.round((s.turnsEvaluated / s.constraints.maxTurns) * 100))
+  // 1-second elapsed ticker for live display (independent of 2s poll)
+  const [elapsedTick, setElapsedTick] = createSignal(Date.now())
+  const hasLiveGoal = createMemo(() => !!liveGoal())
+  let elapsedTickTimer: ReturnType<typeof setInterval> | undefined
+  createEffect(() => {
+    clearInterval(elapsedTickTimer)
+    if (hasLiveGoal()) {
+      elapsedTickTimer = setInterval(() => setElapsedTick(Date.now()), 1000)
+    }
   })
+  onCleanup(() => clearInterval(elapsedTickTimer))
 
-  const elapsedMinutes = createMemo(() => {
+  const progressElapsed = createMemo(() => {
     const s = state()
     if (!s) return 0
-    const end = s.completedAt ?? Date.now()
-    return Math.max(0, Math.round((end - s.startedAt) / 60_000))
+    return Math.max(0, (s.completedAt ?? (hasLiveGoal() ? elapsedTick() : now())) - s.startedAt)
   })
+
+  const progressPct = createMemo(() => {
+    const s = state()
+    if (!s) return 0
+    const turnsPct = s.constraints.maxTurns > 0
+      ? Math.round((s.turnsEvaluated / s.constraints.maxTurns) * 100)
+      : 0
+    const timePct = s.constraints.maxTimeMinutes > 0
+      ? Math.round((progressElapsed() / (s.constraints.maxTimeMinutes * 60_000)) * 100)
+      : 0
+    return Math.min(100, Math.max(turnsPct, timePct))
+  })
+
+  const progressDriver = createMemo<"turns" | "time" | null>(() => {
+    const s = state()
+    if (!s) return null
+    const turnsPct = s.constraints.maxTurns > 0
+      ? (s.turnsEvaluated / s.constraints.maxTurns) * 100 : 0
+    const timePct = s.constraints.maxTimeMinutes > 0
+      ? (progressElapsed() / (s.constraints.maxTimeMinutes * 60_000)) * 100 : 0
+    return timePct > turnsPct ? "time" : "turns"
+  })
+
+  const formatTokens = (n: number): string => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`
+    return String(n)
+  }
+
+  const burndownColor = (used: number, max: number): string => {
+    if (max <= 0) return "rgb(134, 239, 172)"
+    const pct = used / max
+    if (pct >= 0.9) return "rgb(248, 113, 113)"
+    if (pct >= 0.7) return "rgb(251, 191, 36)"
+    return "rgb(134, 239, 172)"
+  }
+
+  const burndownPct = (used: number, max: number): number =>
+    max > 0 ? Math.min(100, Math.round((used / max) * 100)) : 0
+
+  const elapsedMs = createMemo(() => {
+    const s = state()
+    if (!s) return 0
+    const end = s.completedAt ?? (hasLiveGoal() ? elapsedTick() : now())
+    return Math.max(0, end - s.startedAt)
+  })
+
+  const elapsedMinutes = createMemo(() => Math.round(elapsedMs() / 60_000))
+
+  const elapsedFormatted = createMemo(() => {
+    const ms = elapsedMs()
+    if (ms <= 0) return "0:00"
+    const totalSec = Math.round(ms / 1000)
+    const m = Math.floor(totalSec / 60)
+    const sec = totalSec % 60
+    return `${m}:${sec.toString().padStart(2, "0")}`
+  })
+
+  const lastEval = createMemo(() => state()?.lastEvaluation ?? null)
+  const evalHistory = createMemo(() => state()?.evaluationHistory ?? [])
+  const steeringNotes = createMemo((): Array<{ at: number; note: string }> => {
+    const raw = state()?.metadata?.steering
+    if (!Array.isArray(raw)) return []
+    return raw.filter(
+      (item): item is { at: number; note: string } =>
+        !!item && typeof item === "object" && typeof (item as { at?: unknown }).at === "number" && typeof (item as { note?: unknown }).note === "string",
+    )
+  })
+
+  const confidencePct = createMemo(() => {
+    const e = lastEval()
+    return e && typeof e.confidence === "number" ? Math.round(e.confidence * 100) : null
+  })
+
+  const confidenceColor = (pct: number): string => {
+    if (pct >= 80) return "rgb(134, 239, 172)"
+    if (pct >= 50) return "rgb(251, 191, 36)"
+    return "rgb(248, 113, 113)"
+  }
+
+  const [evidenceExpanded, setEvidenceExpanded] = createSignal(false)
+
+  const turnVelocity = createMemo(() => {
+    const s = state()
+    if (!s || s.turnsEvaluated < 1) return null
+    const mins = elapsedMs() / 60_000
+    if (mins < 0.1) return null
+    return s.turnsEvaluated / mins
+  })
+
+  const etaFormatted = createMemo<string | null>(() => {
+    const s = state()
+    const v = turnVelocity()
+    if (!s || !v || v <= 0 || !hasLiveGoal()) return null
+    const remaining = s.constraints.maxTurns - s.turnsEvaluated
+    if (remaining <= 0) return null
+    const etaMin = remaining / v
+    if (etaMin < 1) return "<1m"
+    if (etaMin >= 60) return `~${Math.round(etaMin / 60)}h`
+    return `~${Math.round(etaMin)}m`
+  })
+
+  const sparklinePoints = createMemo(() => {
+    const h = evalHistory()
+    if (h.length < 2) return null
+    const points = h
+      .map((e) => (typeof e.confidence === "number" ? e.confidence : null))
+      .filter((v): v is number => v !== null)
+    if (points.length < 2) return null
+    const w = 64
+    const ht = 16
+    const pad = 1.5
+    const step = w / (points.length - 1)
+    return points.map((p, i) => `${(i * step).toFixed(1)},${(pad + (1 - p) * (ht - 2 * pad)).toFixed(1)}`).join(" ")
+  })
+
+  const [reportCopied, setReportCopied] = createSignal(false)
+
+  const copyGoalReport = () => {
+    const s = state()
+    if (!s) return
+    const lines: string[] = []
+    lines.push(`## Goal Report`)
+    lines.push(`**Condition:** ${cleanText(s.condition)}`)
+    lines.push(`**Status:** ${s.status}`)
+    lines.push(`**Turns:** ${s.turnsEvaluated}/${s.constraints.maxTurns}`)
+    lines.push(`**Time:** ${elapsedFormatted()}/${s.constraints.maxTimeMinutes}m`)
+    lines.push(`**Tokens:** ${formatTokens(s.tokensUsed)}/${formatTokens(s.constraints.maxTokens)}`)
+    lines.push(`**Progress:** ${progressPct()}%`)
+    const v = turnVelocity()
+    if (v !== null) lines.push(`**Velocity:** ${v.toFixed(1)} turns/min`)
+    const eta = etaFormatted()
+    if (eta) lines.push(`**ETA:** ${eta}`)
+    const eff = tokenEfficiency()
+    if (eff !== null) lines.push(`**Token Efficiency:** ${formatTokens(eff)} tok/turn`)
+    const burn = tokenBurnRate()
+    if (burn !== null) lines.push(`**Token Burn Rate:** ${formatTokens(burn)} tok/min`)
+    const peak = bestConfidence()
+    if (peak !== null) lines.push(`**Peak Confidence:** ${peak}%`)
+    const delta = confidenceDelta()
+    if (delta !== null) lines.push(`**Confidence Delta:** ${delta > 0 ? "+" : ""}${delta}%`)
+    const health = goalHealth()
+    if (health) lines.push(`**Health:** ${health.label} (${health.score}/100)`)
+    const sr = evalSuccessRate()
+    if (sr !== null) lines.push(`**Success Rate:** ${sr}%`)
+    const streak = evalStreak()
+    if (streak) lines.push(`**Streak:** ${streak.count}× ${streak.type === "met" ? "met" : "not met"}`)
+    const vol = confidenceVolatility()
+    if (vol) lines.push(`**Volatility:** ${vol}`)
+    const avgCy = avgCycleTime()
+    if (avgCy !== null) lines.push(`**Avg Cycle Time:** ${formatCycleDuration(avgCy)}`)
+    const tokForecast = tokenExhaustForecast()
+    if (tokForecast) lines.push(`**Token Exhaustion:** ${tokForecast}`)
+    if (s.lastEvaluation) {
+      lines.push(``)
+      lines.push(`### Last Evaluation`)
+      lines.push(`- **Met:** ${s.lastEvaluation.met ? "Yes" : "No"}`)
+      lines.push(`- **Reason:** ${cleanText(s.lastEvaluation.reason)}`)
+      if (typeof s.lastEvaluation.confidence === "number")
+        lines.push(`- **Confidence:** ${Math.round(s.lastEvaluation.confidence * 100)}%`)
+      lines.push(`- **Evaluator:** ${s.lastEvaluation.evaluatorType}`)
+      if (s.lastEvaluation.blocked) lines.push(`- **Blocked:** Yes`)
+    }
+    if (s.evaluationHistory.length > 0) {
+      lines.push(``)
+      lines.push(`### Evaluation History (${s.evaluationHistory.length} cycles)`)
+      for (const cycle of s.evaluationHistory) {
+        const conf = typeof cycle.confidence === "number" ? ` (${Math.round(cycle.confidence * 100)}%)` : ""
+        lines.push(`- ${cycle.met ? "✓" : "✗"} ${cleanText(cycle.reason)}${conf}`)
+      }
+    }
+    void navigator.clipboard.writeText(lines.join("\n"))
+      .then(() => {
+        setReportCopied(true)
+        setTimeout(() => setReportCopied(false), 2000)
+      })
+      .catch(() => {})
+  }
+
+  const isCritical = (used: number, max: number): boolean => max > 0 && used / max >= 0.9
+
+  const confidenceTrend = createMemo<"up" | "down" | "flat" | null>(() => {
+    const h = evalHistory()
+    if (h.length < 2) return null
+    const window = h.slice(-4)
+    const confs = window.map((e) => e.confidence).filter((v): v is number => typeof v === "number")
+    if (confs.length < 2) return null
+    const first = confs.slice(0, Math.ceil(confs.length / 2))
+    const second = confs.slice(Math.ceil(confs.length / 2))
+    const avgFirst = first.reduce((a, b) => a + b, 0) / first.length
+    const avgSecond = second.reduce((a, b) => a + b, 0) / second.length
+    if (avgSecond > avgFirst + 0.02) return "up"
+    if (avgSecond < avgFirst - 0.02) return "down"
+    return "flat"
+  })
+
+  const trendArrow = (trend: "up" | "down" | "flat"): string =>
+    trend === "up" ? "↗" : trend === "down" ? "↘" : "→"
+
+  const trendColor = (trend: "up" | "down" | "flat"): string =>
+    trend === "up" ? "rgb(134, 239, 172)" : trend === "down" ? "rgb(248, 113, 113)" : "rgb(148, 163, 184)"
+
+  const goalHealth = createMemo<{ score: number; label: string; color: string } | null>(() => {
+    const s = state()
+    if (!s || !hasLiveGoal()) return null
+    if (s.lastEvaluation?.blocked) return { score: 15, label: "At risk", color: "rgb(248, 113, 113)" }
+    const turnHead = s.constraints.maxTurns > 0
+      ? 1 - s.turnsEvaluated / s.constraints.maxTurns : 1
+    const timeHead = s.constraints.maxTimeMinutes > 0
+      ? 1 - (elapsedMs() / 60_000) / s.constraints.maxTimeMinutes : 1
+    const tokenHead = s.constraints.maxTokens > 0
+      ? 1 - s.tokensUsed / s.constraints.maxTokens : 1
+    const headroom = Math.min(turnHead, timeHead, tokenHead)
+    const conf = typeof s.lastEvaluation?.confidence === "number" ? s.lastEvaluation.confidence : 0.5
+    const trend = confidenceTrend()
+    const trendBonus = trend === "up" ? 0.1 : trend === "down" ? -0.1 : 0
+    const score = Math.max(0, Math.min(100, Math.round(
+      headroom * 50 + (conf + trendBonus) * 40 + (turnVelocity() !== null && turnVelocity()! > 0 ? 10 : 0),
+    )))
+    if (score >= 60) return { score, label: "Healthy", color: "rgb(134, 239, 172)" }
+    if (score >= 35) return { score, label: "Fair", color: "rgb(251, 191, 36)" }
+    return { score, label: "At risk", color: "rgb(248, 113, 113)" }
+  })
+
+  const evalCycleDurations = createMemo(() => {
+    const h = evalHistory()
+    if (h.length < 2) return []
+    return h.map((cycle, i) => {
+      if (i === 0) return null
+      const prev = h[i - 1]
+      if (!prev) return null
+      const delta = cycle.timestamp - prev.timestamp
+      return delta > 0 ? delta : null
+    })
+  })
+
+  const formatCycleDuration = (ms: number): string => {
+    if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+    return `${(ms / 60_000).toFixed(1)}m`
+  }
+
+  const elapsedSinceLastEval = createMemo<number | null>(() => {
+    const e = lastEval()
+    if (!e || !hasLiveGoal()) return null
+    return Math.max(0, now() - e.timestamp)
+  })
+
+  const formatSinceEval = (ms: number): string => {
+    if (ms < 90_000) return `${Math.round(ms / 1000)}s ago`
+    return `${Math.round(ms / 60_000)}m ago`
+  }
+
+  const tokenEfficiency = createMemo<number | null>(() => {
+    const s = state()
+    if (!s || s.turnsEvaluated < 1) return null
+    return Math.round(s.tokensUsed / s.turnsEvaluated)
+  })
+
+  const tokenBurnRate = createMemo<number | null>(() => {
+    const s = state()
+    if (!s || !hasLiveGoal()) return null
+    const mins = elapsedMs() / 60_000
+    if (mins < 0.1) return null
+    return Math.round(s.tokensUsed / mins)
+  })
+
+  const confidenceDelta = createMemo<number | null>(() => {
+    const h = evalHistory()
+    if (h.length < 2) return null
+    const a = h[h.length - 2]?.confidence
+    const b = h[h.length - 1]?.confidence
+    if (typeof a !== "number" || typeof b !== "number") return null
+    return Math.round((b - a) * 100)
+  })
+
+  const bestConfidence = createMemo<number | null>(() => {
+    const h = evalHistory()
+    if (h.length === 0) return null
+    let best = -1
+    for (const e of h) {
+      if (typeof e.confidence === "number" && e.confidence > best) best = e.confidence
+    }
+    return best >= 0 ? Math.round(best * 100) : null
+  })
+
+  const smartStatus = createMemo<string | null>(() => {
+    const s = state()
+    if (!s || !hasLiveGoal()) return null
+    if (s.lastEvaluation?.blocked) return language.t("session.goal.smart.blocked")
+    if (liveRunStalled()) return language.t("session.goal.smart.stalled")
+    if (s.status === "paused") return language.t("session.goal.smart.paused")
+    const turnRatio = s.constraints.maxTurns > 0 ? s.turnsEvaluated / s.constraints.maxTurns : 0
+    const timeRatio = s.constraints.maxTimeMinutes > 0 ? (elapsedMs() / 60_000) / s.constraints.maxTimeMinutes : 0
+    const tokenRatio = s.constraints.maxTokens > 0 ? s.tokensUsed / s.constraints.maxTokens : 0
+    if (turnRatio >= 0.9 || timeRatio >= 0.9 || tokenRatio >= 0.9) return language.t("session.goal.smart.critical")
+    const trend = confidenceTrend()
+    if (trend === "down") return language.t("session.goal.smart.declining")
+    if (trend === "up") return language.t("session.goal.smart.improving")
+    if (s.turnsEvaluated === 0) return language.t("session.goal.smart.starting")
+    return language.t("session.goal.smart.running")
+  })
+
+  const isBlocked = createMemo(() => !!state()?.lastEvaluation?.blocked && hasLiveGoal())
+
+  const evalSuccessRate = createMemo<number | null>(() => {
+    const h = evalHistory()
+    if (h.length < 2) return null
+    const met = h.filter((e) => e.met).length
+    return Math.round((met / h.length) * 100)
+  })
+
+  const evalStreak = createMemo<{ count: number; type: "met" | "notMet" } | null>(() => {
+    const h = evalHistory()
+    if (h.length < 2) return null
+    const last = h[h.length - 1]
+    if (!last) return null
+    const target = last.met
+    let count = 0
+    for (let i = h.length - 1; i >= 0; i--) {
+      if (h[i]!.met === target) count++
+      else break
+    }
+    if (count < 2) return null
+    return { count, type: target ? "met" : "notMet" }
+  })
+
+  const formatForecastMins = (minsLeft: number): string =>
+    minsLeft < 1 ? "<1m" : minsLeft >= 60 ? `~${Math.round(minsLeft / 60)}h` : `~${Math.round(minsLeft)}m`
+
+  const tokenExhaustForecast = createMemo<string | null>(() => {
+    const s = state()
+    if (!s || !hasLiveGoal()) return null
+    const mins = elapsedMs() / 60_000
+    if (mins < 0.1 || s.tokensUsed <= 0 || s.constraints.maxTokens <= 0) return null
+    const remaining = s.constraints.maxTokens - s.tokensUsed
+    if (remaining <= 0) return null
+    const rate = s.tokensUsed / mins
+    return rate > 0 ? formatForecastMins(remaining / rate) : null
+  })
+
+  const confidenceVolatility = createMemo<"low" | "med" | "high" | null>(() => {
+    const h = evalHistory()
+    const confs = h.map((e) => e.confidence).filter((v): v is number => typeof v === "number")
+    if (confs.length < 3) return null
+    const mean = confs.reduce((a, b) => a + b, 0) / confs.length
+    const variance = confs.reduce((sum, c) => sum + (c - mean) ** 2, 0) / confs.length
+    const stddev = Math.sqrt(variance)
+    if (stddev < 0.05) return "low"
+    if (stddev < 0.15) return "med"
+    return "high"
+  })
+  const volatilityColor = (v: "low" | "med" | "high"): string =>
+    v === "low" ? "rgb(134, 239, 172)" : v === "med" ? "rgb(251, 191, 36)" : "rgb(248, 113, 113)"
+
+  const avgCycleTime = createMemo<number | null>(() => {
+    const durations = evalCycleDurations()
+    const valid = durations.filter((d): d is number => typeof d === "number" && d > 0)
+    if (valid.length === 0) return null
+    return valid.reduce((a, b) => a + b, 0) / valid.length
+  })
+
+  const constraintHeadroom = createMemo(() => {
+    const s = state()
+    if (!s || !hasLiveGoal()) return null
+    const turns = s.constraints.maxTurns > 0 ? Math.max(0, s.constraints.maxTurns - s.turnsEvaluated) : null
+    const timeMins = s.constraints.maxTimeMinutes > 0 ? Math.max(0, s.constraints.maxTimeMinutes - elapsedMs() / 60_000) : null
+    const tokens = s.constraints.maxTokens > 0 ? Math.max(0, s.constraints.maxTokens - s.tokensUsed) : null
+    if (turns === null && timeMins === null && tokens === null) return null
+    return { turns, timeMins, tokens }
+  })
+
+  const [shortcutHelpOpen, setShortcutHelpOpen] = createSignal(false)
 
   const selectedHistoryRun = createMemo(
     () => archive().find((run) => run.summary.goalID === selectedHistoryGoalID()) ?? null,
@@ -2472,8 +2939,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   const liveRunStatus = createMemo<GoalState["status"] | null>(() => optimisticStatus() ?? liveGoal()?.status ?? null)
   const latestActivityAt = createMemo(() => activity()[0]?.at ?? null)
-  const liveRunStalled = createMemo(() => isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), Date.now()))
-  const liveRunIdleMinutes = createMemo(() => goalIdleMinutes(latestActivityAt(), Date.now()))
+  const liveRunStalled = createMemo(() => isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), now()))
+  const liveRunIdleMinutes = createMemo(() => goalIdleMinutes(latestActivityAt(), now()))
   const stepRunState = (index: number): ChainStepRunState => {
     if (!liveGoal()) return "draft"
     const current = runningStepIndex()
@@ -2537,6 +3004,45 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     setSteerOpen(false)
     setHandoffOpen(false)
   }
+
+  const handleGlobalKeyDown = (e: KeyboardEvent) => {
+    const el = e.target as HTMLElement | null
+    if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable) return
+    if (e.key === "Escape") {
+      if (shortcutHelpOpen()) {
+        e.preventDefault()
+        setShortcutHelpOpen(false)
+        return
+      }
+      if (confirmingClear() || steerOpen() || handoffOpen()) {
+        e.preventDefault()
+        closeRuntimePanel()
+        return
+      }
+      if (confirmingReset()) {
+        e.preventDefault()
+        setConfirmingReset(false)
+        return
+      }
+    }
+    if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault()
+      setShortcutHelpOpen((v) => !v)
+      return
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p" && liveGoal() && busy() === null && props.sessionID) {
+      e.preventDefault()
+      const action = pauseResume()
+      if (!action) return
+      setOptimisticStatus(action === "pause" ? "paused" : "active")
+      void (action === "pause" ? pauseGoal() : runAction("resume"))
+        .then((ok) => { if (!ok) setOptimisticStatus(null) })
+        .catch(() => setOptimisticStatus(null))
+    }
+  }
+  onMount(() => document.addEventListener("keydown", handleGlobalKeyDown))
+  onCleanup(() => document.removeEventListener("keydown", handleGlobalKeyDown))
+
   const chainRunStateLabel = createMemo(() => {
     const status = liveRunStatus()
     if (status === "active") return liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton") : language.t("session.goal.chainBuilder.runningButton")
@@ -2549,7 +3055,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return language.t("session.goal.chainBuilder.title")
   })
   const chainRunStateSubtitle = createMemo(() => {
-    if (liveGoal()) return "Progress, controls, and step status stay in this workspace."
+    if (liveGoal()) return language.t("session.goal.chainBuilder.runningSubtitle")
     return language.t("session.goal.chainBuilder.subtitle")
   })
 
@@ -2561,7 +3067,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const opt = optimisticStatus()
     if (!opt) return
     const real = state()?.status
-    if (real === "active" || real === "paused" || real === "achieved" || real === "cleared") {
+    if (real === opt || real === "achieved" || real === "cleared") {
       setOptimisticStatus(null)
     }
   })
@@ -2572,6 +3078,48 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
   return (
     <div class="flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto" aria-label={language.t("session.tab.goal")}>
+      <style>{`@keyframes goal-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }`}</style>
+      <Show when={shortcutHelpOpen()}>
+        <div
+          data-component="goal-shortcut-overlay"
+          class="absolute inset-0 z-50 flex items-center justify-center"
+          style={{ "background-color": "rgba(0, 0, 0, 0.6)", "backdrop-filter": "blur(4px)" }}
+          onClick={() => setShortcutHelpOpen(false)}
+        >
+          <div
+            class="w-72 rounded-xl border p-4"
+            style={{ "background-color": "rgba(15, 23, 42, 0.95)", "border-color": "rgba(148, 163, 184, 0.2)" }}
+            onClick={(e: MouseEvent) => e.stopPropagation()}
+          >
+            <div class="mb-3 flex items-center justify-between">
+              <span class="text-[12px] font-bold uppercase tracking-[0.08em] text-text-base">
+                {language.t("session.goal.shortcuts.title")}
+              </span>
+              <button
+                type="button"
+                class="rounded px-1.5 py-0.5 text-[10px] text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
+                onClick={() => setShortcutHelpOpen(false)}
+              >
+                Esc
+              </button>
+            </div>
+            <div class="grid gap-1.5">
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="text-text-weak">{language.t("session.goal.shortcuts.pauseResume")}</span>
+                <kbd class="rounded border border-slate-500/30 bg-slate-700/40 px-1.5 py-0.5 font-mono text-[10px] text-text-weaker">Ctrl+P</kbd>
+              </div>
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="text-text-weak">{language.t("session.goal.shortcuts.closePanel")}</span>
+                <kbd class="rounded border border-slate-500/30 bg-slate-700/40 px-1.5 py-0.5 font-mono text-[10px] text-text-weaker">Esc</kbd>
+              </div>
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="text-text-weak">{language.t("session.goal.shortcuts.showHelp")}</span>
+                <kbd class="rounded border border-slate-500/30 bg-slate-700/40 px-1.5 py-0.5 font-mono text-[10px] text-text-weaker">?</kbd>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
       <Switch>
         <Match when={!props.goal.store.loaded}>
           <div class="flex-1 flex items-center justify-center text-12-regular text-text-weak">
@@ -2608,6 +3156,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 return (
                   <GoalConsoleSection
                     zone="terminal-result"
+                    accent={terminalResultAccent(terminal.status)}
                     title={language.t("session.goal.lastResult")}
                     subtitle={language.t(
                       isAchieved
@@ -2644,7 +3193,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </Show>
                         </div>
                       </div>
-                      <div data-component="goal-terminal-banner-metrics" class="grid min-w-0 grid-cols-2 gap-2">
+                      <div data-component="goal-terminal-banner-metrics" class="grid min-w-0 grid-cols-4 gap-2">
                         <RunMetricPill
                           label={language.t("session.goal.history.turns")}
                           value={`${turns}/${maxTurns}`}
@@ -2656,24 +3205,103 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           value={elapsedLabel}
                           detail={language.t("session.goal.history.runtime")}
                         />
+                        <RunMetricPill
+                          label={language.t("session.goal.metric.tokens")}
+                          value={formatTokens(terminal.tokensUsed)}
+                          detail={language.t("session.goal.terminal.consumed")}
+                        />
+                        <RunMetricPill
+                          label={language.t("session.goal.evidence.history")}
+                          value={String(terminal.evaluationHistory.length)}
+                          detail={language.t("session.goal.terminal.cycles")}
+                          tone={isAchieved ? "success" : "default"}
+                        />
                       </div>
+                      <Show when={terminal.lastEvaluation}>
+                        {(finalEval) => (
+                          <div
+                            data-component="goal-terminal-final-evidence"
+                            class="rounded-md border px-2.5 py-1.5"
+                            style={{
+                              "background-color": isAchieved ? "rgba(16, 185, 129, 0.08)" : "rgba(251, 191, 36, 0.08)",
+                              "border-color": isAchieved ? "rgba(110, 231, 183, 0.18)" : "rgba(251, 191, 36, 0.18)",
+                            }}
+                          >
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="text-[9px] font-bold uppercase tracking-[0.08em] text-text-weaker">
+                                {language.t("session.goal.terminal.finalEval")}
+                              </span>
+                              <div class="flex items-center gap-2">
+                                <Show when={typeof finalEval().confidence === "number"}>
+                                  {(() => {
+                                    const pct = () => Math.round((finalEval().confidence ?? 0) * 100)
+                                    return (
+                                      <span class="text-[10px] font-bold tabular-nums" style={{ color: confidenceColor(pct()) }}>
+                                        {pct()}%
+                                      </span>
+                                    )
+                                  })()}
+                                </Show>
+                                <span
+                                  class={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] ${finalEval().met ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200" : "border-amber-400/40 bg-amber-500/15 text-amber-200"}`}
+                                >
+                                  <span class={`h-1.5 w-1.5 rounded-full ${finalEval().met ? "bg-emerald-400" : "bg-amber-400"}`} aria-hidden />
+                                  {finalEval().met ? language.t("session.goal.evidence.met") : language.t("session.goal.evidence.notMet")}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </Show>
                       <div class="flex min-w-0 items-center justify-between gap-2 pt-0.5">
                         <p
                           data-component="goal-terminal-start-again"
                           class="min-w-0 flex-1 truncate text-11-regular leading-4 text-text-weak"
                         >
-                          {language.t("session.goal.terminal.startAgainHint")}
+                          {confirmingReset()
+                            ? language.t("session.goal.action.confirmResetHint")
+                            : language.t("session.goal.terminal.startAgainHint")}
                         </p>
-                        <div data-component="goal-terminal-reset-state" class="shrink-0">
-                          <ActionButton
-                            label={language.t("session.goal.action.resetState")}
-                            variant="ghost"
-                            busy={busy() === "fresh"}
-                            disabled={busy() !== null || !props.sessionID}
-                            class="h-7 px-2 text-11-medium"
-                            title={language.t("session.goal.action.resetStateHint")}
-                            onClick={() => void resetGoalState()}
-                          />
+                        <div data-component="goal-terminal-reset-state" class="flex shrink-0 items-center gap-1">
+                          <Show when={confirmingReset()}>
+                            <ActionButton
+                              label={language.t("session.goal.action.confirmReset")}
+                              variant="primary"
+                              tone="danger"
+                              busy={busy() === "fresh"}
+                              disabled={busy() !== null || !props.sessionID}
+                              class="h-7 px-2 text-11-medium"
+                              onClick={() => {
+                                void resetGoalState().then(() => setConfirmingReset(false))
+                              }}
+                            />
+                            <ActionButton
+                              label={language.t("session.goal.action.cancel")}
+                              variant="ghost"
+                              disabled={busy() !== null}
+                              class="h-7 px-2 text-11-medium"
+                              onClick={() => setConfirmingReset(false)}
+                            />
+                          </Show>
+                          <Show when={!confirmingReset()}>
+                            <button
+                              type="button"
+                              class="h-7 shrink-0 rounded px-2 text-[10px] font-semibold text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
+                              title={language.t("session.goal.report.copy")}
+                              onClick={copyGoalReport}
+                            >
+                              {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
+                            </button>
+                            <ActionButton
+                              label={language.t("session.goal.action.resetState")}
+                              variant="ghost"
+                              busy={busy() === "fresh"}
+                              disabled={busy() !== null || !props.sessionID}
+                              class="h-7 px-2 text-11-medium"
+                              title={language.t("session.goal.action.resetStateHint")}
+                              onClick={() => setConfirmingReset(true)}
+                            />
+                          </Show>
                         </div>
                       </div>
                     </div>
@@ -2687,9 +3315,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <div
                     data-component="goal-control-error"
                     role="alert"
-                    class="xl:col-span-2 rounded-md border border-red-400/35 bg-red-400/8 px-3 py-2 text-12-regular text-red-100/86"
+                    class="xl:col-span-2 flex items-start gap-2 rounded-md border border-red-400/35 bg-red-400/8 px-3 py-2 text-12-regular text-red-100/86"
                   >
-                    {error()}
+                    <span class="min-w-0 flex-1">{error()}</span>
+                    <button
+                      type="button"
+                      aria-label={language.t("session.goal.action.cancel")}
+                      class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold text-red-200/70 transition hover:bg-red-400/15 hover:text-red-100"
+                      onClick={() => setControlError(null)}
+                    >
+                      ×
+                    </button>
                   </div>
                 )}
               </Show>
@@ -2774,7 +3410,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       <div class="flex items-center gap-1">
                         <Show when={hasRunnableChain()}>
                           <ActionButton
-                            label="Check"
+                            label={language.t("session.goal.chainBuilder.check")}
                             variant="secondary"
                             class="h-5 shrink-0 px-2.5 text-11-medium"
                             disabled={busy() !== null || !props.sessionID}
@@ -2817,6 +3453,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <input
                       value={chainDraft.objective}
                       onInput={(event) => setChainDraft("objective", event.currentTarget.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !primaryRunDisabled()) void startGoalOrChain() }}
                       disabled={busy() !== null || !props.sessionID}
                       placeholder={language.t("session.goal.chainBuilder.objectivePlaceholder")}
                       class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-violet-50 outline-none placeholder:text-violet-100/32 disabled:opacity-40"
@@ -2843,6 +3480,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       <input
                         value={newCommand()}
                         onInput={(event) => setNewCommand(event.currentTarget.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !primaryRunDisabled()) void startGoalOrChain() }}
                         disabled={busy() !== null || !props.sessionID}
                         placeholder={language.t("session.goal.create.commandPlaceholder")}
                         class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-sky-50 outline-none placeholder:text-sky-100/32 disabled:opacity-40"
@@ -3011,62 +3649,141 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             data-component="goal-running-stalled-hint"
                             class="mt-2 rounded-md border border-orange-300/24 bg-orange-500/10 px-2 py-1 text-11-regular font-semibold text-orange-50/82"
                           >
-                            {language.t("session.goal.chainBuilder.stalledHint")} {liveRunIdleMinutes()}m idle.
+                            {language.t("session.goal.chainBuilder.stalledHint")} {language.t("session.goal.chainBuilder.stalledIdleMinutes", { minutes: liveRunIdleMinutes() })}
                           </div>
                         </Show>
                         <div
                           data-component="goal-running-metric-strip"
-                          class="mt-1.5 grid min-w-0 grid-cols-3 gap-1"
+                          class="mt-1.5 grid min-w-0 grid-cols-4 gap-1"
                         >
                           <div
                             data-component="goal-running-clock"
-                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
+                            style={isCritical(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)
+                              ? { "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25), inset 0 0 0 1px rgba(248, 113, 113, 0.3)" } : {}}
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-200/70">
+                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)}%`, "background-color": burndownColor(elapsedMs() / 60_000, running.constraints.maxTimeMinutes) }} />
+                            <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-200/70">
                               {language.t("session.goal.metric.time")}
                             </div>
-                            <div class="shrink-0 text-[14px] font-black leading-none tabular-nums text-blue-100">
-                              {elapsedMinutes()}
+                            <div class="relative shrink-0 text-[14px] font-black leading-none tabular-nums text-blue-100">
+                              {elapsedFormatted()}
                               <span class="text-[10px] font-bold text-blue-100/50">/{running.constraints.maxTimeMinutes}m</span>
                             </div>
                           </div>
                           <div
                             data-component="goal-running-turns"
-                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
+                            style={isCritical(running.turnsEvaluated, running.constraints.maxTurns)
+                              ? { "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25), inset 0 0 0 1px rgba(248, 113, 113, 0.3)" } : {}}
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-200/70">
+                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(running.turnsEvaluated, running.constraints.maxTurns)}%`, "background-color": burndownColor(running.turnsEvaluated, running.constraints.maxTurns) }} />
+                            <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-200/70">
                               {language.t("session.goal.metric.turns")}
                             </div>
-                            <div class="shrink-0 text-[14px] font-black leading-none tabular-nums text-violet-100">
+                            <div class="relative shrink-0 text-[14px] font-black leading-none tabular-nums text-violet-100">
                               {running.turnsEvaluated}
                               <span class="text-[10px] font-bold text-violet-100/50">/{running.constraints.maxTurns}</span>
                             </div>
                           </div>
                           <div
                             data-component="goal-running-step"
-                            class="flex h-9 min-w-0 items-center justify-between gap-2 rounded px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
                           >
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
+                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(runningStepIndex() + 1, Math.max(visibleStepCount(), 1))}%`, "background-color": "rgb(134, 239, 172)" }} />
+                            <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
                               {language.t("session.goal.metric.chain")}
                             </div>
-                            <div class="shrink-0 text-[14px] font-black leading-none tabular-nums text-emerald-100">
+                            <div class="relative shrink-0 text-[14px] font-black leading-none tabular-nums text-emerald-100">
                               {runningStepIndex() + 1}
                               <span class="text-[10px] font-bold text-emerald-100/50">/{Math.max(visibleStepCount(), 1)}</span>
+                            </div>
+                          </div>
+                          <div
+                            data-component="goal-running-tokens"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
+                            style={isCritical(running.tokensUsed, running.constraints.maxTokens)
+                              ? { "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25), inset 0 0 0 1px rgba(248, 113, 113, 0.3)" } : {}}
+                          >
+                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(running.tokensUsed, running.constraints.maxTokens)}%`, "background-color": burndownColor(running.tokensUsed, running.constraints.maxTokens) }} />
+                            <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-amber-200/70">
+                              {language.t("session.goal.metric.tokens")}
+                            </div>
+                            <div class="relative shrink-0 text-[14px] font-black leading-none tabular-nums text-amber-100">
+                              {formatTokens(running.tokensUsed)}
+                              <span class="text-[10px] font-bold text-amber-100/50">/{formatTokens(running.constraints.maxTokens)}</span>
                             </div>
                           </div>
                         </div>
                       </div>
                       <div class="min-w-0">
+                        <Show when={visibleStepCount() > 1}>
+                          <div
+                            data-component="goal-chain-minimap"
+                            class="mb-1.5 flex items-center gap-1 rounded px-2.5 py-1.5"
+                            style={{ "background-color": "rgba(16, 185, 129, 0.05)" }}
+                          >
+                            <span class="mr-1 text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/55">
+                              {language.t("session.goal.metric.chain")}
+                            </span>
+                            <For each={Array.from({ length: visibleStepCount() }, (_, i) => i)}>
+                              {(i) => {
+                                const st = () => stepRunState(i)
+                                return (
+                                  <div
+                                    class="h-2 rounded-full transition-all"
+                                    style={{
+                                      width: `${Math.max(6, Math.min(24, Math.round(120 / visibleStepCount())))}px`,
+                                      "background-color":
+                                        st() === "done" ? "rgb(134, 239, 172)"
+                                          : st() === "running" ? "rgb(96, 165, 250)"
+                                          : st() === "paused" ? "rgb(251, 191, 36)"
+                                          : st() === "stalled" ? "rgb(251, 146, 60)"
+                                          : "rgba(148, 163, 184, 0.25)",
+                                      opacity: st() === "running" || st() === "done" ? "1" : "0.6",
+                                    }}
+                                    title={`${language.t("session.goal.chainBuilder.steps")} ${i + 1}: ${st()}`}
+                                  />
+                                )
+                              }}
+                            </For>
+                          </div>
+                        </Show>
                         <div
                           data-component="goal-running-progress-hero"
                           class="rounded px-2.5 py-2 text-right"
                         >
                           <div class="flex items-center justify-between gap-2">
-                            <div class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
-                              {language.t("session.goal.progress")}
+                            <div class="flex items-baseline gap-1.5">
+                              <span class="truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
+                                {language.t("session.goal.progress")}
+                              </span>
+                              <Show when={progressDriver()}>
+                                {(driver) => (
+                                  <span class="text-[8px] font-semibold uppercase tracking-[0.06em] text-emerald-200/42">
+                                    {language.t(driver() === "time" ? "session.goal.metric.time" : "session.goal.metric.turns")}
+                                  </span>
+                                )}
+                              </Show>
                             </div>
-                            <div class="shrink-0 text-[18px] font-black leading-none tabular-nums text-emerald-100">
-                              {running.status === "achieved" ? 100 : progressPct()}%
+                            <div class="flex shrink-0 items-center gap-2">
+                              <Show when={goalHealth()}>
+                                {(health) => (
+                                  <span
+                                    class="rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em]"
+                                    style={{
+                                      color: health().color,
+                                      "border-color": health().color.replace("rgb", "rgba").replace(")", ", 0.35)"),
+                                      "background-color": health().color.replace("rgb", "rgba").replace(")", ", 0.1)"),
+                                    }}
+                                  >
+                                    {language.t(`session.goal.health.${health().label === "Healthy" ? "healthy" : health().label === "Fair" ? "fair" : "risk"}`)}
+                                  </span>
+                                )}
+                              </Show>
+                              <span class="text-[18px] font-black leading-none tabular-nums text-emerald-100">
+                                {running.status === "achieved" ? 100 : progressPct()}%
+                              </span>
                             </div>
                           </div>
                           <div
@@ -3078,10 +3795,406 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           >
                             <div
                               class="h-full rounded-full bg-emerald-300 transition-[width] motion-reduce:transition-none"
-                              style={{ width: `${running.status === "achieved" ? 100 : progressPct()}%` }}
+                              style={{
+                                width: `${running.status === "achieved" ? 100 : progressPct()}%`,
+                                ...(running.status === "active" && !liveRunStalled() ? {
+                                  animation: "goal-pulse 2s ease-in-out infinite",
+                                  "box-shadow": "0 0 6px rgba(110, 231, 183, 0.4)",
+                                } : {}),
+                              }}
                             />
                           </div>
+                          <Show when={turnVelocity() !== null || etaFormatted()}>
+                            <div class="mt-1 flex items-center justify-between gap-2">
+                              <Show when={turnVelocity() !== null}>
+                                {(() => {
+                                  const vel = () => turnVelocity() ?? 0
+                                  return (
+                                    <span class="text-[9px] font-semibold tabular-nums text-emerald-200/55">
+                                      {vel().toFixed(1)} {language.t("session.goal.velocity.unit")}
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={etaFormatted()}>
+                                {(eta) => (
+                                  <span class="text-[9px] font-semibold tabular-nums text-emerald-200/55">
+                                    {language.t("session.goal.eta.label")} {eta()}
+                                  </span>
+                                )}
+                              </Show>
+                            </div>
+                          </Show>
+                          <Show when={smartStatus()}>
+                            {(status) => {
+                              const smartColor = (): string => {
+                                if (isBlocked() || liveRunStalled()) return "rgb(251, 146, 60)"
+                                const s = state()
+                                if (s?.status === "paused") return "rgb(251, 191, 36)"
+                                const turnR = s && s.constraints.maxTurns > 0 ? s.turnsEvaluated / s.constraints.maxTurns : 0
+                                const timeR = s && s.constraints.maxTimeMinutes > 0 ? (elapsedMs() / 60_000) / s.constraints.maxTimeMinutes : 0
+                                const tokenR = s && s.constraints.maxTokens > 0 ? s.tokensUsed / s.constraints.maxTokens : 0
+                                if (turnR >= 0.9 || timeR >= 0.9 || tokenR >= 0.9) return "rgb(248, 113, 113)"
+                                if (confidenceTrend() === "down") return "rgb(251, 191, 36)"
+                                if (confidenceTrend() === "up") return "rgb(134, 239, 172)"
+                                return "rgb(148, 163, 184)"
+                              }
+                              return (
+                                <div
+                                  class="mt-1 truncate text-[9px] font-semibold italic"
+                                  style={{ color: smartColor() }}
+                                >
+                                  {status()}
+                                </div>
+                              )
+                            }}
+                          </Show>
+                          <Show when={tokenEfficiency() !== null || tokenBurnRate() !== null || elapsedSinceLastEval() !== null || bestConfidence() !== null || confidenceDelta() !== null || evalSuccessRate() !== null || evalStreak() !== null || confidenceVolatility() !== null || avgCycleTime() !== null || tokenExhaustForecast() !== null}>
+                            <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <Show when={tokenEfficiency() !== null}>
+                                {(() => {
+                                  const eff = () => tokenEfficiency() ?? 0
+                                  return (
+                                    <span class="text-[9px] tabular-nums text-slate-400/70">
+                                      {formatTokens(eff())} {language.t("session.goal.stats.tokensPerTurn")}
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={tokenBurnRate() !== null}>
+                                {(() => {
+                                  const rate = () => tokenBurnRate() ?? 0
+                                  return (
+                                    <span class="text-[9px] tabular-nums text-slate-400/70">
+                                      {formatTokens(rate())} {language.t("session.goal.stats.tokensPerMin")}
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={elapsedSinceLastEval() !== null}>
+                                {(() => {
+                                  const since = () => elapsedSinceLastEval() ?? 0
+                                  return (
+                                    <span class="text-[9px] tabular-nums text-slate-400/70">
+                                      {language.t("session.goal.stats.sinceEval")}: {formatSinceEval(since())}
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={bestConfidence() !== null}>
+                                {(() => {
+                                  const peak = () => bestConfidence() ?? 0
+                                  return (
+                                    <span class="text-[9px] tabular-nums" style={{ color: confidenceColor(peak()) }}>
+                                      {language.t("session.goal.stats.peakConf")}: {peak()}%
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={confidenceDelta() !== null}>
+                                {(() => {
+                                  const d = () => confidenceDelta() ?? 0
+                                  return (
+                                    <span class="text-[9px] font-semibold tabular-nums" style={{
+                                      color: d() > 0 ? "rgb(134, 239, 172)" : d() < 0 ? "rgb(248, 113, 113)" : "rgb(148, 163, 184)"
+                                    }}>
+                                      {language.t("session.goal.stats.delta")}: {d() > 0 ? "+" : ""}{d()}%
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={evalSuccessRate() !== null}>
+                                {(() => {
+                                  const rate = () => evalSuccessRate() ?? 0
+                                  return (
+                                    <span class="text-[9px] tabular-nums" style={{
+                                      color: rate() >= 50 ? "rgb(134, 239, 172)" : "rgb(251, 191, 36)"
+                                    }}>
+                                      {language.t("session.goal.stats.successRate")}: {rate()}%
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={evalStreak()}>
+                                {(streak) => (
+                                  <span class="text-[9px] font-semibold tabular-nums" style={{
+                                    color: streak().type === "met" ? "rgb(134, 239, 172)" : "rgb(251, 191, 36)"
+                                  }}>
+                                    {streak().count}× {language.t(`session.goal.stats.streak${streak().type === "met" ? "Met" : "NotMet"}`)}
+                                  </span>
+                                )}
+                              </Show>
+                              <Show when={confidenceVolatility()}>
+                                {(vol) => (
+                                  <span class="text-[9px] tabular-nums" style={{ color: volatilityColor(vol()) }}>
+                                    {language.t("session.goal.stats.volatility")}: {vol()}
+                                  </span>
+                                )}
+                              </Show>
+                              <Show when={avgCycleTime() !== null}>
+                                {(() => {
+                                  const avg = () => avgCycleTime() ?? 0
+                                  return (
+                                    <span class="text-[9px] tabular-nums text-slate-400/70">
+                                      {language.t("session.goal.stats.avgCycle")}: {formatCycleDuration(avg())}
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <Show when={tokenExhaustForecast()}>
+                                {(tok) => (
+                                  <span class="text-[9px] tabular-nums text-amber-300/65">
+                                    {language.t("session.goal.stats.tokenExhaust")}: {tok()}
+                                  </span>
+                                )}
+                              </Show>
+                            </div>
+                          </Show>
+                          <Show when={constraintHeadroom()}>
+                            {(headroom) => (
+                              <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                                <Show when={headroom().turns !== null}>
+                                  {(() => {
+                                    const t = () => headroom().turns ?? 0
+                                    return (
+                                      <span
+                                        class="rounded-full px-1.5 py-0.5 text-[8px] font-bold tabular-nums"
+                                        style={{
+                                          color: t() <= 2 ? "rgb(248, 113, 113)" : "rgb(167, 139, 250)",
+                                          "background-color": t() <= 2 ? "rgba(248, 113, 113, 0.12)" : "rgba(167, 139, 250, 0.1)",
+                                        }}
+                                      >
+                                        {t()} {language.t("session.goal.stats.turnsLeft")}
+                                      </span>
+                                    )
+                                  })()}
+                                </Show>
+                                <Show when={headroom().timeMins !== null}>
+                                  {(() => {
+                                    const m = () => headroom().timeMins ?? 0
+                                    return (
+                                      <span
+                                        class="rounded-full px-1.5 py-0.5 text-[8px] font-bold tabular-nums"
+                                        style={{
+                                          color: m() < 1 ? "rgb(248, 113, 113)" : "rgb(96, 165, 250)",
+                                          "background-color": m() < 1 ? "rgba(248, 113, 113, 0.12)" : "rgba(96, 165, 250, 0.1)",
+                                        }}
+                                      >
+                                        {m() < 1 ? "<1" : Math.round(m())}m {language.t("session.goal.stats.timeLeft")}
+                                      </span>
+                                    )
+                                  })()}
+                                </Show>
+                                <Show when={headroom().tokens !== null}>
+                                  {(() => {
+                                    const tok = () => headroom().tokens ?? 0
+                                    return (
+                                      <span
+                                        class="rounded-full px-1.5 py-0.5 text-[8px] font-bold tabular-nums"
+                                        style={{
+                                          color: tok() < 1000 ? "rgb(248, 113, 113)" : "rgb(251, 191, 36)",
+                                          "background-color": tok() < 1000 ? "rgba(248, 113, 113, 0.12)" : "rgba(251, 191, 36, 0.1)",
+                                        }}
+                                      >
+                                        {formatTokens(tok())} {language.t("session.goal.stats.tokensLeft")}
+                                      </span>
+                                    )
+                                  })()}
+                                </Show>
+                              </div>
+                            )}
+                          </Show>
                         </div>
+                        <Show when={lastEval()}>
+                          {(evaluation) => (
+                            <div
+                              data-component="goal-running-evidence"
+                              class="mt-1.5 rounded-lg border p-2"
+                              style={isBlocked()
+                                ? { ...runningInlinePanelStyle("evidence"), "box-shadow": `${runningInlinePanelStyle("evidence")["box-shadow"]}, 0 0 12px rgba(251, 146, 60, 0.3), inset 0 0 0 1px rgba(251, 146, 60, 0.35)` }
+                                : runningInlinePanelStyle("evidence")}
+                            >
+                              <div class="mb-1.5 flex items-center justify-between gap-2">
+                                <span class="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-100/78">
+                                  {language.t("session.goal.evidence.title")}
+                                </span>
+                                <div class="flex items-center gap-2">
+                                  <Show when={confidencePct() !== null}>
+                                    {(() => {
+                                      const pct = () => confidencePct() ?? 0
+                                      return (
+                                        <div class="flex items-center gap-1.5">
+                                          <div class="h-1.5 w-16 overflow-hidden rounded-full bg-background-base/70">
+                                            <div
+                                              class="h-full rounded-full transition-[width]"
+                                              style={{ width: `${pct()}%`, "background-color": confidenceColor(pct()) }}
+                                            />
+                                          </div>
+                                          <span class="text-[10px] font-bold tabular-nums" style={{ color: confidenceColor(pct()) }}>
+                                            {pct()}%
+                                          </span>
+                                          <Show when={confidenceTrend()}>
+                                            {(trend) => (
+                                              <span class="text-[11px] font-bold" style={{ color: trendColor(trend()) }}>
+                                                {trendArrow(trend())}
+                                              </span>
+                                            )}
+                                          </Show>
+                                        </div>
+                                      )
+                                    })()}
+                                  </Show>
+                                  <Show when={sparklinePoints()}>
+                                    {(pts) => (
+                                      <svg width="64" height="16" viewBox="0 0 64 16" class="shrink-0" aria-label={language.t("session.goal.evidence.trend")}>
+                                        <polyline
+                                          points={pts()}
+                                          fill="none"
+                                          stroke="rgb(96, 165, 250)"
+                                          stroke-width="1.5"
+                                          stroke-linejoin="round"
+                                          stroke-linecap="round"
+                                        />
+                                      </svg>
+                                    )}
+                                  </Show>
+                                  <span
+                                    class={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] ${evaluation().met ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200" : "border-amber-400/40 bg-amber-500/15 text-amber-200"}`}
+                                  >
+                                    <span class={`h-1.5 w-1.5 rounded-full ${evaluation().met ? "bg-emerald-400" : "bg-amber-400"}`} aria-hidden />
+                                    {evaluation().met ? language.t("session.goal.evidence.met") : language.t("session.goal.evidence.notMet")}
+                                  </span>
+                                </div>
+                              </div>
+                              <Show when={evaluation().reason}>
+                                <div class="rounded-md border border-blue-300/12 bg-background-base/54 px-2 py-1.5 text-11-regular leading-4 text-text-weak">
+                                  {cleanText(evaluation().reason)}
+                                </div>
+                              </Show>
+                              <div class="mt-1.5 flex items-center gap-3 text-[9px] text-text-weaker">
+                                <span class="uppercase tracking-[0.06em]">{evaluation().evaluatorType}</span>
+                                <Show when={evaluation().blocked}>
+                                  <span class="font-semibold uppercase text-orange-300">
+                                    {language.t("session.goal.evidence.blocked")}
+                                  </span>
+                                </Show>
+                                <Show when={elapsedSinceLastEval() !== null}>
+                                  {(() => {
+                                    const since = () => elapsedSinceLastEval() ?? 0
+                                    return (
+                                      <span class="tabular-nums text-blue-200/45">
+                                        {formatSinceEval(since())}
+                                      </span>
+                                    )
+                                  })()}
+                                </Show>
+                              </div>
+                            </div>
+                          )}
+                        </Show>
+                        <Show when={evalHistory().length > 1}>
+                          <div
+                            data-component="goal-running-eval-timeline"
+                            class="mt-1.5 rounded-lg border p-2"
+                            style={runningInlinePanelStyle("evidence")}
+                          >
+                            <div class="mb-1.5 flex items-center justify-between gap-2">
+                              <span class="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-100/78">
+                                {language.t("session.goal.evidence.history")}
+                              </span>
+                              <div class="flex items-center gap-2">
+                                <Show when={evalHistory().length > 3}>
+                                  <button
+                                    type="button"
+                                    class="text-[10px] font-semibold text-blue-200/60 transition hover:text-blue-100"
+                                    onClick={() => setEvidenceExpanded((v) => !v)}
+                                  >
+                                    {evidenceExpanded()
+                                      ? language.t("session.goal.activity.showRecent")
+                                      : language.t("session.goal.activity.showAll")}
+                                  </button>
+                                </Show>
+                                <span class={numericHighlightClass()} style={numericHighlightStyle("blue")}>
+                                  {evalHistory().length}
+                                </span>
+                              </div>
+                            </div>
+                            <div role="list" class={`grid gap-1 overflow-y-auto ${evidenceExpanded() ? "max-h-64" : "max-h-20"}`}>
+                              {(() => {
+                                const h = evalHistory()
+                                const durations = evalCycleDurations()
+                                const visible = evidenceExpanded() ? h : h.slice(-3)
+                                const offset = evidenceExpanded() ? 0 : Math.max(0, h.length - 3)
+                                return (
+                                  <For each={visible}>
+                                    {(cycle, localIdx) => {
+                                      const realIdx = offset + localIdx()
+                                      const dur = durations[realIdx]
+                                      return (
+                                        <div
+                                          role="listitem"
+                                          class="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md border border-blue-300/12 bg-background-base/54 px-2 py-1 text-[11px]"
+                                        >
+                                          <span class={cycle.met ? "text-center text-emerald-400" : "text-center text-amber-400"} aria-hidden>
+                                            {cycle.met ? "✓" : "↺"}
+                                          </span>
+                                          <span class="min-w-0 truncate text-text-weak" title={cleanText(cycle.reason)}>
+                                            {cleanText(cycle.reason)}
+                                          </span>
+                                          <div class="flex shrink-0 items-center gap-1.5">
+                                            <Show when={typeof dur === "number" && dur > 0}>
+                                              <span class="tabular-nums text-[9px] text-blue-200/45">
+                                                {formatCycleDuration(dur as number)}
+                                              </span>
+                                            </Show>
+                                            <Show when={typeof cycle.confidence === "number"}>
+                                              <span class="tabular-nums text-text-weaker">
+                                                {Math.round((cycle.confidence ?? 0) * 100)}%
+                                              </span>
+                                            </Show>
+                                          </div>
+                                        </div>
+                                      )
+                                    }}
+                                  </For>
+                                )
+                              })()}
+                            </div>
+                          </div>
+                        </Show>
+                        <Show when={steeringNotes().length > 0}>
+                          <div
+                            data-component="goal-running-steering"
+                            class="mt-1.5 rounded-lg border p-2"
+                            style={runningInlinePanelStyle("steering")}
+                          >
+                            <div class="mb-1.5 flex items-center justify-between gap-2">
+                              <span class="text-[10px] font-bold uppercase tracking-[0.12em] text-purple-100/78">
+                                {language.t("session.goal.steering.title")}
+                              </span>
+                              <span class={numericHighlightClass()} style={numericHighlightStyle("blue")}>
+                                {steeringNotes().length}
+                              </span>
+                            </div>
+                            <div role="list" class="grid gap-1 overflow-y-auto max-h-20">
+                              <For each={steeringNotes()}>
+                                {(note) => (
+                                  <div
+                                    role="listitem"
+                                    class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-1.5 rounded-md border border-purple-300/12 bg-background-base/54 px-2 py-1 text-[11px]"
+                                  >
+                                    <span class="shrink-0 tabular-nums text-[9px] text-text-weaker">
+                                      {new Date(note.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                    <span class="min-w-0 truncate text-text-weak">
+                                      {cleanText(note.note)}
+                                    </span>
+                                  </div>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                        </Show>
                         <div
                           data-component="goal-runtime-command-tray"
                           data-state={runtimeDetailState()}
@@ -3218,6 +4331,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <TextField
                                     value={steerText()}
                                     onChange={setSteerText}
+                                    onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" && steerText().trim() && busy() === null) void steerGoal() }}
                                     label={language.t("session.goal.action.steer")}
                                     hideLabel
                                     placeholder={language.t("session.goal.steer.placeholder")}
@@ -3254,6 +4368,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <TextField
                                     value={handoffText()}
                                     onChange={setHandoffText}
+                                    onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" && busy() === null) void handoffGoal() }}
                                     label={language.t("session.goal.action.handoff")}
                                     hideLabel
                                     placeholder={language.t("session.goal.handoff.placeholder")}
@@ -3285,8 +4400,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <div class="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-100/78">
                                     {language.t("session.goal.runControls")}
                                   </div>
-                                  <div class="min-w-0 truncate text-right text-11-regular text-cyan-100/52">
-                                    {language.t("session.goal.commandStrip.hint")}
+                                  <div class="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200/60 transition hover:bg-cyan-500/12 hover:text-cyan-100"
+                                      title={language.t("session.goal.report.copy")}
+                                      onClick={copyGoalReport}
+                                    >
+                                      {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
+                                    </button>
+                                    <div class="min-w-0 truncate text-right text-11-regular text-cyan-100/52">
+                                      {language.t("session.goal.commandStrip.hint")}
+                                    </div>
                                   </div>
                                 </div>
                               </Match>
@@ -3378,7 +4503,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 {language.t("session.goal.chainBuilder.emptyChain")}
                               </div>
                               <div class="mt-2 text-12-regular leading-5 text-violet-100/72">
-                                No chain items are required. Start Goal runs the goal above; add actions only when this goal needs a sequence.
+                                {language.t("session.goal.chainBuilder.emptyChainDesc")}
                               </div>
                               <div
                                 data-component="goal-chain-execution-note"
@@ -3388,7 +4513,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   "border-color": "rgba(167, 139, 250, 0.14)",
                                 }}
                               >
-                                Chain item edits stay local. Reorder, remove, turns, minutes, prompt, and command edits do not start a turn until Start Chain.
+                                {language.t("session.goal.chainBuilder.emptyChainNote")}
                               </div>
                             </div>
                           </div>
@@ -3490,7 +4615,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <label
                                     class="grid h-6 grid-cols-[42px_32px] items-center gap-1"
                                   >
-                                    <span class="text-[9px] font-semibold uppercase opacity-75">Turns</span>
+                                    <span class="text-[9px] font-semibold uppercase opacity-75">{language.t("session.goal.chainBuilder.stepTurns")}</span>
                                     <input
                                       aria-label={`Turns for ${step.label}`}
                                       type="number"
@@ -3506,7 +4631,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <label
                                     class="grid h-6 grid-cols-[30px_40px] items-center gap-1"
                                   >
-                                    <span class="text-[9px] font-semibold uppercase opacity-75">Min</span>
+                                    <span class="text-[9px] font-semibold uppercase opacity-75">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
                                     <input
                                       aria-label={`Minutes for ${step.label}`}
                                       type="number"
@@ -3591,13 +4716,29 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <span class="min-w-0 truncate">
                           {language.t("session.goal.chainBuilder.planChainHint")}
                         </span>
-                        <span class="shrink-0 tabular-nums text-violet-100/72">
-                          {chainLimitSummary()}
-                        </span>
+                        <div class="flex shrink-0 items-center gap-2">
+                          <Show when={chainDraft.steps.length > 0}>
+                            <button
+                              type="button"
+                              class="text-[10px] font-semibold text-violet-200/50 transition hover:text-violet-100"
+                              title={language.t("session.goal.chainBuilder.clearDraftHint")}
+                              disabled={busy() !== null}
+                              onClick={() => {
+                                setChainDraft("steps", [])
+                                setChainErrors([])
+                              }}
+                            >
+                              {language.t("session.goal.chainBuilder.clearDraft")}
+                            </button>
+                          </Show>
+                          <span class="tabular-nums text-violet-100/72">
+                            {chainLimitSummary()}
+                          </span>
+                        </div>
                       </div>
                     </Show>
 
-                    <Show when={liveGoal()}>
+                    <Show when={liveGoal() || (unarchivedTerminalGoal() && activity().length > 0)}>
                       <div
                         data-component="goal-chain-running-activity"
                         class="mt-2 rounded-lg border p-2"
@@ -3607,9 +4748,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           <span class="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100/78">
                             {language.t("session.goal.activity.title")}
                           </span>
-                          <span class={numericHighlightClass()} style={numericHighlightStyle("blue")}>
-                            {activity().length}
-                          </span>
+                          <div class="flex items-center gap-2">
+                            <Show when={activity().length > 4}>
+                              <button
+                                type="button"
+                                class="text-[10px] font-semibold text-cyan-200/60 transition hover:text-cyan-100"
+                                onClick={() => setActivityExpanded((v) => !v)}
+                              >
+                                {activityExpanded()
+                                  ? language.t("session.goal.activity.showRecent")
+                                  : language.t("session.goal.activity.showAll")}
+                              </button>
+                            </Show>
+                            <span class={numericHighlightClass()} style={numericHighlightStyle("blue")}>
+                              {activity().length}
+                            </span>
+                          </div>
                         </div>
                         <Show
                           when={activity().length > 0}
@@ -3619,8 +4773,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             </div>
                           }
                         >
-                          <div role="list" class="grid max-h-24 gap-1 overflow-y-auto">
-                            <For each={activity().slice(0, 4)}>
+                          <div role="list" class={`grid gap-1 overflow-y-auto ${activityExpanded() ? "max-h-64" : "max-h-24"}`}>
+                            <For each={activityExpanded() ? activity() : activity().slice(0, 4)}>
                               {(event) => (
                                 <div
                                   role="listitem"
@@ -3853,7 +5007,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       class="mb-1 flex min-w-0 items-center justify-between gap-2"
                     >
                       <span class="min-w-0 truncate text-[10px] font-medium leading-4 text-text-weaker">
-                        Plus adds to Run Order. Edit opens the editor.
+                        {language.t("session.goal.template.libraryHint")}
                       </span>
                     </div>
                     <div
@@ -4297,7 +5451,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               aria-hidden
                             />
                             <span class="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-100/78">
-                              Details
+                              {language.t("session.goal.template.detailsHeader")}
                             </span>
                           </div>
                           <TextField

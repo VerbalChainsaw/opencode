@@ -80,10 +80,14 @@ export function registerIpcHandlers(deps: Deps) {
   )
   // Store names the renderer is allowed to access. The updater and other
   // internal stores are managed exclusively by the main process.
-  const ALLOWED_STORE_NAMES = new Set(["opencode.settings", "default.dat", "opencode.global.dat"])
-
+  // Workspace stores use path-encoded names (e.g. opencode.workspace.<hash>.dat)
+  // and must be accessible for the renderer's persistence layer.
   function requireAllowedStore(name: string): void {
-    if (!ALLOWED_STORE_NAMES.has(name)) throw new Error(`Store "${name}" is not accessible from the renderer.`)
+    if (name === "opencode.settings") return
+    if (name === "default.dat") return
+    if (name === "opencode.global.dat") return
+    if (name.startsWith("opencode.workspace.")) return
+    throw new Error(`Store "${name}" is not accessible from the renderer.`)
   }
 
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {

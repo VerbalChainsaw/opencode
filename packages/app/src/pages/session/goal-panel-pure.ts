@@ -41,10 +41,12 @@ export interface GoalState {
   lastEvaluation: {
     met: boolean
     reason: string
+    confidence?: number
     timestamp: number
     evaluatorType: "deterministic" | "model" | "heuristic"
+    blocked?: boolean
   } | null
-  evaluationHistory: Array<{ met: boolean; reason: string; timestamp: number }>
+  evaluationHistory: Array<{ met: boolean; reason: string; confidence?: number; timestamp: number }>
   constraints: {
     maxTurns: number
     maxTimeMinutes: number

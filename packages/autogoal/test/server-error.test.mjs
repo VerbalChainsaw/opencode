@@ -1014,7 +1014,12 @@ describe("session.idle nudge failure diagnostics", () => {
 
         const final = readStateFileRaw(dir);
         assert.equal(final.status, "paused");
-        assert.match(final.lastEvaluation.reason, /Nudge delivery failed 3 times consecutively/);
+        const hardError = c.kind === "auth" || c.kind === "provider-fatal";
+        if (hardError) {
+          assert.match(final.lastEvaluation.reason, /Provider error — goal paused/);
+        } else {
+          assert.match(final.lastEvaluation.reason, /Nudge delivery failed 3 times consecutively/);
+        }
         assert.match(final.lastEvaluation.reason, new RegExp(c.kind, "i"));
         assert.match(final.lastEvaluation.reason, new RegExp(`${c.name}|${c.message}|${c.code ?? ""}`, "i"));
       } finally {
