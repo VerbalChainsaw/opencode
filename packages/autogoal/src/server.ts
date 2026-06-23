@@ -1640,8 +1640,25 @@ export const server: Plugin = async ({ client, directory }) => {
             log("debug", "skipping evaluation: permission request pending", { sessionId });
             return;
           }
-          const state = readGoalState(directory);
-          if (!state || state.status !== "active" || !goalBelongsToSession(state, sessionId)) return;
+          // v0.4.2 surfacing: use the tri-state reader so a corrupt
+          // state file does not collapse to "absent" via the deprecated
+          // `readGoalState` shim. The CLI + goal_status tool already
+          // surface corruption (per v042-corrupt-surfacing.test.mjs).
+          // The auto-loop must not silently halt on a corrupt file —
+          // the previous `readGoalState` shim path was a v0.4.1
+          // regression that hid corruption from the auto-loop surface.
+          const stateResult = readGoalStateResult(directory);
+          if (stateResult.kind === "absent") return;
+          if (stateResult.kind === "corrupt") {
+            const quarantined = listCorruptArtifacts(directory)[0] ?? null;
+            log("error", "skipping evaluation: goal state file is corrupt", {
+              reason: stateResult.reason,
+              quarantined,
+            });
+            return;
+          }
+          const state = stateResult.value;
+          if (state.status !== "active" || !goalBelongsToSession(state, sessionId)) return;
           await evaluate(state, sessionId);
           return;
         }
