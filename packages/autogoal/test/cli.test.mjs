@@ -248,8 +248,23 @@ test("isCliEntry: POSIX-style path matches", () => {
 });
 
 test("isCliEntry: Windows path with space is percent-encoded by pathToFileURL", () => {
+  // Platform-native contract: on Windows, pathToFileURL coerces a
+  // backslash path to file:///C:/... and percent-encodes spaces.
+  // On POSIX (Linux/WSL/macOS), the same input is treated as a literal
+  // POSIX path and produces a different URL — the platform-specific
+  // regression here is exercised by the POSIX path test below.
+  if (process.platform !== "win32") return;
   const metaUrl = "file:///C:/a%20b/cli.js";
   assert.equal(isCliEntry(metaUrl, "C:\\a b\\cli.js"), true);
+});
+
+test("isCliEntry: POSIX path with space is percent-encoded by pathToFileURL", () => {
+  // Platform-native contract on POSIX: pathToFileURL percent-encodes
+  // a literal space in the basename and emits file:///... without
+  // coercing to a Windows drive. Mirrors the Windows regression above.
+  if (process.platform === "win32") return;
+  const metaUrl = "file:///home/u/a%20b/cli.js";
+  assert.equal(isCliEntry(metaUrl, "/home/u/a b/cli.js"), true);
 });
 
 test("isCliEntry: mismatched paths → false", () => {
