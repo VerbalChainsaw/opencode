@@ -97,7 +97,11 @@ export namespace Storage {
   export async function read<T>(key: string[]) {
     const result = await adapter().read(resolve(key))
     if (!result) return undefined
-    return JSON.parse(result) as T
+    try {
+      return JSON.parse(result) as T
+    } catch {
+      return undefined
+    }
   }
 
   export function write<T>(key: string[], value: T) {

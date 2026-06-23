@@ -30,9 +30,10 @@ import { splitGoalCommand } from "./dispatcher.js"
 // Canonical types from the plugin's state layer — single source of truth.
 // control-state.ts is the EXPERIMENTAL API backend; it delegates type
 // authority to goal-state.ts so the two implementations cannot drift.
-import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, type GoalStatus, type Verification } from "./goal-state.js"
+import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, sanitizeForPrompt, DEFAULT_CONSTRAINTS, CONSTRAINT_BOUNDS, type GoalStatus, type Verification } from "./goal-state.js"
 import type { ChainWebhook, GoalPinnedModel } from "./goal-chain.js";
 import { sanitizeChainWebhook } from "./goal-chain.js";
+import { isPlainObject, isFiniteNumber } from "./utils.js";
 
 // Type aliases for backward compat with existing control-state callers.
 // These are the SAME types, re-exported under the control-state naming
@@ -146,21 +147,6 @@ export interface GoalControlStateFileOptions {
   sessionID?: string
 }
 
-const DEFAULT_CONSTRAINTS = {
-  maxTurns: 20,
-  maxTimeMinutes: 30,
-  maxTokens: 100000,
-}
-
-const CONSTRAINT_BOUNDS = {
-  minTurns: 1,
-  maxTurns: 10000,
-  minMinutes: 1,
-  maxMinutes: 10000,
-  minTokens: 1,
-  maxTokens: 10000000,
-}
-
 const TEMPLATE_ID_RE = /^[A-Za-z0-9_-]+$/
 const TEMPLATE_CATEGORIES = [
   "Planning",
@@ -222,12 +208,12 @@ async function setGoalState(
   // Bound condition (4000) and verification command (1000) to match editCondition
   // and the template/chain paths — the CLI's `set` rejects over-length conditions,
   // so the bridge must not silently store an unbounded one.
-  const condition = sanitizePromptText(
+  const condition = sanitizeForPrompt(
     tokens.slice(1, commandIndex === -1 ? undefined : commandIndex).join(" "),
   ).slice(0, 4000)
   if (!condition) throw new Error("Goal condition cannot be empty.")
   const verificationCommand =
-    commandIndex === -1 ? null : sanitizePromptText(tokens.slice(commandIndex + 1).join(" ")).slice(0, 1000) || null
+    commandIndex === -1 ? null : sanitizeForPrompt(tokens.slice(commandIndex + 1).join(" ")).slice(0, 1000) || null
 
   const existing = await readGoalStateOptional(directory)
   const next: GoalControlState = {
@@ -445,7 +431,7 @@ async function startGoalChain(
 
 async function addChainStep(directory: string, condition: string, now: number) {
   const chain = await requireGoalChain(directory)
-  const cleaned = sanitizePromptText(condition).slice(0, 4000)
+  const cleaned = sanitizeForPrompt(condition).slice(0, 4000)
   if (!cleaned) throw new Error("Chain step condition cannot be empty.")
   chain.steps = [...chain.steps, { condition: cleaned }]
   await writeJsonAtomic(goalChainPath(directory), chain)
@@ -543,6 +529,7 @@ async function readGoalStateOptional(directory: string): Promise<GoalControlStat
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
     throw error
   }
+  if (content.length > 256 * 1024) throw new Error("Goal state file is too large.")
   const parsed = JSON.parse(content)
   if (!isGoalControlState(parsed)) throw new Error("Goal state file is invalid.")
   return parsed
@@ -556,6 +543,7 @@ async function readGoalChainOptional(directory: string): Promise<GoalControlChai
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
     throw error
   }
+  if (content.length > 256 * 1024) throw new Error("Goal chain file is too large.")
   return sanitizeGoalChain(JSON.parse(content))
 }
 
@@ -575,10 +563,10 @@ async function readHandoffOptional(directory: string): Promise<GoalControlHandof
     throw new Error("Handoff file is invalid.")
   }
   return {
-    createdAt: sanitizePromptText(handoff.createdAt),
+    createdAt: sanitizeForPrompt(handoff.createdAt),
     state: handoff.state,
-    ...(typeof handoff.note === "string" && sanitizePromptText(handoff.note).trim()
-      ? { note: sanitizePromptText(handoff.note).trim().slice(0, 500) }
+    ...(typeof handoff.note === "string" && sanitizeForPrompt(handoff.note).trim()
+      ? { note: sanitizeForPrompt(handoff.note).trim().slice(0, 500) }
       : {}),
   }
 }
@@ -763,9 +751,9 @@ async function readTemplateSnapshot(directory: string): Promise<Array<Record<str
     throw error
   }
   const parsed = JSON.parse(content)
-  if (!isRecord(parsed) || !Array.isArray(parsed.templates)) return []
+  if (!isPlainObject(parsed) || !Array.isArray(parsed.templates)) return []
   return parsed.templates.filter((template): template is Record<string, unknown> & { id: string } => {
-    return isRecord(template) && typeof template.id === "string" && TEMPLATE_ID_RE.test(template.id)
+    return isPlainObject(template) && typeof template.id === "string" && TEMPLATE_ID_RE.test(template.id)
   })
 }
 
@@ -808,24 +796,24 @@ function parseJsonObject(value: string | undefined, label: string) {
     throw new Error(`${label} exceeds maximum nesting depth of ${MAX_COMMAND_JSON_DEPTH} levels.`)
   }
   const parsed: unknown = JSON.parse(value)
-  if (!isRecord(parsed)) throw new Error(`${label} must be a JSON object.`)
+  if (!isPlainObject(parsed)) throw new Error(`${label} must be a JSON object.`)
   return parsed
 }
 
 function sanitizeTemplatePayload(value: Record<string, unknown>): Record<string, unknown> {
-  const condition = typeof value.condition === "string" ? sanitizePromptText(value.condition).slice(0, 4000) : ""
+  const condition = typeof value.condition === "string" ? sanitizeForPrompt(value.condition).slice(0, 4000) : ""
   if (!condition) throw new Error("Template condition cannot be empty.")
   const constraints = sanitizeConstraints(value.constraints)
   const variables = sanitizeVariables(value.variables)
   const skills = sanitizeSkills(value.skills)
   const model = sanitizePinnedModel(value.model)
   return {
-    ...(typeof value.label === "string" ? { label: sanitizePromptText(value.label).slice(0, 120) } : {}),
+    ...(typeof value.label === "string" ? { label: sanitizeForPrompt(value.label).slice(0, 120) } : {}),
     ...(typeof value.description === "string"
-      ? { description: sanitizePromptText(value.description).slice(0, 400) }
+      ? { description: sanitizeForPrompt(value.description).slice(0, 400) }
       : {}),
     condition,
-    ...(typeof value.command === "string" ? { command: sanitizePromptText(value.command).slice(0, 1000) } : {}),
+    ...(typeof value.command === "string" ? { command: sanitizeForPrompt(value.command).slice(0, 1000) } : {}),
     ...(constraints ? { constraints } : {}),
     ...(variables ? { variables } : {}),
     ...(isTemplateCategory(value.category) ? { category: value.category } : {}),
@@ -852,53 +840,53 @@ function sanitizeChainPayload(value: Record<string, unknown>) {
 }
 
 function verificationFromCommand(command: string | null | undefined): GoalControlVerification {
-  const cleaned = typeof command === "string" ? sanitizePromptText(command).slice(0, 1000) : ""
+  const cleaned = typeof command === "string" ? sanitizeForPrompt(command).slice(0, 1000) : ""
   return cleaned ? { type: "shell", command: cleaned } : { type: "marker" }
 }
 
 function sanitizeVerification(value: unknown): GoalControlVerification | undefined {
-  if (!isRecord(value)) return undefined
+  if (!isPlainObject(value)) return undefined
   if (value.type === "marker") return { type: "marker" }
   if (value.type === "shell") {
-    const command = typeof value.command === "string" ? sanitizePromptText(value.command).slice(0, 1000) : ""
+    const command = typeof value.command === "string" ? sanitizeForPrompt(value.command).slice(0, 1000) : ""
     return command ? { type: "shell", command } : undefined
   }
   if (value.type === "http") {
-    const url = typeof value.url === "string" ? sanitizePromptText(value.url).slice(0, 2000) : ""
+    const url = typeof value.url === "string" ? sanitizeForPrompt(value.url).slice(0, 2000) : ""
     if (!url) return undefined
     return {
       type: "http",
       url,
-      ...(isNumber(value.expectStatus) ? { expectStatus: value.expectStatus } : {}),
+      ...(isFiniteNumber(value.expectStatus) ? { expectStatus: value.expectStatus } : {}),
       ...(typeof value.expectBody === "string"
-        ? { expectBody: sanitizePromptText(value.expectBody).slice(0, 1000) }
+        ? { expectBody: sanitizeForPrompt(value.expectBody).slice(0, 1000) }
         : {}),
       ...(readPositiveInteger(value.timeoutMs) ? { timeoutMs: readPositiveInteger(value.timeoutMs) } : {}),
     }
   }
   if (value.type === "file") {
-    const path = typeof value.path === "string" ? sanitizePromptText(value.path).slice(0, 2000) : ""
+    const path = typeof value.path === "string" ? sanitizeForPrompt(value.path).slice(0, 2000) : ""
     if (!path) return undefined
     return {
       type: "file",
       path,
       ...(typeof value.exists === "boolean" ? { exists: value.exists } : {}),
-      ...(typeof value.contains === "string" ? { contains: sanitizePromptText(value.contains).slice(0, 1000) } : {}),
+      ...(typeof value.contains === "string" ? { contains: sanitizeForPrompt(value.contains).slice(0, 1000) } : {}),
     }
   }
   return undefined
 }
 
 function sanitizeChainStep(value: unknown): GoalControlChainStep | undefined {
-  if (!isRecord(value)) return undefined
-  const condition = typeof value.condition === "string" ? sanitizePromptText(value.condition).slice(0, 4000) : ""
+  if (!isPlainObject(value)) return undefined
+  const condition = typeof value.condition === "string" ? sanitizeForPrompt(value.condition).slice(0, 4000) : ""
   if (!condition) return undefined
   const verification = sanitizeVerification(value.verification)
   const skills = sanitizeSkills(value.skills)
   const model = sanitizePinnedModel(value.model)
   return {
     condition,
-    ...(typeof value.command === "string" ? { command: sanitizePromptText(value.command).slice(0, 1000) } : {}),
+    ...(typeof value.command === "string" ? { command: sanitizeForPrompt(value.command).slice(0, 1000) } : {}),
     ...(verification ? { verification } : {}),
     ...(readPositiveInteger(value.maxTurns) ? { maxTurns: readPositiveInteger(value.maxTurns) } : {}),
     ...(readPositiveInteger(value.maxMinutes) ? { maxMinutes: readPositiveInteger(value.maxMinutes) } : {}),
@@ -917,7 +905,7 @@ function sanitizeSkills(value: unknown) {
   const seen = new Set<string>()
   for (const item of value) {
     if (typeof item !== "string") continue
-    const skill = sanitizePromptText(item).slice(0, MAX_STEP_SKILL_LEN)
+    const skill = sanitizeForPrompt(item).slice(0, MAX_STEP_SKILL_LEN)
     if (!skill || seen.has(skill)) continue
     seen.add(skill)
     out.push(skill)
@@ -928,27 +916,27 @@ function sanitizeSkills(value: unknown) {
 
 function sanitizePinnedModel(value: unknown): GoalControlPinnedModel | string | undefined {
   if (typeof value === "string") {
-    const model = sanitizePromptText(value).slice(0, MAX_STEP_MODEL_FIELD_LEN)
+    const model = sanitizeForPrompt(value).slice(0, MAX_STEP_MODEL_FIELD_LEN)
     return model || undefined
   }
-  if (!isRecord(value)) return undefined
+  if (!isPlainObject(value)) return undefined
   const providerID =
-    typeof value.providerID === "string" ? sanitizePromptText(value.providerID).slice(0, MAX_STEP_MODEL_FIELD_LEN) : ""
+    typeof value.providerID === "string" ? sanitizeForPrompt(value.providerID).slice(0, MAX_STEP_MODEL_FIELD_LEN) : ""
   const modelID =
-    typeof value.modelID === "string" ? sanitizePromptText(value.modelID).slice(0, MAX_STEP_MODEL_FIELD_LEN) : ""
+    typeof value.modelID === "string" ? sanitizeForPrompt(value.modelID).slice(0, MAX_STEP_MODEL_FIELD_LEN) : ""
   if (!providerID || !modelID) return undefined
   return { providerID, modelID }
 }
 
 function sanitizeGoalChain(value: unknown): GoalControlChain {
-  if (!isRecord(value)) throw new Error("Goal chain file is invalid.")
+  if (!isPlainObject(value)) throw new Error("Goal chain file is invalid.")
   if (value.version !== 1 || typeof value.id !== "string" || !Array.isArray(value.steps)) {
     throw new Error("Goal chain file is invalid.")
   }
   const steps = value.steps.map(sanitizeChainStep).filter((step): step is GoalControlChainStep => !!step)
   if (steps.length === 0) throw new Error("Goal chain file is invalid.")
   const current = typeof value.current === "number" && Number.isInteger(value.current) ? value.current : 0
-  const metadata = isRecord(value.metadata) ? value.metadata : {}
+  const metadata = isPlainObject(value.metadata) ? value.metadata : {}
   const master = sanitizeChainMaster(value.master)
   return {
     version: 1,
@@ -957,12 +945,12 @@ function sanitizeGoalChain(value: unknown): GoalControlChain {
     current: Math.max(0, Math.min(steps.length - 1, current)),
     // Preserve cycles (required by goal-chain.ts validateGoalChain). Re-reading
     // a chain for an edit op must not strip it, or the chain becomes invalid.
-    cycles: isNumber(value.cycles) && value.cycles >= 0 ? Math.floor(value.cycles) : 0,
+    cycles: isFiniteNumber(value.cycles) && value.cycles >= 0 ? Math.floor(value.cycles) : 0,
     maxCycles: clampPositiveInteger(Reflect.get(value, "maxCycles"), 1),
     onComplete: Reflect.get(value, "onComplete") === "loop" ? "loop" : "stop",
     ...(master ? { master } : {}),
     metadata: {
-      createdAt: isNumber(metadata.createdAt) ? metadata.createdAt : Date.now(),
+      createdAt: isFiniteNumber(metadata.createdAt) ? metadata.createdAt : Date.now(),
       setBy: "chain",
       ...(sanitizeSessionID(metadata.sessionId) ? { sessionId: sanitizeSessionID(metadata.sessionId) } : {}),
     },
@@ -970,7 +958,7 @@ function sanitizeGoalChain(value: unknown): GoalControlChain {
 }
 
 function sanitizeChainMaster(value: unknown) {
-  if (!isRecord(value)) return undefined
+  if (!isPlainObject(value)) return undefined
   const maxTurns = readPositiveInteger(value.maxTurns)
   const maxMinutes = readPositiveInteger(value.maxMinutes)
   if (!maxTurns && !maxMinutes) return undefined
@@ -980,13 +968,13 @@ function sanitizeChainMaster(value: unknown) {
   return {
     ...(maxTurns ? { maxTurns } : {}),
     ...(maxMinutes ? { maxMinutes } : {}),
-    turnsUsed: isNumber(value.turnsUsed) && value.turnsUsed >= 0 ? Math.floor(value.turnsUsed) : 0,
-    minutesUsed: isNumber(value.minutesUsed) && value.minutesUsed >= 0 ? Math.floor(value.minutesUsed) : 0,
+    turnsUsed: isFiniteNumber(value.turnsUsed) && value.turnsUsed >= 0 ? Math.floor(value.turnsUsed) : 0,
+    minutesUsed: isFiniteNumber(value.minutesUsed) && value.minutesUsed >= 0 ? Math.floor(value.minutesUsed) : 0,
   }
 }
 
 function sanitizeConstraints(value: unknown) {
-  if (!isRecord(value)) return undefined
+  if (!isPlainObject(value)) return undefined
   const out: Record<string, number> = {}
   const maxTurns = readPositiveInteger(value.maxTurns)
   const maxTimeMinutes = readPositiveInteger(value.maxTimeMinutes)
@@ -998,47 +986,47 @@ function sanitizeConstraints(value: unknown) {
 }
 
 function sanitizeVariables(value: unknown) {
-  if (!isRecord(value)) return undefined
+  if (!isPlainObject(value)) return undefined
   const out: Record<string, { description?: string; default?: string }> = {}
   for (const [key, raw] of Object.entries(value)) {
-    if (!/^\w+$/.test(key) || !isRecord(raw)) continue
+    if (!/^\w+$/.test(key) || !isPlainObject(raw)) continue
     out[key] = {
       ...(typeof raw.description === "string"
-        ? { description: sanitizePromptText(raw.description).slice(0, 200) }
+        ? { description: sanitizeForPrompt(raw.description).slice(0, 200) }
         : {}),
-      ...(typeof raw.default === "string" ? { default: sanitizePromptText(raw.default).slice(0, 200) } : {}),
+      ...(typeof raw.default === "string" ? { default: sanitizeForPrompt(raw.default).slice(0, 200) } : {}),
     }
   }
   return Object.keys(out).length > 0 ? out : undefined
 }
 
 function sanitizeControlMetadata(value: unknown): GoalControlState["metadata"] {
-  const metadata = isRecord(value) ? value : {}
+  const metadata = isPlainObject(value) ? value : {}
   const out: GoalControlState["metadata"] = {
     setBy: isSetBy(metadata.setBy) ? metadata.setBy : "user",
   }
-  if (typeof metadata.previousId === "string") out.previousId = sanitizePromptText(metadata.previousId).slice(0, 160)
+  if (typeof metadata.previousId === "string") out.previousId = sanitizeForPrompt(metadata.previousId).slice(0, 160)
   if (typeof metadata.sessionId === "string") {
     const sessionId = sanitizeSessionID(metadata.sessionId)
     if (sessionId) out.sessionId = sessionId
   }
-  if (isNumber(metadata.restartedAt)) out.restartedAt = metadata.restartedAt
-  if (typeof metadata.chainId === "string") out.chainId = sanitizePromptText(metadata.chainId).slice(0, 160)
-  if (isNumber(metadata.chainStep)) out.chainStep = metadata.chainStep
-  if (isNumber(metadata.chainTotal)) out.chainTotal = metadata.chainTotal
+  if (isFiniteNumber(metadata.restartedAt)) out.restartedAt = metadata.restartedAt
+  if (typeof metadata.chainId === "string") out.chainId = sanitizeForPrompt(metadata.chainId).slice(0, 160)
+  if (isFiniteNumber(metadata.chainStep)) out.chainStep = metadata.chainStep
+  if (isFiniteNumber(metadata.chainTotal)) out.chainTotal = metadata.chainTotal
   if (Array.isArray(metadata.steering)) {
     const steering = metadata.steering
-      .filter((item): item is { at: number; note: string } => isRecord(item) && isNumber(item.at) && typeof item.note === "string")
-      .map((item) => ({ at: item.at, note: sanitizePromptText(item.note).slice(0, 500) }))
+      .filter((item): item is { at: number; note: string } => isPlainObject(item) && isFiniteNumber(item.at) && typeof item.note === "string")
+      .map((item) => ({ at: item.at, note: sanitizeForPrompt(item.note).slice(0, 500) }))
       .filter((item) => item.note.length > 0)
       .slice(-20)
     if (steering.length > 0) out.steering = steering
   }
-  if (isRecord(metadata.webhook) && typeof metadata.webhook.url === "string" && Array.isArray(metadata.webhook.on)) {
+  if (isPlainObject(metadata.webhook) && typeof metadata.webhook.url === "string" && Array.isArray(metadata.webhook.on)) {
     const on = metadata.webhook.on.filter(isStatus)
     if (on.length > 0) {
       out.webhook = {
-        url: sanitizePromptText(metadata.webhook.url).slice(0, 2048),
+        url: sanitizeForPrompt(metadata.webhook.url).slice(0, 2048),
         on,
         ...(metadata.webhook.allowLocal === true ? { allowLocal: true } : {}),
       }
@@ -1083,51 +1071,36 @@ function parseBoundedInt(value: string | undefined, action: string) {
   return parsed
 }
 
-function sanitizePromptText(value: string) {
-  return value
-    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\ufeff\ufff9-\ufffb]/g, " ")
-    .replace(/ {2,}/g, " ")
-    .trim()
-}
-
 function sanitizeSessionID(value: unknown) {
   if (typeof value !== "string") return undefined
-  const sessionId = sanitizePromptText(value).slice(0, 160)
+  const sessionId = sanitizeForPrompt(value).slice(0, 160)
   return sessionId || undefined
 }
 
 function isGoalControlState(value: unknown): value is GoalControlState {
-  if (!isRecord(value)) return false
+  if (!isPlainObject(value)) return false
   if (typeof value.version !== "number") return false
   if (typeof value.id !== "string" || value.id.length === 0) return false
   if (typeof value.condition !== "string") return false
   if (!isStatus(value.status)) return false
-  if (!isNumber(value.createdAt) || !isNumber(value.startedAt)) return false
+  if (!isFiniteNumber(value.createdAt) || !isFiniteNumber(value.startedAt)) return false
   if (!isNullableNumber(value.completedAt) || !isNullableNumber(value.pausedAt) || !isNullableNumber(value.resumedAt)) {
     return false
   }
-  if (!isNumber(value.turnsEvaluated) || !isNumber(value.tokensUsed)) return false
+  if (!isFiniteNumber(value.turnsEvaluated) || !isFiniteNumber(value.tokensUsed)) return false
   if (!Array.isArray(value.evaluationHistory)) return false
-  if (!isRecord(value.constraints)) return false
-  if (!isNumber(value.constraints.maxTurns)) return false
-  if (!isNumber(value.constraints.maxTimeMinutes)) return false
-  if (!isNumber(value.constraints.maxTokens)) return false
-  if (!isRecord(value.metadata)) return false
+  if (!isPlainObject(value.constraints)) return false
+  if (!isFiniteNumber(value.constraints.maxTurns)) return false
+  if (!isFiniteNumber(value.constraints.maxTimeMinutes)) return false
+  if (!isFiniteNumber(value.constraints.maxTokens)) return false
+  if (!isPlainObject(value.metadata)) return false
   if (!isSetBy(value.metadata.setBy)) return false
   if (!(value.command === undefined || value.command === null || typeof value.command === "string")) return false
   return value.verification === undefined || value.verification === null || sanitizeVerification(value.verification) !== undefined
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function isNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value)
-}
-
 function isNullableNumber(value: unknown): value is number | null {
-  return value === null || isNumber(value)
+  return value === null || isFiniteNumber(value)
 }
 
 function isStatus(value: unknown): value is GoalControlStatus {

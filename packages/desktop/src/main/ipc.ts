@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { stat } from "node:fs/promises"
-import { basename } from "node:path"
+import { basename, isAbsolute } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
@@ -8,6 +8,7 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
+import { resolveAppPath } from "./apps"
 import { getStore } from "./store"
 import { isHttpsUrl } from "./is-https-url"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
@@ -77,7 +78,16 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
     deps.recordFatalRendererError(error),
   )
+  // Store names the renderer is allowed to access. The updater and other
+  // internal stores are managed exclusively by the main process.
+  const ALLOWED_STORE_NAMES = new Set(["opencode.settings", "default.dat", "opencode.global.dat"])
+
+  function requireAllowedStore(name: string): void {
+    if (!ALLOWED_STORE_NAMES.has(name)) throw new Error(`Store "${name}" is not accessible from the renderer.`)
+  }
+
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    requireAllowedStore(name)
     try {
       const store = getStore(name)
       const value = store.get(key)
@@ -88,19 +98,24 @@ export function registerIpcHandlers(deps: Deps) {
     }
   })
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
+    requireAllowedStore(name)
     getStore(name).set(key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    requireAllowedStore(name)
     getStore(name).delete(key)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
+    requireAllowedStore(name)
     getStore(name).clear()
   })
   ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
+    requireAllowedStore(name)
     const store = getStore(name)
     return Object.keys(store.store)
   })
   ipcMain.handle("store-length", (_event: IpcMainInvokeEvent, name: string) => {
+    requireAllowedStore(name)
     const store = getStore(name)
     return Object.keys(store.store).length
   })
@@ -171,10 +186,22 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
     if (!app) return shell.openPath(path)
+    // macOS: 'open -a' validates the app name through LaunchServices
+    if (process.platform === "darwin") {
+      await new Promise<void>((resolve, reject) => {
+        execFile("open", ["-a", app, path], (err) => (err ? reject(err) : resolve()))
+      })
+      return
+    }
+    // Windows/Linux: never execFile with a raw renderer-supplied string.
+    // Resolve through the system PATH first; only absolute resolved paths
+    // are safe to pass as the command to execFile.
+    const resolved = await resolveAppPath(app)
+    if (!resolved || !isAbsolute(resolved)) {
+      return shell.openPath(path)
+    }
     await new Promise<void>((resolve, reject) => {
-      const [cmd, args] =
-        process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
-      execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
+      execFile(resolved, [path], (err) => (err ? reject(err) : resolve()))
     })
   })
 

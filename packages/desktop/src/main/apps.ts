@@ -11,8 +11,8 @@ const exists = (path: string) =>
     .catch(() => false)
 
 export function checkAppExists(appName: string) {
-  if (process.platform === "win32") return true
-  if (process.platform === "linux") return true
+  if (process.platform === "win32") return resolveWindowsAppPath(appName).then((r) => r !== null)
+  if (process.platform === "linux") return execFilePromise("which", [appName]).then(() => true).catch(() => false)
   return checkMacosApp(appName)
 }
 

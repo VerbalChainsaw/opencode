@@ -10,13 +10,21 @@ const parseUrl = (input: string) => {
   }
 }
 
+const validateDirectory = (directory: string): string | undefined => {
+  // Reject path traversal — '..' segments attempt to escape the workspace
+  if (directory.split(/[\/\\]/).includes("..")) return
+  // Reject root-only paths (accidental system root navigation)
+  if (directory === "/" || directory === "\\") return
+  return directory
+}
+
 export const parseDeepLink = (input: string) => {
   const url = parseUrl(input)
   if (!url) return
   if (url.hostname !== "open-project") return
   const directory = url.searchParams.get("directory")
   if (!directory) return
-  return directory
+  return validateDirectory(directory)
 }
 
 export const parseNewSessionDeepLink = (input: string) => {
@@ -25,9 +33,11 @@ export const parseNewSessionDeepLink = (input: string) => {
   if (url.hostname !== "new-session") return
   const directory = url.searchParams.get("directory")
   if (!directory) return
+  const validated = validateDirectory(directory)
+  if (!validated) return
   const prompt = url.searchParams.get("prompt") || undefined
-  if (!prompt) return { directory }
-  return { directory, prompt }
+  if (!prompt) return { directory: validated }
+  return { directory: validated, prompt }
 }
 
 export const collectOpenProjectDeepLinks = (urls: string[]) =>

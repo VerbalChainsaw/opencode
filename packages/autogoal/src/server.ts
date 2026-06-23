@@ -485,9 +485,14 @@ export const server: Plugin = async ({ client, directory }) => {
   // legitimate use case).
   //
   // State file: archive and unlink if terminal.
+  // Capture the terminal state BEFORE unlinking so the chain cleanup
+  // below can use it (the previous code unlinked first, then re-read
+  // the now-absent file — so the chain was never cleaned up).
+  let bootTerminalState: GoalState | null = null;
   {
     const r = readGoalStateResult(directory);
     if (r.kind === "ok" && (r.value.status === "achieved" || r.value.status === "cleared")) {
+      bootTerminalState = r.value;
       try {
         appendGoalArchive(
           directory,
@@ -513,22 +518,16 @@ export const server: Plugin = async ({ client, directory }) => {
 
   // Chain file: clear only if the chain is FULLY DONE (last step
   // completed, the state is terminal, and the chain is no longer
-  // the engine's current focus). A freshly-created 1-step chain has
-  // `current === 0, steps.length === 1` but the user has not yet
-  // interacted with it — clearing it would surprise the user. The
-  // correct signal is "the chain is done AND the active state is
-  // terminal."
+  // the engine's current focus). Uses `bootTerminalState` captured
+  // above (before the state file was unlinked).
   try {
     const chainPath = goalChainPath(directory);
     if (existsSync(chainPath)) {
       const c = readGoalChainResult(directory);
       if (c.kind === "ok" && c.value.steps.length > 0) {
-        const s = readGoalStateResult(directory);
-        const stateIsTerminal =
-          s.kind === "ok" &&
-          (s.value.status === "achieved" || s.value.status === "cleared");
+        const stateIsTerminal = !!bootTerminalState;
         const stateBelongsToChain =
-          s.kind === "ok" && s.value.metadata?.chainId === c.value.id;
+          !!bootTerminalState && bootTerminalState.metadata?.chainId === c.value.id;
         if (
           c.value.current >= c.value.steps.length - 1 &&
           stateIsTerminal &&
@@ -747,8 +746,9 @@ export const server: Plugin = async ({ client, directory }) => {
       }
       if (v.expectBody) {
         const body = await res.text();
-        if (!new RegExp(v.expectBody).test(body)) {
-          return { met: false, reason: `Body didn't match /${v.expectBody}/`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
+        const re = safeRegExp(v.expectBody);
+        if (!re || !re.test(body)) {
+          return { met: false, reason: `Body didn't match /${v.expectBody.slice(0, 80)}/`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
         }
       }
       return { met: true, reason: `HTTP ${res.status} OK`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
@@ -759,6 +759,22 @@ export const server: Plugin = async ({ client, directory }) => {
 
   // Max file size for verification reads — prevents OOM on large files.
   const MAX_VERIFICATION_FILE_SIZE = 1024 * 1024; // 1 MB
+
+  // Regex patterns that cause catastrophic backtracking (ReDoS).
+  // Matches nested repetition quantifiers: (a+)+, (a*)*, (a+){n,}, (a|b)+, etc.
+  const REDOS_PATTERN = /\([^()]*(?:\+|\*|\{\d+,?\d*\})[^()]*\)\s*(?:\+|\*|\?|\{\d+,?\d*\})|[+*]\{[0-9]+,\}/;
+  const MAX_VERIFICATION_PATTERN_LEN = 1000;
+
+  /** Returns a RegExp if the pattern is safe, or null if it's dangerous or invalid. */
+  function safeRegExp(pattern: string): RegExp | null {
+    if (!pattern || pattern.length > MAX_VERIFICATION_PATTERN_LEN) return null;
+    if (REDOS_PATTERN.test(pattern)) return null;
+    try {
+      return new RegExp(pattern);
+    } catch {
+      return null;
+    }
+  }
 
   async function evaluateFile(v: { path: string; exists?: boolean; contains?: string }): Promise<GoalEvaluation> {
     const now = Date.now();
@@ -789,8 +805,9 @@ export const server: Plugin = async ({ client, directory }) => {
       }
       if (v.contains) {
         const content = readFileSync(resolved, "utf-8");
-        if (!new RegExp(v.contains).test(content)) {
-          return { met: false, reason: `Content doesn't match /${v.contains}/`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
+        const re = safeRegExp(v.contains);
+        if (!re || !re.test(content)) {
+          return { met: false, reason: `Content doesn't match /${v.contains.slice(0, 80)}/`, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
         }
       }
       return { met: true, reason: "File check passed", confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
@@ -874,21 +891,23 @@ export const server: Plugin = async ({ client, directory }) => {
   // { cleared: true, reason } if a limit was exceeded and the goal was cleared,
   // or { cleared: false } to continue. Handles state write + timeline recording
   // internally because it holds the evaluation lock.
-  function checkConstraints(
+  async function checkConstraints(
     state: GoalState,
     now: number,
-  ): { cleared: true; reason: string } | { cleared: false } | null {
-    const f = readGoalState(directory);
-    if (!f || f.status !== "active" || f.id !== state.id) return null;
-    const constraint = detectConstraintStop(f);
-    if (!constraint.exceeded) return { cleared: false };
-    f.status = "cleared";
-    f.completedAt = now;
-    f.lastEvaluation = { met: false, reason: constraint.reason, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
-    recordEvaluation(f, f.lastEvaluation);
-    recordTimelineFor(f, f.lastEvaluation, "constraint-clear");
-    writeGoalStateAtomic(directory, f);
-    return { cleared: true, reason: constraint.reason };
+  ): Promise<{ cleared: true; reason: string } | { cleared: false } | null> {
+    return withStateLock(directory, () => {
+      const f = readGoalState(directory);
+      if (!f || f.status !== "active" || f.id !== state.id) return null;
+      const constraint = detectConstraintStop(f);
+      if (!constraint.exceeded) return { cleared: false };
+      f.status = "cleared";
+      f.completedAt = now;
+      f.lastEvaluation = { met: false, reason: constraint.reason, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
+      recordEvaluation(f, f.lastEvaluation);
+      recordTimelineFor(f, f.lastEvaluation, "constraint-clear");
+      writeGoalStateAtomic(directory, f);
+      return { cleared: true, reason: constraint.reason };
+    });
   }
 
   // Checks the latest assistant transcript for a GOAL_BLOCKED marker. If found,
@@ -897,20 +916,21 @@ export const server: Plugin = async ({ client, directory }) => {
   // SDK fetch). Returns null if state is stale.
   async function checkBlockedMarker(
     state: GoalState,
-    sessionId: string,
+    latestText: string,
     now: number,
-  ): Promise<{ paused: true; state: GoalState } | { paused: false; transcript: string } | null> {
-    const f = readGoalState(directory);
-    if (!f || f.status !== "active" || f.id !== state.id) return null;
-    const latest = await getLatestAssistantText(sessionId);
-    const blockedText = detectMarker(latest, BLOCKED_RE);
-    if (blockedText === null) return { paused: false, transcript: latest };
-    recordEvaluation(f, { met: false, blocked: true, reason: `Agent reported blocked: ${sanitizeForPrompt(blockedText).slice(0, 200) || "(no detail)"}`, confidence: 0.8, timestamp: now, evaluatorType: "heuristic" });
-    recordTimelineFor(f, f.lastEvaluation!, "blocked-marker");
-    f.status = "paused";
-    f.pausedAt = now;
-    writeGoalStateAtomic(directory, f);
-    return { paused: true, state: f };
+  ): Promise<{ paused: true; state: GoalState } | { paused: false } | null> {
+    const blockedText = detectMarker(latestText, BLOCKED_RE);
+    if (blockedText === null) return { paused: false };
+    return withStateLock(directory, () => {
+      const f = readGoalState(directory);
+      if (!f || f.status !== "active" || f.id !== state.id) return null;
+      recordEvaluation(f, { met: false, blocked: true, reason: `Agent reported blocked: ${sanitizeForPrompt(blockedText).slice(0, 200) || "(no detail)"}`, confidence: 0.8, timestamp: now, evaluatorType: "heuristic" });
+      recordTimelineFor(f, f.lastEvaluation!, "blocked-marker");
+      f.status = "paused";
+      f.pausedAt = now;
+      writeGoalStateAtomic(directory, f);
+      return { paused: true, state: f };
+    });
   }
 
   async function evaluate(state: GoalState, sessionId: string): Promise<void> {
@@ -921,7 +941,7 @@ export const server: Plugin = async ({ client, directory }) => {
     lastEvaluationTime = now;
     try {
       // v0.4.1 — constraint check on fresh disk state (not the idle snapshot).
-      const constraintResult = checkConstraints(state, now);
+      const constraintResult = await checkConstraints(state, now);
       if (!constraintResult) return;
       if (constraintResult.cleared) {
         const cleared = readGoalState(directory);
@@ -935,7 +955,7 @@ export const server: Plugin = async ({ client, directory }) => {
       // (the blocked-marker is per-step, not cross-step), so we share the
       // same `getLatestAssistantMeta` and re-use the text.
       const latestMeta = await getLatestAssistantMeta(sessionId);
-      const blocked = await checkBlockedMarker(state, sessionId, now);
+      const blocked = await checkBlockedMarker(state, latestMeta?.text ?? "", now);
       if (!blocked) return;
       if (blocked.paused) {
         fireWebhook(blocked.state, "active");
@@ -953,7 +973,7 @@ export const server: Plugin = async ({ client, directory }) => {
         ? await evaluateGoal(state, latestMeta, markerCutoff)
         : await evaluateGoal(state, { text: "", createdAt: 0 }, markerCutoff);
 
-      const snapshot = (() => {
+      const snapshot = await withStateLock(directory, () => {
         const f = readGoalState(directory);
         if (!f || f.status !== "active" || f.id !== state.id) return null;
         recordEvaluation(f, evaluation);
@@ -961,33 +981,16 @@ export const server: Plugin = async ({ client, directory }) => {
         if (evaluation.met) {
           f.status = "achieved";
           f.completedAt = Date.now();
-          // v0.7.2 — persist the marker timestamp on the just-achieved
-          // state. `advanceGoalChain` reads the prior step's
-          // `state.metadata.stepMarkerAt` to carry it forward onto the
-          // new step's state (so its marker scan can ignore the prior
-          // step's stale marker). Without this, the marker cutoff is
-          // 0 on the new step and the prior step's GOAL_COMPLETE: is
-          // re-read as the new step's completion.
           if (typeof evaluation.markerAt === "number" && evaluation.markerAt > 0) {
             f.metadata.stepMarkerAt = evaluation.markerAt;
           }
-          // v0.7.0 (A4) — record a timeline event for the met path so
-          // the Live Session pane shows the user "turn N: met" before
-          // the archive hook fires. Label includes the evaluator type
-          // for context (deterministic / heuristic / model).
           recordTimelineFor(f, evaluation, `met-${evaluation.evaluatorType}`);
           writeGoalStateAtomic(directory, f);
-          // v0.5.0 (F-3) — archive the achieved outcome. Best-effort:
-          // a full disk or permission failure here must not block the
-          // goal transition (the archive is a bonus, not the contract).
           appendGoalArchive(directory, f, "achieved");
           return { achieved: true as const, reason: evaluation.reason };
         }
 
         writeGoalStateAtomic(directory, f);
-        // v0.7.0 (A4) — record a timeline event for the in-progress
-        // (not-met) path so the Live Session pane shows the user the
-        // most recent turn's outcome.
         recordTimelineFor(f, evaluation, `step-${evaluation.evaluatorType}`);
         return {
           achieved: false as const,
@@ -995,11 +998,9 @@ export const server: Plugin = async ({ client, directory }) => {
           turnsEvaluated: f.turnsEvaluated,
           maxTurns: f.constraints.maxTurns,
           steering: Array.isArray(f.metadata.steering) ? [...f.metadata.steering] : [],
-          // v0.7.x: preserve the agent name so the nudge passes it to
-          // session.prompt (the session's own default may differ).
           agentName: typeof f.metadata.agentName === "string" ? f.metadata.agentName : null,
         };
-      })();
+      });
 
       if (!snapshot) return;
       if (snapshot.achieved) {
@@ -1073,6 +1074,28 @@ export const server: Plugin = async ({ client, directory }) => {
                   error: failure.detail,
                   kind: failure.kind,
                 });
+                if (failure.kind === "auth" || failure.kind === "provider-fatal") {
+                  withStateLock(directory, () => {
+                    const res = transitionGoal(directory, "pause");
+                    if (!res.ok) return;
+                    const fresh = readGoalState(directory);
+                    if (fresh) {
+                      fresh.lastEvaluation = {
+                        met: false,
+                        blocked: true,
+                        reason: `Chain advance failed (${failure.kind}): ${failure.detail}`,
+                        confidence: 1.0,
+                        timestamp: Date.now(),
+                        evaluatorType: "deterministic",
+                      };
+                      writeGoalStateAtomic(directory, fresh);
+                      fireWebhook(fresh, "active");
+                    }
+                  }).catch((lockErr) => {
+                    log("error", "withStateLock failed in chain-advance fatal pause", { error: String(lockErr) });
+                  });
+                  notify(sessionId, "Chain stopped — provider error", failure.detail, "error").catch(() => {});
+                }
               });
           }
         } else {
@@ -1185,14 +1208,13 @@ export const server: Plugin = async ({ client, directory }) => {
             kind: failure.kind,
             consecutiveFailures: count,
           });
-          // v0.4.1 (B-5) — after MAX_NUDGE_FAILURES consecutive nudge-delivery
-          // failures in this session, transition the goal to paused so the user
-          // gets a notification instead of a silent dead loop (e.g. session was
-          // killed, transport is down, or the session model is in a fatal state).
-          // v0.7.0 (audit fix): wrap in withStateLock so this auto-loop
-          // write doesn't race with a concurrent tool handler.
-          // v0.7.1: per-session tracking (was global, could pause all sessions).
-          if (exceeded) {
+          // Hard errors (auth / provider-fatal) pause immediately — don't
+          // burn through remaining chain steps with guaranteed failures.
+          const hardError = failure.kind === "auth" || failure.kind === "provider-fatal";
+          if (hardError || exceeded) {
+            const reason = hardError
+              ? `Provider error — goal paused (${failure.kind}): ${failure.detail}`
+              : `Nudge delivery failed ${count} times consecutively in session ${sessionId} (${failure.kind}: ${failure.detail}).`;
             withStateLock(directory, () => {
               const res = transitionGoal(directory, "pause");
               if (res.ok) {
@@ -1201,7 +1223,7 @@ export const server: Plugin = async ({ client, directory }) => {
                   fresh.lastEvaluation = {
                     met: false,
                     blocked: true,
-                    reason: `Nudge delivery failed ${count} times consecutively in session ${sessionId} (${failure.kind}: ${failure.detail}).`,
+                    reason,
                     confidence: 1.0,
                     timestamp: Date.now(),
                     evaluatorType: "deterministic",
@@ -1215,6 +1237,9 @@ export const server: Plugin = async ({ client, directory }) => {
             }).catch((lockErr) => {
               log("error", "withStateLock failed in nudge-failure pause", { error: String(lockErr) });
             });
+            if (hardError) {
+              notify(sessionId, "Goal paused — provider error", failure.detail, "error").catch(() => {});
+            }
           }
         })
     } catch (err) {

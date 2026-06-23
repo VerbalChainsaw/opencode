@@ -3,8 +3,8 @@
  * transitions, completion-marker detection, and status formatting.
  *
  * This is the single source of truth for everything that touches the goal state
- * file. It has ZERO third-party imports (only Node builtins), so the compiled
- * output is self-contained and the package needs no runtime dependencies.
+ * file. It uses only Node builtins and shared internal utilities (`./utils.js`),
+ * so the compiled output is self-contained with no external runtime dependencies.
  *
  * Ported verbatim from the previously unit-tested scripts (set-state / update-state /
  * read-state) so behaviour is unchanged — just consolidated and cross-platform.
@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appendGoalArchive } from "./goal-archive.js";
+import { isPlainObject, isFiniteNumber } from "./utils.js";
 
 export type GoalStatus = "active" | "paused" | "achieved" | "cleared";
 export type EvaluatorType = "deterministic" | "model" | "heuristic";
@@ -210,14 +211,6 @@ export function detectMarker(text: string, re: RegExp): string | null {
 // `execAsync` with an unhelpful error. Rejecting at the boundary turns those
 // into clean "state file is corrupt, ignoring it" recovery.
 const VALID_STATUSES = new Set<GoalStatus>(["active", "paused", "achieved", "cleared"]);
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === "number" && Number.isFinite(v);
-}
 
 export function validateGoalState(state: any): state is GoalState {
   if (!isPlainObject(state)) return false;
@@ -684,11 +677,10 @@ export function readGoalStateResult(directory: string): ReadResult<GoalState> {
 }
 
 /**
- * @deprecated v0.4.1 — use `readGoalStateResult` (returns `ReadResult<GoalState>`).
- * This shim returns the `value` on `ok` and `null` on `absent` or `corrupt`,
- * which loses the corrupt/absent discrimination. Migrating the 51 internal
- * `src/` callsites to consume the discriminated `kind` is a v0.4.2 task
- * (REVIEW-V040-MULTI-ANGLE.md §2.2).
+ * Convenience shim: returns `value` on `ok`, `null` otherwise.
+ * Prefer `readGoalStateResult` for new code where corrupt/absent
+ * discrimination matters. Callsites that only need presence/absence
+ * are fine with this shim and are not expected to migrate.
  */
 export function readGoalState(directory: string): GoalState | null {
   const r = readGoalStateResult(directory);
@@ -725,11 +717,8 @@ export function readGoalStateRawResult(directory: string): ReadResult<unknown> {
 
 /** Read raw state even if not schema-valid (for transitions that report status).
  *
- *  @deprecated v0.4.1 — use `readGoalStateRawResult` (returns `ReadResult<unknown>`).
- *  This shim returns the raw value on `ok` and `null` on `absent` or `corrupt`.
- *  The single internal caller (`persistGoal`) has been migrated to consume
- *  the new ReadResult directly so it doesn't have to do "is it null AND was
- *  it actually absent or corrupt?" discrimination by hand.
+ *  Convenience shim: returns the raw value on `ok`, `null` otherwise.
+ *  Prefer `readGoalStateRawResult` for new code.
  */
 export function readGoalStateRaw(directory: string): any | null {
   const r = readGoalStateRawResult(directory);
@@ -1688,11 +1677,8 @@ export function readHandoffResult(directory: string): ReadResult<HandoffPayload>
 }
 
 /**
- * @deprecated v0.4.1 — use `readHandoffResult` (returns
- * `ReadResult<HandoffPayload>`). This shim returns the `value` on `ok`
- * and `null` on `absent` or `corrupt`. The 2 internal callers
- * (`claimHandoff`, `sidebar-logic.buildSidebarView`) continue to work
- * unchanged. v0.4.2 will migrate the callsites to consume the `kind`.
+ * Convenience shim: returns `value` on `ok`, `null` otherwise.
+ * Prefer `readHandoffResult` for new code.
  */
 export function readHandoff(directory: string): HandoffPayload | null {
   const r = readHandoffResult(directory);

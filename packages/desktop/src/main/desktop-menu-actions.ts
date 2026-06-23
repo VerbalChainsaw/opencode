@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron"
+import { app, BrowserWindow } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import { createMainWindow, updateTitlebar } from "./windows"
 
@@ -39,7 +39,7 @@ export function runDesktopMenuAction(
       win?.reload()
       return
     case "view.toggleDevTools":
-      win?.webContents.toggleDevTools()
+      if (!app.isPackaged) win?.webContents.toggleDevTools()
       return
     case "view.resetZoom":
       setZoom(win, 1)

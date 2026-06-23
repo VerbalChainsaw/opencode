@@ -234,19 +234,26 @@ export default new Hono<{ Bindings: Env }>()
     const threadId = body.event?.message?.root_id || body.event?.message?.message_id
     if (threadId) message = `${message} [${threadId}]`
 
-    const response = await fetch(
-      `https://discord.com/api/v10/channels/${Resource.DISCORD_SUPPORT_CHANNEL_ID.value}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bot ${Resource.DISCORD_SUPPORT_BOT_TOKEN.value}`,
+    let response: Response
+    try {
+      response = await fetch(
+        `https://discord.com/api/v10/channels/${Resource.DISCORD_SUPPORT_CHANNEL_ID.value}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bot ${Resource.DISCORD_SUPPORT_BOT_TOKEN.value}`,
+          },
+          body: JSON.stringify({
+            content: `${message}`,
+          }),
+          signal: AbortSignal.timeout(10_000),
         },
-        body: JSON.stringify({
-          content: `${message}`,
-        }),
-      },
-    )
+      )
+    } catch (err) {
+      console.error("Discord fetch failed", err)
+      return c.json({ error: "Failed to reach Discord" }, { status: 502 })
+    }
 
     if (!response.ok) {
       console.error(await response.text())

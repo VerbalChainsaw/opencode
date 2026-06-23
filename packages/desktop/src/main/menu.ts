@@ -9,6 +9,7 @@ import {
 
 import { UPDATER_ENABLED } from "./constants"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
+import { isHttpsUrl } from "./is-https-url"
 
 type Deps = {
   trigger: (id: string) => void
@@ -56,7 +57,9 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
   }
   if (entry.href) {
     const href = entry.href
-    item.click = () => shell.openExternal(href)
+    item.click = () => {
+      if (isHttpsUrl(href)) void shell.openExternal(href)
+    }
   }
 
   return item

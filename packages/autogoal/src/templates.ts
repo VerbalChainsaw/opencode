@@ -199,9 +199,7 @@ function referencedVars(text: string): Set<string> {
   return out;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isPlainObject } from "./utils.js";
 
 function validTemplateSkills(value: unknown): boolean {
   if (!Array.isArray(value)) return false;

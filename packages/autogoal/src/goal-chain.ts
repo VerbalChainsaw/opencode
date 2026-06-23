@@ -202,12 +202,8 @@ function renameCorruptChainFile(p: string): void {
 }
 
 /**
- * @deprecated v0.4.1 — use `readGoalChainResult` (returns
- * `ReadResult<GoalChain>`). This shim returns the `value` on `ok` and
- * `null` on `absent` or `corrupt`. The 4 internal `src/` callsites
- * (`advanceGoalChain`, `resetGoalChain`, `setChainWebhook`, the chain
- * test suite) continue to work unchanged. v0.4.2 will migrate the
- * callsites to consume the `kind`.
+ * Convenience shim: returns `value` on `ok`, `null` otherwise.
+ * Prefer `readGoalChainResult` for new code.
  */
 export function readGoalChain(directory: string): GoalChain | null {
   const r = readGoalChainResult(directory);
@@ -231,13 +227,7 @@ export function writeGoalChainAtomic(directory: string, chain: GoalChain): void 
 
 // ── Validation ───────────────────────────────────────────────────────────────
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === "number" && Number.isFinite(v);
-}
+import { isPlainObject, isFiniteNumber } from "./utils.js";
 
 const VALID_CHAIN_STATUSES = new Set<GoalStatus>(["active", "paused", "achieved", "cleared"]);
 const VALID_VERIFICATION_TYPES = new Set(["shell", "http", "file", "marker"]);
@@ -543,7 +533,7 @@ export function createGoalChain(
   }
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i]!;
-    if (!s.condition || s.condition.trim().length === 0) {
+    if (typeof s.condition !== "string" || s.condition.trim().length === 0) {
       return { ok: false, error: `Step ${i + 1} condition cannot be empty.` };
     }
     if (s.condition.length > MAX_CONDITION_LEN) {

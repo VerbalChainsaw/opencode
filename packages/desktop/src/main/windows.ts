@@ -350,6 +350,11 @@ function addDocumentPolicy(response: Response, file: string) {
   if (!file.toLowerCase().endsWith(".html")) return response
   const headers = new Headers(response.headers)
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
+  headers.set(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+      "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' data: https:; font-src 'self'",
+  )
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 

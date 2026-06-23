@@ -1366,21 +1366,58 @@ export default function Layout(props: ParentProps) {
   const handleDeepLinks = (urls: string[]) => {
     if (!server.isLocal()) return
 
-    for (const directory of collectOpenProjectDeepLinks(urls)) {
-      void openProject(directory)
-    }
+    const projectDirs = collectOpenProjectDeepLinks(urls)
+    const sessionLinks = collectNewSessionDeepLinks(urls)
 
-    for (const link of collectNewSessionDeepLinks(urls)) {
-      void openProject(link.directory, false)
-      const slug = base64Encode(link.directory)
-      if (link.prompt) {
-        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(slug)), {
-          prompt: link.prompt,
-        })
-      }
-      const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
-      navigateWithSidebarReset(href)
-    }
+    const allDirs = [
+      ...projectDirs,
+      ...sessionLinks.map((l) => l.directory),
+    ]
+
+    if (allDirs.length === 0) return
+
+    // Deep links from external sources require explicit user confirmation
+    // before opening local filesystem directories.
+    dialog.show(() => (
+      <Dialog title={language.t("deeplink.confirm.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {allDirs.length === 1
+                ? language.t("deeplink.confirm.single")
+                : language.t("deeplink.confirm.multi", { count: String(allDirs.length) })}
+            </span>
+            <span class="text-12-regular text-text-weak font-mono break-all">
+              {allDirs.join("\n")}
+            </span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="large" onClick={() => {
+              dialog.close()
+              for (const directory of projectDirs) {
+                void openProject(directory)
+              }
+              for (const link of sessionLinks) {
+                void openProject(link.directory, false)
+                const slug = base64Encode(link.directory)
+                if (link.prompt) {
+                  setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(slug)), {
+                    prompt: link.prompt,
+                  })
+                }
+                const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
+                navigateWithSidebarReset(href)
+              }
+            }}>
+              {language.t("common.open")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
   }
 
   onMount(() => {
