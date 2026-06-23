@@ -1,41 +1,43 @@
 {
   "version": 1,
-  "id": "06253bd1-b45a-46d6-b951-b451945bed6c",
+  "id": "cca06a15-8217-4aa0-af31-cc28ab29013b",
   "steps": [
+    {
+      "condition": "Create a concise implementation plan for the current coding request. Identify the files, sequence, risks, and verification needed before changing code.",
+      "verification": {
+        "type": "marker"
+      },
+      "maxTurns": 3,
+      "maxMinutes": 10,
+      "category": "Planning",
+      "tone": "violet",
+      "elevation": "raised"
+    },
     {
       "condition": "Debug the reported failure. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
       "verification": {
         "type": "marker"
       },
       "maxTurns": 8,
-      "maxMinutes": 30
-    },
-    {
-      "condition": "Validate the current change. Run the relevant tests, typechecks, builds, or UI checks; inspect failures; and fix regressions until the verification set is clean.",
-      "verification": {
-        "type": "marker"
-      },
-      "maxTurns": 4,
-      "maxMinutes": 15
-    },
-    {
-      "condition": "Typecheck the current change. Find the repository's relevant typecheck command, run it, fix type errors without broad refactors, and re-run until clean.",
-      "verification": {
-        "type": "marker"
-      },
-      "maxTurns": 3,
-      "maxMinutes": 10
+      "maxMinutes": 30,
+      "category": "Debugging",
+      "tone": "orange",
+      "elevation": "raised"
     }
   ],
   "current": 0,
-  "maxCycles": 1,
+  "cycles": 0,
+  "maxCycles": 10,
   "onComplete": "stop",
   "master": {
     "maxTurns": 20,
-    "maxMinutes": 60
+    "maxMinutes": 60,
+    "turnsUsed": 0,
+    "minutesUsed": 0
   },
   "metadata": {
-    "createdAt": 1781727658688,
-    "setBy": "chain"
+    "createdAt": 1782257425663,
+    "setBy": "chain",
+    "sessionId": "ses_10feebdefffenhh0IHhIR1uIuJ"
   }
 }

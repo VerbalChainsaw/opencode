@@ -375,7 +375,7 @@ describe("runControlCenter live-event tick (v0.7.0)", () => {
     // evaluation, and neither of those writes updates the goal
     // state file. The tick is the dedicated refresh for those
     // surfaces.
-    const src = readFileSync("src/control-center.ts", "utf-8");
+    const src = readFileSync(join(here, "..", "src", "control-center.ts"), "utf-8");
     assert.match(src, /setInterval/, "control-center.ts must use setInterval for the live-event tick");
     assert.match(src, /TICK_MS|tickIntervalMs|OPENGCODE_TUI_TICK_MS/, "control-center.ts must expose a tick interval");
   });
@@ -424,7 +424,7 @@ describe("runControlCenter drill-down mode (v0.7.0)", () => {
   }
 
   test("source-level pin: drill-down mode is wired in control-center.ts", () => {
-    const src = readFileSync("src/control-center.ts", "utf-8");
+    const src = readFileSync(join(here, "..", "src", "control-center.ts"), "utf-8");
     assert.match(src, /drillReducer|drill-down/);
   });
 
@@ -707,7 +707,7 @@ describe("runControlCenter 7 new actions (v0.7.0)", () => {
   // Source-level pin: all 7 actions are referenced in the
   // shell's onKey. Catches accidental removal during refactors.
   test("source-level pin: all 7 new actions are wired in control-center.ts", () => {
-    const src = readFileSync("src/control-center.ts", "utf-8");
+    const src = readFileSync(join(here, "..", "src", "control-center.ts"), "utf-8");
     for (const letter of ["a", "t", "d", "l", "o", "g"]) {
       assert.match(src, new RegExp(`key\\.name === "${letter}"`), `action ${letter} is wired`);
     }

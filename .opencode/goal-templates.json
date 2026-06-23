@@ -1,3 +1,32 @@
 {
-  "templates": []
+  "templates": [
+    {
+      "id": "custom-action",
+      "builtin": false,
+      "label": "Validate that you said buttface",
+      "description": "Validate that you said buttface",
+      "condition": "Validate that you said buttface 10 times",
+      "constraints": {
+        "maxTurns": 5,
+        "maxTimeMinutes": 20
+      },
+      "category": "Custom",
+      "tone": "violet",
+      "elevation": "flat"
+    },
+    {
+      "id": "custom-action-2",
+      "builtin": false,
+      "label": "Say Buttface",
+      "description": "Say Buttface",
+      "condition": "Say Buttface 10 times",
+      "constraints": {
+        "maxTurns": 5,
+        "maxTimeMinutes": 20
+      },
+      "category": "Custom",
+      "tone": "violet",
+      "elevation": "flat"
+    }
+  ]
 }

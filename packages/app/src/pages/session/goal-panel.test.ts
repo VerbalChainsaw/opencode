@@ -176,7 +176,7 @@ describe("goal panel mission-control contracts", () => {
     const src = await goalPanelSource()
     expect(src).toContain("executeGoalCommand")
     expect(src).not.toContain("goalCommandUnavailable")
-    const disabledLines = src.split("\n").filter((line) => line.includes("disabled="))
+    const disabledLines = src.split("\n").filter((line: string) => line.includes("disabled="))
     expect(disabledLines.join("\n")).not.toContain("goalCommandMissing")
     expect(src).not.toContain("const goalCommandMissing = createMemo")
   })

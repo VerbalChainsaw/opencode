@@ -1,51 +1,31 @@
 {
   "version": 1,
-  "id": "acf2bf18-f1b9-48d1-b55a-ef50b6c14cf9",
-  "condition": "Debug the reported failure. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
+  "id": "0fc5ba4b-35ee-4275-87c6-b971b4ebb9fe",
+  "condition": "Create a concise implementation plan for the current coding request. Identify the files, sequence, risks, and verification needed before changing code.",
   "command": null,
   "verification": {
     "type": "marker"
   },
   "status": "cleared",
-  "createdAt": 1781727658688,
-  "startedAt": 1781727658688,
-  "completedAt": 1781831491120,
+  "createdAt": 1782257425663,
+  "startedAt": 1782257425663,
+  "completedAt": 1782257430399,
   "pausedAt": null,
   "resumedAt": null,
-  "turnsEvaluated": 2,
+  "turnsEvaluated": 0,
   "tokensUsed": 0,
-  "lastEvaluation": {
-    "met": false,
-    "reason": "No GOAL_COMPLETE signal in latest output yet",
-    "confidence": 0.5,
-    "timestamp": 1781727660714,
-    "evaluatorType": "heuristic"
-  },
-  "evaluationHistory": [
-    {
-      "met": false,
-      "reason": "No GOAL_COMPLETE signal in latest output yet",
-      "confidence": 0.5,
-      "timestamp": 1781727659596,
-      "evaluatorType": "heuristic"
-    },
-    {
-      "met": false,
-      "reason": "No GOAL_COMPLETE signal in latest output yet",
-      "confidence": 0.5,
-      "timestamp": 1781727660714,
-      "evaluatorType": "heuristic"
-    }
-  ],
+  "lastEvaluation": null,
+  "evaluationHistory": [],
   "constraints": {
-    "maxTurns": 8,
-    "maxTimeMinutes": 30,
+    "maxTurns": 3,
+    "maxTimeMinutes": 10,
     "maxTokens": 100000
   },
   "metadata": {
     "setBy": "chain",
-    "chainId": "06253bd1-b45a-46d6-b951-b451945bed6c",
+    "chainId": "cca06a15-8217-4aa0-af31-cc28ab29013b",
     "chainStep": 0,
-    "chainTotal": 3
+    "chainTotal": 2,
+    "sessionId": "ses_10feebdefffenhh0IHhIR1uIuJ"
   }
 }

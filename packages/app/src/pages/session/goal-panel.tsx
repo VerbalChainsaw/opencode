@@ -572,41 +572,40 @@ function numericHighlightClass(extra = "") {
   return `goal-number-highlight inline-flex min-h-5 items-center rounded-md border px-1.5 text-12-medium tabular-nums ${extra}`
 }
 
+function metricAccent(ratio: number): string {
+  const r = Math.max(0, Math.min(1, ratio))
+  const hue = 145 * (1 - r)
+  return `hsl(${hue}, 72%, 52%)`
+}
+
+function toneAccent(tone: "default" | "success" | "warning" | "danger"): string {
+  if (tone === "success") return "hsl(145, 72%, 52%)"
+  if (tone === "warning") return "hsl(38, 92%, 56%)"
+  if (tone === "danger") return "hsl(0, 72%, 52%)"
+  return "hsl(210, 10%, 45%)"
+}
+
 function RunMetricPill(props: {
   label: string
   value: string
   detail?: string
+  accent?: string
   tone?: "default" | "success" | "warning" | "danger"
 }) {
+  const c = () => props.accent ?? (props.tone ? toneAccent(props.tone) : "hsl(210, 10%, 45%)")
   return (
     <div
-      class="grid min-w-0 grid-cols-[3px_minmax(0,1fr)] overflow-hidden rounded-md border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-      classList={{
-        "border-border-base bg-background-base/70": !props.tone || props.tone === "default",
-        "border-emerald-400/35 bg-emerald-400/10": props.tone === "success",
-        "border-amber-400/35 bg-amber-400/10": props.tone === "warning",
-        "border-rose-400/35 bg-rose-400/10": props.tone === "danger",
+      class="flex min-w-0 flex-col items-center rounded-md px-2 py-1 text-center"
+      style={{
+        background: `linear-gradient(180deg, color-mix(in srgb, ${c()} 14%, transparent) 0%, transparent 100%)`,
+        "box-shadow": `inset 0 1px 0 color-mix(in srgb, ${c()} 20%, transparent), 0 1px 2px rgba(0,0,0,0.25)`,
       }}
     >
-      <span
-        classList={{
-          "bg-border-strong": !props.tone || props.tone === "default",
-          "bg-emerald-400": props.tone === "success",
-          "bg-amber-400": props.tone === "warning",
-          "bg-rose-400": props.tone === "danger",
-        }}
-        aria-hidden
-      />
-      <div class="min-w-0 px-2 py-1">
-        <div class="truncate text-[9px] font-medium uppercase leading-3 tracking-[0.08em] text-text-weaker">
-          {props.label}
-        </div>
-        <div class="mt-0.5 truncate text-12-medium tabular-nums leading-4 text-text-base" title={props.value}>
-          {props.value}
-        </div>
-        <Show when={props.detail}>
-          <div class="truncate text-[10px] leading-4 text-text-weaker">{props.detail}</div>
-        </Show>
+      <div class="text-sm font-bold tabular-nums leading-5" style={{ color: `color-mix(in srgb, ${c()} 70%, white)` }} title={props.value}>
+        {props.value}
+      </div>
+      <div class="truncate text-[8px] font-semibold uppercase tracking-[0.06em] text-text-weaker">
+        {props.label}
       </div>
     </div>
   )
@@ -666,25 +665,25 @@ function GoalConsoleSection(props: {
     },
     "chain-builder": {
       style: {
-        "border-color": "rgba(139, 92, 246, 0.20)",
+        "border-color": "rgba(120, 100, 200, 0.28)",
         "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.30), rgba(24, 24, 27, 0.92))",
-        "border-color": "rgba(167, 139, 250, 0.16)",
+        "background": "linear-gradient(90deg, rgba(55, 35, 110, 0.28), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(140, 120, 220, 0.16)",
       },
-      markerStyle: { "background-color": "rgba(196, 181, 253, 0.8)" },
+      markerStyle: { "background-color": "rgba(170, 150, 240, 0.75)" },
     },
     "action-library": {
       style: {
-        "border-color": "rgba(52, 211, 153, 0.34)",
+        "border-color": "rgba(148, 163, 184, 0.18)",
         "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.16)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(6, 95, 70, 0.38), rgba(24, 24, 27, 0.92))",
-        "border-color": "rgba(52, 211, 153, 0.30)",
+        "background": "linear-gradient(90deg, rgba(39, 39, 42, 0.88), rgba(24, 24, 27, 0.94))",
+        "border-color": "rgba(148, 163, 184, 0.12)",
       },
-      markerStyle: { "background-color": "rgb(167, 243, 208)" },
+      markerStyle: { "background-color": "rgba(52, 211, 153, 0.7)" },
     },
     "action-editor": {
       style: {
@@ -751,7 +750,7 @@ function GoalConsoleSection(props: {
           <div class="flex min-w-0 flex-1 items-center gap-2">
             <span class="h-4 w-1.5 shrink-0 rounded-sm" style={accent.markerStyle} aria-hidden />
             <div class="flex min-w-0 flex-1 items-baseline gap-2">
-              <span data-component="goal-console-section-title-text" class="shrink-0 truncate text-[13px] font-black uppercase leading-4 tracking-[0.12em] text-white">
+              <span data-component="goal-console-section-title-text" class="shrink-0 truncate text-[13px] font-black uppercase leading-4 tracking-[0.12em] text-white/88">
                 {props.title}
               </span>
               <Show when={props.subtitle}>
@@ -970,8 +969,8 @@ function actionEditorPanelStyle(active = false): JSX.CSSProperties {
 function chainBuilderHeaderStyle(status: ChainBudgetStatus, live = false): JSX.CSSProperties {
   if (live || status === "ready") {
     return {
-      "background": "linear-gradient(90deg, rgba(76, 29, 149, 0.16), rgba(15, 23, 42, 0.42))",
-      "border-bottom-color": "rgba(167, 139, 250, 0.10)",
+      "background": "linear-gradient(90deg, rgba(30, 58, 95, 0.22), rgba(15, 23, 42, 0.42))",
+      "border-bottom-color": "rgba(100, 140, 200, 0.10)",
       "box-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.014)",
     }
   }
@@ -1298,12 +1297,12 @@ function terminalResultAccent(status: GoalState["status"]): {
   if (status === "achieved") {
     return {
       style: {
-        "border-color": "rgba(52, 211, 153, 0.32)",
-        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14), 0 0 24px rgba(16, 185, 129, 0.08)",
+        "border-color": "rgba(52, 211, 153, 0.40)",
+        "box-shadow": "0 6px 16px rgba(0, 0, 0, 0.14), 0 0 32px rgba(16, 185, 129, 0.12), inset 0 0 0 1px rgba(16, 185, 129, 0.06)",
       },
       headerStyle: {
-        "background": "linear-gradient(90deg, rgba(6, 78, 59, 0.42), rgba(24, 24, 27, 0.94))",
-        "border-color": "rgba(52, 211, 153, 0.24)",
+        "background": "linear-gradient(90deg, rgba(6, 78, 59, 0.52), rgba(24, 24, 27, 0.92))",
+        "border-color": "rgba(52, 211, 153, 0.30)",
       },
       markerStyle: { "background-color": "rgb(110, 231, 183)" },
     }
@@ -3169,140 +3168,134 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       data-component="goal-terminal-result-banner"
                       role="status"
                       aria-live="polite"
-                      class="flex h-full min-h-0 min-w-0 flex-col gap-2.5 p-3"
+                      class="flex h-full min-h-0 min-w-0 flex-col gap-0"
+                      style={{
+                        background: isAchieved
+                          ? "linear-gradient(180deg, rgba(16,185,129,0.06) 0%, transparent 70%)"
+                          : "linear-gradient(180deg, rgba(251,191,36,0.04) 0%, transparent 70%)",
+                      }}
                     >
-                      <div class="flex min-w-0 items-start gap-2">
+                      <div
+                        class="flex min-w-0 items-center gap-2.5 rounded-t-lg px-3 py-2"
+                        style={{
+                          background: isAchieved
+                            ? "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.06) 60%, transparent 100%)"
+                            : "linear-gradient(135deg, rgba(251,191,36,0.14) 0%, rgba(251,191,36,0.04) 60%, transparent 100%)",
+                          "box-shadow": isAchieved
+                            ? "inset 0 1px 0 rgba(110,231,183,0.15)"
+                            : "inset 0 1px 0 rgba(251,191,36,0.12)",
+                        }}
+                      >
                         <span
                           data-component="goal-terminal-outcome-badge"
-                          class={`inline-flex shrink-0 cursor-default select-none items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.class}`}
+                          class={`inline-flex shrink-0 cursor-default select-none items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.class}`}
                           style={tone.style}
                         >
                           <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden />
                           {outcome.label}
                         </span>
-                        <div data-component="goal-terminal-summary" class="min-w-0 flex-1">
-                          <div class="truncate text-13-medium leading-5 text-text-base" title={cleanText(terminal.condition)}>
+                        <div
+                          data-component="goal-terminal-summary"
+                          class="flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2.5 py-1"
+                          style={{
+                            "border-color": isAchieved ? "rgba(110,231,183,0.20)" : "rgba(251,191,36,0.18)",
+                            background: isAchieved ? "rgba(16,185,129,0.06)" : "rgba(251,191,36,0.05)",
+                          }}
+                        >
+                          <span class="shrink-0 text-[8px] font-bold uppercase tracking-[0.1em] text-text-weaker">GOAL</span>
+                          <span class="truncate text-[13px] font-semibold leading-5 text-text-base" title={cleanText(terminal.condition)}>
                             {cleanText(terminal.condition)}
-                          </div>
-                          <Show when={terminal.lastEvaluation?.reason}>
-                            {(reason) => (
-                              <div class="mt-0.5 truncate text-11-regular leading-4 text-text-weak">
-                                {cleanText(reason())}
-                              </div>
-                            )}
-                          </Show>
+                          </span>
                         </div>
+                        <Show when={terminal.lastEvaluation}>
+                          {(finalEval) => (
+                            <div data-component="goal-terminal-final-evidence" class="flex shrink-0 items-center gap-1.5">
+                              <Show when={typeof finalEval().confidence === "number"}>
+                                {(() => {
+                                  const pct = () => Math.round((finalEval().confidence ?? 0) * 100)
+                                  return (
+                                    <span class="text-[12px] font-bold tabular-nums" style={{ color: confidenceColor(pct()) }}>
+                                      {pct()}%
+                                    </span>
+                                  )
+                                })()}
+                              </Show>
+                              <span
+                                class={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] ${finalEval().met ? "bg-emerald-500/25 text-emerald-300" : "bg-amber-500/25 text-amber-300"}`}
+                              >
+                                <span class={`h-1.5 w-1.5 rounded-full ${finalEval().met ? "bg-emerald-400" : "bg-amber-400"}`} aria-hidden />
+                                {finalEval().met ? language.t("session.goal.evidence.met") : language.t("session.goal.evidence.notMet")}
+                              </span>
+                            </div>
+                          )}
+                        </Show>
                       </div>
-                      <div data-component="goal-terminal-banner-metrics" class="grid min-w-0 grid-cols-4 gap-2">
+                      <div data-component="goal-terminal-banner-metrics" class="grid min-w-0 grid-cols-4 gap-1.5 px-3 py-2">
                         <RunMetricPill
                           label={language.t("session.goal.history.turns")}
                           value={`${turns}/${maxTurns}`}
-                          detail={language.t("session.goal.history.evaluated")}
-                          tone={isAchieved ? "success" : "default"}
+                          accent={metricAccent(maxTurns > 0 ? turns / maxTurns : 0)}
                         />
                         <RunMetricPill
                           label={language.t("session.goal.history.elapsed")}
                           value={elapsedLabel}
-                          detail={language.t("session.goal.history.runtime")}
+                          accent="hsl(190, 60%, 50%)"
                         />
                         <RunMetricPill
                           label={language.t("session.goal.metric.tokens")}
                           value={formatTokens(terminal.tokensUsed)}
-                          detail={language.t("session.goal.terminal.consumed")}
+                          accent={metricAccent(terminal.tokensUsed > 0 ? Math.min(1, terminal.tokensUsed / 50000) : 0)}
                         />
                         <RunMetricPill
                           label={language.t("session.goal.evidence.history")}
                           value={String(terminal.evaluationHistory.length)}
-                          detail={language.t("session.goal.terminal.cycles")}
-                          tone={isAchieved ? "success" : "default"}
+                          accent={metricAccent(maxTurns > 0 ? terminal.evaluationHistory.length / maxTurns : 0)}
                         />
                       </div>
-                      <Show when={terminal.lastEvaluation}>
-                        {(finalEval) => (
-                          <div
-                            data-component="goal-terminal-final-evidence"
-                            class="rounded-md border px-2.5 py-1.5"
-                            style={{
-                              "background-color": isAchieved ? "rgba(16, 185, 129, 0.08)" : "rgba(251, 191, 36, 0.08)",
-                              "border-color": isAchieved ? "rgba(110, 231, 183, 0.18)" : "rgba(251, 191, 36, 0.18)",
+                      <div
+                        class="flex min-w-0 items-center justify-end gap-1 px-3 py-1"
+                        style={{ "border-top": "1px solid rgba(255,255,255,0.04)" }}
+                      >
+                        <Show when={confirmingReset()}>
+                          <span class="mr-auto text-[10px] text-text-weaker">{language.t("session.goal.action.confirmResetHint")}</span>
+                          <ActionButton
+                            label={language.t("session.goal.action.confirmReset")}
+                            variant="primary"
+                            tone="danger"
+                            busy={busy() === "fresh"}
+                            disabled={busy() !== null || !props.sessionID}
+                            class="h-6 px-2 text-[10px]"
+                            onClick={() => {
+                              void resetGoalState().then(() => setConfirmingReset(false))
                             }}
+                          />
+                          <ActionButton
+                            label={language.t("session.goal.action.cancel")}
+                            variant="ghost"
+                            disabled={busy() !== null}
+                            class="h-6 px-2 text-[10px]"
+                            onClick={() => setConfirmingReset(false)}
+                          />
+                        </Show>
+                        <Show when={!confirmingReset()}>
+                          <button
+                            type="button"
+                            class="h-5 shrink-0 rounded px-1.5 text-[9px] font-semibold text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
+                            title={language.t("session.goal.report.copy")}
+                            onClick={copyGoalReport}
                           >
-                            <div class="flex items-center justify-between gap-2">
-                              <span class="text-[9px] font-bold uppercase tracking-[0.08em] text-text-weaker">
-                                {language.t("session.goal.terminal.finalEval")}
-                              </span>
-                              <div class="flex items-center gap-2">
-                                <Show when={typeof finalEval().confidence === "number"}>
-                                  {(() => {
-                                    const pct = () => Math.round((finalEval().confidence ?? 0) * 100)
-                                    return (
-                                      <span class="text-[10px] font-bold tabular-nums" style={{ color: confidenceColor(pct()) }}>
-                                        {pct()}%
-                                      </span>
-                                    )
-                                  })()}
-                                </Show>
-                                <span
-                                  class={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] ${finalEval().met ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200" : "border-amber-400/40 bg-amber-500/15 text-amber-200"}`}
-                                >
-                                  <span class={`h-1.5 w-1.5 rounded-full ${finalEval().met ? "bg-emerald-400" : "bg-amber-400"}`} aria-hidden />
-                                  {finalEval().met ? language.t("session.goal.evidence.met") : language.t("session.goal.evidence.notMet")}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </Show>
-                      <div class="flex min-w-0 items-center justify-between gap-2 pt-0.5">
-                        <p
-                          data-component="goal-terminal-start-again"
-                          class="min-w-0 flex-1 truncate text-11-regular leading-4 text-text-weak"
-                        >
-                          {confirmingReset()
-                            ? language.t("session.goal.action.confirmResetHint")
-                            : language.t("session.goal.terminal.startAgainHint")}
-                        </p>
-                        <div data-component="goal-terminal-reset-state" class="flex shrink-0 items-center gap-1">
-                          <Show when={confirmingReset()}>
-                            <ActionButton
-                              label={language.t("session.goal.action.confirmReset")}
-                              variant="primary"
-                              tone="danger"
-                              busy={busy() === "fresh"}
-                              disabled={busy() !== null || !props.sessionID}
-                              class="h-7 px-2 text-11-medium"
-                              onClick={() => {
-                                void resetGoalState().then(() => setConfirmingReset(false))
-                              }}
-                            />
-                            <ActionButton
-                              label={language.t("session.goal.action.cancel")}
-                              variant="ghost"
-                              disabled={busy() !== null}
-                              class="h-7 px-2 text-11-medium"
-                              onClick={() => setConfirmingReset(false)}
-                            />
-                          </Show>
-                          <Show when={!confirmingReset()}>
-                            <button
-                              type="button"
-                              class="h-7 shrink-0 rounded px-2 text-[10px] font-semibold text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
-                              title={language.t("session.goal.report.copy")}
-                              onClick={copyGoalReport}
-                            >
-                              {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
-                            </button>
-                            <ActionButton
-                              label={language.t("session.goal.action.resetState")}
-                              variant="ghost"
-                              busy={busy() === "fresh"}
-                              disabled={busy() !== null || !props.sessionID}
-                              class="h-7 px-2 text-11-medium"
-                              title={language.t("session.goal.action.resetStateHint")}
-                              onClick={() => setConfirmingReset(true)}
-                            />
-                          </Show>
-                        </div>
+                            {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
+                          </button>
+                          <ActionButton
+                            label={language.t("session.goal.action.resetState")}
+                            variant="ghost"
+                            busy={busy() === "fresh"}
+                            disabled={busy() !== null || !props.sessionID}
+                            class="h-5 px-1.5 text-[9px]"
+                            title={language.t("session.goal.action.resetStateHint")}
+                            onClick={() => setConfirmingReset(true)}
+                          />
+                        </Show>
                       </div>
                     </div>
                   </GoalConsoleSection>
@@ -3358,20 +3351,20 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         "bg-orange-300/90": liveRunStalled(),
                         "bg-emerald-300/90": liveRunStatus() === "active" && !liveRunStalled(),
                         "bg-amber-300/90": liveRunStatus() === "paused" || (!liveGoal() && chainBudgetStatus() !== "ready"),
-                        "bg-violet-300/80": !liveGoal() && chainBudgetStatus() === "ready",
+                        "bg-slate-300/60": !liveGoal() && chainBudgetStatus() === "ready",
                       }}
                       aria-hidden
                     />
-                    <div class="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-violet-50">
+                    <div class="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-sky-50/85">
                       {liveGoal() ? language.t("session.goal.chainBuilder.runningHeader") : chainRunStateLabel()}
                     </div>
                     <span
-                      class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-violet-100/80"
-                      style={{ "background-color": "rgba(139, 92, 246, 0.075)" }}
+                      class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-text-base/80"
+                      style={{ "background-color": "rgba(148, 163, 184, 0.08)" }}
                       title={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
                       aria-label={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
                     >
-                      <strong class={numericHighlightClass("mr-1")} style={numericHighlightStyle("violet")}>
+                      <strong class={numericHighlightClass("mr-1")} style={numericHighlightStyle("blue")}>
                         {visibleStepCount()}
                       </strong>
                       {language.t("session.goal.chainBuilder.steps")}
@@ -3390,7 +3383,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     </Show>
                     <Show when={liveGoal()}>
                       {(goal) => (
-                        <span class="min-w-0 truncate text-[11px] font-semibold text-violet-100/62">
+                        <span class="min-w-0 truncate text-[11px] font-semibold text-text-weak">
                           {cleanText(goal().condition)}
                         </span>
                       )}
@@ -3444,10 +3437,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     class="mt-1 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md border px-2 py-1"
                     style={{
                       "background-color": "rgba(15, 23, 42, 0.22)",
-                      "border-color": "rgba(167, 139, 250, 0.12)",
+                      "border-color": "rgba(100, 140, 200, 0.12)",
                     }}
                   >
-                    <span class="shrink-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-100/74">
+                    <span class="shrink-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-sky-100/70">
                       {language.t("session.goal.chainBuilder.objective")}
                     </span>
                     <input
@@ -3456,10 +3449,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       onKeyDown={(e) => { if (e.key === "Enter" && !primaryRunDisabled()) void startGoalOrChain() }}
                       disabled={busy() !== null || !props.sessionID}
                       placeholder={language.t("session.goal.chainBuilder.objectivePlaceholder")}
-                      class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-violet-50 outline-none placeholder:text-violet-100/32 disabled:opacity-40"
+                      class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-text-base outline-none placeholder:text-sky-100/30 disabled:opacity-40"
                     />
                     <span
-                      class="shrink-0 text-[9px] font-medium text-violet-100/46"
+                      class="shrink-0 text-[9px] font-medium text-sky-100/40"
                       title={language.t("session.goal.chainBuilder.objectiveHint")}
                     >
                       {"{scope}"}
@@ -3514,12 +3507,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       data-kind="turns"
                       class="flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2"
                       style={{
-                        "background-color": "rgba(59, 130, 246, 0.055)",
-                        "border-color": "rgba(96, 165, 250, 0.14)",
+                        "background-color": "rgba(59, 130, 246, 0.04)",
+                        "border-color": "rgba(100, 140, 200, 0.14)",
                       }}
                       title={chainLimitSummary()}
                     >
-                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-blue-100/78">
+                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-sky-100/70">
                         {language.t("session.goal.chainBuilder.stat.turns")}
                       </span>
                       <input
@@ -3529,9 +3522,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterTurns())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTurns", event.currentTarget.value)}
-                        class="h-5 w-11 rounded border border-blue-200/16 bg-blue-950/20 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-blue-200/45"
+                        class="h-5 w-11 rounded border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                       />
-                      <span class="min-w-0 truncate text-[9px] font-semibold text-blue-100/52">
+                      <span class="min-w-0 truncate text-[9px] font-semibold text-sky-100/45">
                         {language.t("session.goal.chainBuilder.stat.turnsHint")}
                       </span>
                     </label>
@@ -3540,12 +3533,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       data-kind="time"
                       class="flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2"
                       style={{
-                        "background-color": "rgba(139, 92, 246, 0.055)",
-                        "border-color": "rgba(167, 139, 250, 0.14)",
+                        "background-color": "rgba(59, 130, 246, 0.04)",
+                        "border-color": "rgba(100, 140, 200, 0.14)",
                       }}
                       title={chainLimitSummary()}
                     >
-                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-violet-100/78">
+                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-sky-100/70">
                         {language.t("session.goal.chainBuilder.stat.time")}
                       </span>
                       <input
@@ -3555,9 +3548,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterMinutes())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTimeMinutes", event.currentTarget.value)}
-                        class="h-5 w-11 rounded border border-violet-200/16 bg-violet-950/20 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-violet-200/45"
+                        class="h-5 w-11 rounded border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                       />
-                      <span class="min-w-0 truncate text-[9px] font-semibold text-violet-100/52">
+                      <span class="min-w-0 truncate text-[9px] font-semibold text-sky-100/45">
                         {language.t("session.goal.chainBuilder.stat.timeHint")}
                       </span>
                     </label>
@@ -3566,18 +3559,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       data-kind="actions"
                       class="flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2"
                       style={{
-                        "background-color": "rgba(16, 185, 129, 0.05)",
-                        "border-color": "rgba(110, 231, 183, 0.14)",
+                        "background-color": "rgba(59, 130, 246, 0.04)",
+                        "border-color": "rgba(100, 140, 200, 0.14)",
                       }}
                       title={language.t("session.goal.chainBuilder.stat.actionsAria", { count: visibleStepCount() })}
                     >
-                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-emerald-100/78">
+                      <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-sky-100/70">
                         {language.t("session.goal.chainBuilder.stat.actions")}
                       </span>
-                      <span class="flex h-5 w-11 items-center justify-center rounded border border-emerald-200/16 bg-emerald-950/20 px-1 text-center text-12-bold tabular-nums text-text-base">
+                      <span class="flex h-5 w-11 items-center justify-center rounded border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base">
                         {visibleStepCount()}
                       </span>
-                      <span class="min-w-0 truncate text-[9px] font-semibold text-emerald-100/52">
+                      <span class="min-w-0 truncate text-[9px] font-semibold text-sky-100/45">
                         {language.t("session.goal.chainBuilder.stat.actionsHint")}
                       </span>
                     </div>
@@ -4494,23 +4487,23 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               data-component="goal-chain-empty-state"
                               class="grid min-h-40 place-items-center rounded-md border px-4 py-6 text-center"
                               style={{
-                                "background": "radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.12), transparent 45%), linear-gradient(180deg, rgba(46, 16, 101, 0.10), rgba(18, 18, 18, 0.72))",
-                                "border-color": "rgba(167, 139, 250, 0.14)",
+                                "background": "radial-gradient(circle at 50% 0%, rgba(120, 100, 200, 0.10), transparent 45%), linear-gradient(180deg, rgba(30, 25, 65, 0.10), rgba(18, 18, 18, 0.72))",
+                                "border-color": "rgba(140, 120, 220, 0.14)",
                               }}
                             >
                             <div class="max-w-sm">
-                              <div class="text-13-medium font-bold text-violet-50">
+                              <div class="text-13-medium font-bold text-slate-50">
                                 {language.t("session.goal.chainBuilder.emptyChain")}
                               </div>
-                              <div class="mt-2 text-12-regular leading-5 text-violet-100/72">
+                              <div class="mt-2 text-12-regular leading-5 text-slate-200/72">
                                 {language.t("session.goal.chainBuilder.emptyChainDesc")}
                               </div>
                               <div
                                 data-component="goal-chain-execution-note"
-                                class="mt-3 rounded-md border px-2.5 py-2 text-left text-11-regular leading-5 text-violet-100/72"
+                                class="mt-3 rounded-md border px-2.5 py-2 text-left text-11-regular leading-5 text-slate-200/72"
                                 style={{
-                                  "background-color": "rgba(139, 92, 246, 0.06)",
-                                  "border-color": "rgba(167, 139, 250, 0.14)",
+                                  "background-color": "rgba(120, 100, 200, 0.06)",
+                                  "border-color": "rgba(140, 120, 220, 0.14)",
                                 }}
                               >
                                 {language.t("session.goal.chainBuilder.emptyChainNote")}
@@ -4527,7 +4520,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-density="compact-chain-row"
                                 data-run-state={stepRunState(i())}
                                 data-editing={editingChainStepID() === step.id ? "true" : "false"}
-                                class={`group grid min-w-[790px] grid-cols-[30px_40px_minmax(220px,1fr)_96px_154px_194px] items-center gap-2 rounded-lg border px-2.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
+                                class={`group grid min-w-[640px] grid-cols-[30px_40px_minmax(180px,1fr)_96px_154px_auto] items-center gap-2 rounded-lg border px-2.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
                                 classList={{
                                   "ring-2 ring-sky-300/70 shadow-[0_0_24px_rgba(56,189,248,0.22)] brightness-110":
                                     editingChainStepID() === step.id,
@@ -4574,33 +4567,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 >
                                   <IconV2 name={actionIconName(step)} size="small" />
                                 </span>
-                                <div class="flex min-w-0 flex-col gap-1">
+                                <div class="flex min-w-0 flex-col" title={stepRuntimeTitle(step)}>
                                   <div class="truncate text-13-medium font-semibold text-text-base">{step.label}</div>
-                                  <div
-                                    class="mt-0.5 truncate text-[11px] leading-4 text-text-weaker"
-                                    title={cleanText(stepConditionPreview(step))}
-                                  >
-                                    {cleanText(stepConditionPreview(step))}
-                                  </div>
-                                  <Show when={(step.skills?.length ?? 0) > 0 || step.model}>
-                                    <div class="flex min-w-0 gap-1 overflow-hidden">
-                                      <Show when={step.model}>
-                                        <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-sky-200/80">
-                                          {modelLabel(step.model)}
-                                        </span>
-                                      </Show>
-                                      <For each={(step.skills ?? []).slice(0, 2)}>
-                                        {(skill) => (
-                                          <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200/80">
-                                            {skill}
-                                          </span>
-                                        )}
-                                      </For>
-                                      <Show when={(step.skills?.length ?? 0) > 2}>
-                                        <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200/60">
-                                          +{(step.skills?.length ?? 0) - 2}
-                                        </span>
-                                      </Show>
+                                  <Show when={cleanText(stepConditionPreview(step)) !== step.label}>
+                                    <div
+                                      class="mt-0.5 truncate text-[11px] leading-4 text-text-weaker"
+                                      title={cleanText(stepConditionPreview(step))}
+                                    >
+                                      {cleanText(stepConditionPreview(step))}
                                     </div>
                                   </Show>
                                 </div>
@@ -4615,7 +4589,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   <label
                                     class="grid h-6 grid-cols-[42px_32px] items-center gap-1"
                                   >
-                                    <span class="text-[9px] font-semibold uppercase opacity-75">{language.t("session.goal.chainBuilder.stepTurns")}</span>
+                                    <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
                                     <input
                                       aria-label={`Turns for ${step.label}`}
                                       type="number"
@@ -4625,13 +4599,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
                                       }
-                                      class="h-5 w-full rounded px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base bg-transparent outline-none"
+                                      class="h-5 w-full rounded border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                                     />
                                   </label>
                                   <label
                                     class="grid h-6 grid-cols-[30px_40px] items-center gap-1"
                                   >
-                                    <span class="text-[9px] font-semibold uppercase opacity-75">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
+                                    <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
                                     <input
                                       aria-label={`Minutes for ${step.label}`}
                                       type="number"
@@ -4641,23 +4615,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
                                       }
-                                      class="h-5 w-full rounded px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base bg-transparent outline-none"
+                                      class="h-5 w-full rounded border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                                     />
                                   </label>
                                 </span>
-                                <span data-component="goal-chain-step-actions" class="flex min-w-0 shrink-0 items-center justify-end gap-1 opacity-100">
-                                  <span
-                                    data-component="goal-chain-step-runtime"
-                                    class="mr-0.5 grid min-w-0 flex-1 grid-rows-2 justify-items-start rounded px-1 py-0.5 text-left"
-                                    title={stepRuntimeTitle(step)}
-                                  >
-                                    <span class="max-w-full truncate text-[10px] font-semibold leading-4 text-text-base">
-                                      {stepRuntimeModelLabel(step)}
-                                    </span>
-                                    <span class="max-w-full truncate text-[9px] font-semibold uppercase leading-3 text-text-weaker">
-                                      {stepRuntimeAgentLabel(step)} · {stepRuntimeSkillLabel(step)}
-                                    </span>
-                                  </span>
+                                <span data-component="goal-chain-step-actions" class="flex shrink-0 items-center justify-end gap-1">
                                   <button
                                     type="button"
                                     aria-label={`Edit ${step.label}`}
@@ -4710,7 +4672,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <Show when={!liveGoal()}>
                       <div
                         data-component="goal-chain-summary-line"
-                        class="mt-1.5 flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 text-[10px] font-semibold text-violet-100/55"
+                        class="mt-1.5 flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 text-[10px] font-semibold text-text-weaker/60"
                         title={language.t("session.goal.chainBuilder.planChainHint")}
                       >
                         <span class="min-w-0 truncate">
@@ -4720,7 +4682,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           <Show when={chainDraft.steps.length > 0}>
                             <button
                               type="button"
-                              class="text-[10px] font-semibold text-violet-200/50 transition hover:text-violet-100"
+                              class="text-[10px] font-semibold text-text-weaker/50 transition hover:text-text-base"
                               title={language.t("session.goal.chainBuilder.clearDraftHint")}
                               disabled={busy() !== null}
                               onClick={() => {
@@ -4731,7 +4693,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               {language.t("session.goal.chainBuilder.clearDraft")}
                             </button>
                           </Show>
-                          <span class="tabular-nums text-violet-100/72">
+                          <span class="tabular-nums text-text-weak">
                             {chainLimitSummary()}
                           </span>
                         </div>
@@ -4922,7 +4884,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               <RunMetricPill
                                 label={language.t("session.goal.history.outcome")}
                                 value={outcomeLabel(run().summary.outcome)}
-                                detail={run().summary.status}
                                 tone={
                                   run().summary.status === "success"
                                     ? "success"
@@ -4934,23 +4895,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               <RunMetricPill
                                 label={language.t("session.goal.history.turns")}
                                 value={String(run().summary.turns)}
-                                detail={language.t("session.goal.history.evaluated")}
                               />
                               <RunMetricPill
                                 label={language.t("session.goal.history.elapsed")}
                                 value={formatElapsed(run().summary.elapsedMs)}
-                                detail={language.t("session.goal.history.runtime")}
                               />
                               <RunMetricPill
                                 label={language.t("session.goal.history.passed")}
                                 value={String(run().summary.successCount)}
-                                detail={language.t("session.goal.history.passed")}
                                 tone={run().summary.successCount > 0 ? "success" : "default"}
                               />
                               <RunMetricPill
                                 label={language.t("session.goal.history.failed")}
                                 value={String(run().summary.failureCount)}
-                                detail={language.t("session.goal.history.notMet")}
                                 tone={run().summary.failureCount > 0 ? "danger" : "default"}
                               />
                             </div>

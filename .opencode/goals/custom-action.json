@@ -1,0 +1,12 @@
+{
+  "label": "Validate that you said buttface",
+  "description": "Validate that you said buttface",
+  "condition": "Validate that you said buttface 10 times",
+  "constraints": {
+    "maxTurns": 5,
+    "maxTimeMinutes": 20
+  },
+  "category": "Custom",
+  "tone": "violet",
+  "elevation": "flat"
+}
