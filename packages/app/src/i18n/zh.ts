@@ -609,6 +609,8 @@ export const dict = {
   "session.goal.action.resetState": "Reset state",
   "session.goal.action.resetStateHint": "Clear live goal, chain, handoff, and activity state while keeping templates and history.",
   "session.goal.terminal.startAgainHint": "在下方输入新目标即可重新开始。",
+  "session.goal.terminal.subtitleAchieved": "{{elapsed}} 内达成",
+  "session.goal.terminal.subtitleCleared": "{{elapsed}} 后取消",
   "session.goal.steer.failed": "Steering was saved, but the prompt injection did not reach the session.",
   "session.goal.handoff.send": "Save for handoff",
   "session.goal.handoff.hint": "Save this run so Claim can open a fresh session with structured context.",

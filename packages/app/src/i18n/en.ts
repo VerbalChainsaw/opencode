@@ -803,6 +803,8 @@ export const dict = {
   "session.goal.action.resetState": "Reset state",
   "session.goal.action.resetStateHint": "Clear live goal, chain, handoff, and activity state while keeping templates and history.",
   "session.goal.terminal.startAgainHint": "Enter a new goal below to start again.",
+  "session.goal.terminal.subtitleAchieved": "Achieved in {{elapsed}}",
+  "session.goal.terminal.subtitleCleared": "Cancelled after {{elapsed}}",
   "session.goal.steer.placeholder": "Add a hint for the agent's next step…",
   "session.goal.steer.hint": "Inject guidance into this run without clearing or restarting the chain.",
   "session.goal.steer.send": "Send",
