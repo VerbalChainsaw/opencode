@@ -20,7 +20,7 @@ import { tool } from "./plugin-api.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve, relative, isAbsolute } from "node:path";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, unlinkSync, existsSync } from "node:fs";
 import {
   readGoalState,
   readGoalStateResult,
@@ -43,14 +43,16 @@ import {
   withStateLock,
   COMPLETE_RE,
   BLOCKED_RE,
+  goalStatePath,
   type GoalState,
   type GoalEvaluation,
   type GoalStatus,
   type Verification,
 } from "./goal-state.js";
-import { advanceGoalChain, readGoalChain, setChainWebhook, type GoalPinnedModel } from "./goal-chain.js";
+import { advanceGoalChain, readGoalChain, readGoalChainResult, setChainWebhook, goalChainPath, type GoalPinnedModel } from "./goal-chain.js";
 import { dispatchGoalCommandStructured, goalInstructions, plainStatus, presentGoalCommandResult } from "./command.js";
 import { appendGoalArchive } from "./goal-archive.js";
+import { writeGoalHistorySnapshot } from "./goal-history.js";
 import { writeTemplatesSnapshot } from "./goal-templates-snapshot.js";
 import { appendSessionEvent, type SessionEvent } from "./session-events.js";
 import { appendStepTimelineEvent, type StepTimelineEvent, type StepOutcome } from "./step-timeline.js";
@@ -396,6 +398,28 @@ function pinnedSkillPromptSuffix(skills: string[]): string {
 }
 
 export const server: Plugin = async ({ client, directory }) => {
+  // v0.7.3 / audit June 2026 — clear terminal goal state on plugin boot.
+  //
+  // The on-disk state file (`.opencode/.goal-state.json`) is the LIVE
+  // state of the autogoal engine. When a goal reaches a terminal status
+  // (`achieved` or `cleared`), the engine archives the goal to
+  // `goal-archive.jsonl` / `goal-history.json` and writes `status:
+  // "achieved"` (server.ts:870) or `status: "cleared"` (goal-state.ts:1039)
+  // to the state file. The state file then lingers forever.
+  //
+  // Bug surface: a user who achieves a goal in session A, closes the
+  // app, and reopens it in session B sees the achieved goal in the
+  // "current goal" panel position. The auto-loop correctly ignores the
+  // terminal state (it only drives `active` / `paused` goals), but the
+  // UI displays the goal in the same panel as a live goal. The user reads
+  // it as "active goal running" even though the engine is not driving it.
+  //
+  // Fix: on plugin boot, archive the terminal state (idempotent) and
+  // unlink the state file. The chain file is unlinked if its current
+  // step is at or past the last step. Active and paused states are
+  // preserved (a user resuming a goal across an app restart is a
+  // legitimate use case).
+
   let lastEvaluationTime = 0;
   let isEvaluating = false;
   // v0.7.2 — removed the v0.7.x `skipNextEvaluation` one-shot flag. The
@@ -437,7 +461,96 @@ export const server: Plugin = async ({ client, directory }) => {
     client.app.log({ body: { service: "opencode-autogoal", level, message: `[goal] ${message}`, extra } }).catch(() => {});
   }
 
-  // ── User-facing notifications, frontend-agnostic ──────────────────────────
+  // v0.7.3 / audit June 2026 — clear terminal goal state on plugin boot.
+  //
+  // The on-disk state file (`.opencode/.goal-state.json`) is the LIVE
+  // state of the autogoal engine. When a goal reaches a terminal status
+  // (`achieved` or `cleared`), the engine archives the goal to
+  // `goal-archive.jsonl` / `goal-history.json` and writes `status:
+  // "achieved"` (server.ts:870) or `status: "cleared"` (goal-state.ts:1039)
+  // to the state file. The state file then lingers forever.
+  //
+  // Bug surface: a user who achieves a goal in session A, closes the
+  // app, and reopens it in session B sees the achieved goal in the
+  // "current goal" panel position. The auto-loop correctly ignores the
+  // terminal state (it only drives `active` / `paused` goals), but the
+  // UI displays the goal in the same panel as a live goal. The user
+  // reads it as "active goal running" even though the engine is not
+  // driving it.
+  //
+  // Fix: on plugin boot, archive the terminal state (idempotent) and
+  // unlink the state file. The chain file is unlinked if its current
+  // step is at or past the last step. Active and paused states are
+  // preserved (a user resuming a goal across an app restart is a
+  // legitimate use case).
+  //
+  // State file: archive and unlink if terminal.
+  {
+    const r = readGoalStateResult(directory);
+    if (r.kind === "ok" && (r.value.status === "achieved" || r.value.status === "cleared")) {
+      try {
+        appendGoalArchive(
+          directory,
+          r.value,
+          r.value.status === "achieved" ? "achieved" : "cleared",
+        );
+      } catch (err) {
+        log("debug", "boot clear: archive append failed (non-fatal)", { error: String(err) });
+      }
+      try {
+        writeGoalHistorySnapshot(directory);
+      } catch (err) {
+        log("debug", "boot clear: history snapshot failed (non-fatal)", { error: String(err) });
+      }
+      try {
+        unlinkSync(goalStatePath(directory));
+        log("info", "boot clear: removed terminal state file", { status: r.value.status });
+      } catch (err) {
+        log("debug", "boot clear: state unlink failed (non-fatal)", { error: String(err) });
+      }
+    }
+  }
+
+  // Chain file: clear only if the chain is FULLY DONE (last step
+  // completed, the state is terminal, and the chain is no longer
+  // the engine's current focus). A freshly-created 1-step chain has
+  // `current === 0, steps.length === 1` but the user has not yet
+  // interacted with it — clearing it would surprise the user. The
+  // correct signal is "the chain is done AND the active state is
+  // terminal."
+  try {
+    const chainPath = goalChainPath(directory);
+    if (existsSync(chainPath)) {
+      const c = readGoalChainResult(directory);
+      if (c.kind === "ok" && c.value.steps.length > 0) {
+        const s = readGoalStateResult(directory);
+        const stateIsTerminal =
+          s.kind === "ok" &&
+          (s.value.status === "achieved" || s.value.status === "cleared");
+        const stateBelongsToChain =
+          s.kind === "ok" && s.value.metadata?.chainId === c.value.id;
+        if (
+          c.value.current >= c.value.steps.length - 1 &&
+          stateIsTerminal &&
+          stateBelongsToChain
+        ) {
+          try {
+            unlinkSync(chainPath);
+            log("info", "boot clear: removed completed chain file", {
+              current: c.value.current,
+              total: c.value.steps.length,
+            });
+          } catch (err) {
+            log("debug", "boot clear: chain unlink failed (non-fatal)", { error: String(err) });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    log("debug", "boot clear: chain check failed (non-fatal)", { error: String(err) });
+  }
+
+  // ── User-facing notifications, frontend-agnostic ─────────────────────────
   // `client.tui.showToast` only renders in the terminal TUI; on the Desktop
   // (Electron) app it is a no-op. The conversation is the one shared surface, so
   // we ALSO write a `noReply` status line into the session.
