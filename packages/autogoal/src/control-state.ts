@@ -31,7 +31,8 @@ import { splitGoalCommand } from "./dispatcher.js"
 // control-state.ts is the EXPERIMENTAL API backend; it delegates type
 // authority to goal-state.ts so the two implementations cannot drift.
 import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, type GoalStatus, type Verification } from "./goal-state.js"
-import type { GoalPinnedModel } from "./goal-chain.js"
+import type { ChainWebhook, GoalPinnedModel } from "./goal-chain.js";
+import { sanitizeChainWebhook } from "./goal-chain.js";
 
 // Type aliases for backward compat with existing control-state callers.
 // These are the SAME types, re-exported under the control-state naming
@@ -80,6 +81,12 @@ interface GoalControlChain {
   cycles: number
   maxCycles: number
   onComplete: "stop" | "loop"
+  // v0.4.1 E-1 (audit, June 2026): `webhook` is the chain-level webhook
+  // projected to every step's `metadata.webhook` by
+  // `applyChainWebhookToState` on advance. The CLI path promotes the
+  // pre-chain state's webhook to this field. The bridge does the same
+  // (see `startGoalChain`). Mirrors `GoalChain.webhook` in goal-chain.ts.
+  webhook?: ChainWebhook
   master?: {
     maxTurns?: number
     maxMinutes?: number
@@ -391,6 +398,20 @@ async function startGoalChain(
   const path = goalChainPath(directory)
   const previousChain = await readFile(path, "utf8").catch(() => null)
   const sessionId = sanitizeSessionID(options.sessionID)
+  // v0.4.1 E-1 parity (audit, June 2026): the CLI's `chain start` passes
+  // `webhook: "from-state"` to `createGoalChain`, which projects the
+  // pre-chain state's webhook onto `chain.webhook`. `applyChainWebhookToState`
+  // (goal-chain.ts:518) then re-projects it onto every step's state on
+  // advance. The bridge did not have this propagation — step 0 inherited
+  // the webhook via `setActiveChainGoal`'s `existing.metadata.webhook`
+  // copy, but step 1+ lost it because `chain.webhook` was undefined and
+  // the same function DELETES any state-level webhook in that case.
+  // The fix: read the prior state's webhook here and project it onto
+  // `chain.webhook` so the canonical advance path keeps it.
+  const existingState = await readGoalStateOptional(directory)
+  const chainWebhook = existingState?.metadata?.webhook
+    ? sanitizeChainWebhook(existingState.metadata.webhook)
+    : null
   const chain: GoalControlChain = {
     version: 1,
     id: randomUUID(),
@@ -402,6 +423,7 @@ async function startGoalChain(
     // a bridge-started chain with no cycle limit set shouldn't stop at one pass.
     maxCycles: 10,
     onComplete: "stop",
+    ...(chainWebhook ? { webhook: chainWebhook } : {}),
     ...(chainPayload.master
       ? { master: { ...chainPayload.master, turnsUsed: 0, minutesUsed: 0 } }
       : {}),
