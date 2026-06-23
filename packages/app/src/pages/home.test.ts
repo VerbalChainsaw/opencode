@@ -152,6 +152,41 @@ describe("home mission-control contract", () => {
     expect(slice).toMatch(/<button[^>]*type="button"/)
   })
 
+  test("HomeMetricCard exposes a loading prop that shows a stable skeleton during data load (v0.7.3)", async () => {
+    // v0.7.3 / audit June 2026: when the underlying data source is
+    // still loading, the metric must show a stable skeleton ("—")
+    // instead of the live count. The live count flickers during boot
+    // as the opencode server discovers projects and as the goal /
+    // attention query resolves asynchronously, which the user
+    // reads as "different number of projects every time I open
+    // the app". The "loading" prop gates the skeleton.
+    const src = await home()
+    const idx = src.indexOf("function HomeMetricCard")
+    expect(idx).toBeGreaterThan(-1)
+    const slice = src.slice(idx, idx + 3000)
+    // The function signature now accepts a `loading` prop.
+    expect(slice).toMatch(/loading\?:\s*boolean/)
+    // The card's value must switch to "—" when loading is true.
+    expect(slice).toMatch(/props\.loading\s*\?\s*["']—["']/)
+  })
+
+  test("home metric strip passes loading to each card so the count stabilizes during boot (v0.7.3)", async () => {
+    // The metric strip has four cards. Each must receive a `loading`
+    // prop bound to a "data is still loading" signal so the card
+    // shows "—" instead of a partial count while the data settles.
+    const src = await home()
+    const strip = src.match(/data-component="home-metric-strip"[\s\S]*?<\/div>\s*<\/div>/)
+    expect(strip).toBeTruthy()
+    // Projects card passes loading tied to focusedSync().data.
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.projects"\)\}[\s\S]*?loading=\{focusedSync\(\)\.data === undefined\}/)
+    // Live sessions card passes loading tied to sessionLoad.
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?loading=\{sessionLoad\.isLoading/)
+    // Active goals card passes loading tied to goalLoad.
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?loading=\{goalLoad\.isLoading/)
+    // Needs attention card passes loading tied to goalLoad.
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?loading=\{goalLoad\.isLoading/)
+  })
+
   test("Needs Attention is backed by actionable session records", async () => {
     // Needs Attention used to be a vague project-level unseen notification
     // count. The home board needs queue-style records with reasons so the

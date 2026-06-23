@@ -595,20 +595,30 @@ function HomeDesign() {
             </div>
 
             <div data-component="home-metric-strip" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+              {/* v0.7.3 / audit June 2026: pass `loading` to each metric
+                  card so the count stabilizes while the underlying
+                  data source is still in transit. Without this, the
+                  strip flickers "3 → 7 → 4" during boot, which the
+                  user reads as "different number of projects every
+                  time I open the app". The `loading` flag flips to
+                  false once the source has settled on a stable value.
+              */}
               <HomeMetricCard
                 label={language.t("home.projects")}
                 value={String(projects().length)}
+                loading={focusedSync().data === undefined}
                 detail={language.t("home.metrics.projects.detail")}
                 icon="folder-add-left"
-                disabled={projects().length === 0}
+                disabled={projects().length === 0 || focusedSync().data === undefined}
                 onClick={() => openProjectsDialog()}
               />
               <HomeMetricCard
                 label={language.t("home.metrics.liveSessions")}
                 value={String(liveSessionCount())}
+                loading={sessionLoad.isLoading && sessionLoad.data === undefined}
                 detail={language.t("home.metrics.liveSessions.detail")}
                 icon="status-active"
-                disabled={liveSessionCount() === 0}
+                disabled={liveSessionCount() === 0 || (sessionLoad.isLoading && sessionLoad.data === undefined)}
                 onClick={() => {
                   setState("searchFocused", true)
                   queueMicrotask(() => focusSessionSearch?.())
@@ -617,18 +627,20 @@ function HomeDesign() {
               <HomeMetricCard
                 label={language.t("home.metrics.activeGoals")}
                 value={String(activeGoalCount())}
+                loading={goalLoad.isLoading && goalLoad.data === undefined}
                 detail={language.t("home.metrics.activeGoals.detail")}
                 icon="status"
-                disabled={activeGoalCount() === 0}
+                disabled={activeGoalCount() === 0 || (goalLoad.isLoading && goalLoad.data === undefined)}
                 onClick={() => openGoalsDialog()}
               />
               <HomeMetricCard
                 label={language.t("home.metrics.needsAttention")}
                 value={String(attentionRecords().length)}
+                loading={goalLoad.isLoading && goalLoad.data === undefined}
                 detail={language.t("home.metrics.needsAttention.detail")}
                 icon="help"
                 tone="warning"
-                disabled={attentionRecords().length === 0}
+                disabled={attentionRecords().length === 0 || (goalLoad.isLoading && goalLoad.data === undefined)}
                 onClick={() => openAttentionDialog()}
               />
             </div>
@@ -832,8 +844,20 @@ function HomeMetricCard(props: {
   tone?: "warning" | "default"
   onClick?: () => void
   disabled?: boolean
+  /**
+   * v0.7.3 / audit June 2026: when the underlying data source is
+   * still loading, show a stable skeleton ("—") instead of the
+   * live count. The live count flickers as the opencode server
+   * discovers projects incrementally and as the goal/attention
+   * query resolves asynchronously. A stable skeleton prevents
+   * the metric strip from showing "3 → 7 → 4" during boot, which
+   * the user reads as "different number of projects every time I
+   * open the app". Once the data settles, `value` is shown.
+   */
+  loading?: boolean
 }) {
   const isInteractive = () => !!props.onClick && !props.disabled
+  const displayValue = () => (props.loading ? "—" : props.value)
   return (
     <button
       type="button"
@@ -848,8 +872,8 @@ function HomeMetricCard(props: {
         "border-amber-500/40 bg-amber-500/8": props.tone === "warning" && !isInteractive(),
       }}
       onClick={() => isInteractive() && props.onClick?.()}
-      disabled={!isInteractive()}
-      aria-label={`${props.label}: ${props.value}. ${props.detail}`}
+      disabled={!isInteractive() || props.loading}
+      aria-label={`${props.label}: ${displayValue()}. ${props.detail}`}
     >
       <div class="flex min-w-0 items-center justify-between gap-2">
         <span class="flex min-w-0 items-center gap-1.5">
@@ -876,7 +900,13 @@ function HomeMetricCard(props: {
         </Show>
       </div>
       <div class="mt-2 flex min-w-0 items-end justify-between gap-2">
-        <div class="text-[26px] leading-none text-v2-text-text-base [font-weight:600] tabular-nums">{props.value}</div>
+        <div
+          class="text-[26px] leading-none text-v2-text-text-base [font-weight:600] tabular-nums"
+          data-loading={props.loading ? "true" : undefined}
+          aria-busy={props.loading ? "true" : undefined}
+        >
+          {displayValue()}
+        </div>
         <p class="min-w-0 flex-1 text-right text-[12px] leading-4 text-v2-text-text-weaker">{props.detail}</p>
       </div>
     </button>
