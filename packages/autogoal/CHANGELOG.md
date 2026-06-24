@@ -1,5 +1,109 @@
 # Changelog
 
+## 1.0.0
+
+**VerbalChainsaw fork — first stable release. All AutoGoal work since v0.7.0 consolidated into a single major release.**
+
+This is the fork's first 1.0 milestone: data-contract bugs found and fixed, the F-1/F-4 CLI contracts pinned with regression tests, the Mission Control goal-panel hardened and visually polished, governance tightened (sibling repo retired, monorepo is sole authority), and the App-side goal integration brought into line with the v0.4.2 corrupt-state surfacing contract. Everything in this release has been verified against the autogoal suite (1264/0) on the committed branch and the cross-platform Windows/WSL paths.
+
+**Note on the version number.** The package version moves from `1.17.3` (which mirrored upstream opencode's release tag) to `1.0.0` to mark this fork's first stable release of its own independent surface. The git tag is `v1.0.0` and points at the head of `dev` on `VerbalChainsaw/opencode`. Future fork releases will continue from `1.x.y`.
+
+---
+
+### Data-contract fixes (Defect 1 + Defect 2 + corruption contract extension)
+
+- **Defect 1 (HIGH) — webhook lost on bridge-started chain's first advance.** The CLI's `chain start` path projected the pre-chain state's `metadata.webhook` onto `chain.webhook`, but the bridge's `startGoalChain` did not. As a result, `applyChainWebhookToState` deleted `state.metadata.webhook` on the first advance. The bridge now reads the prior state's webhook, sanitizes via `sanitizeChainWebhook`, and writes it to `chain.webhook` before persisting — mirroring the CLI's E-1 fix. The `GoalControlChain` interface gained an explicit `webhook?: ChainWebhook` field (the type was previously lying). Live-reproduced before the fix and pinned in a new test file. (Commit `7322f23d2`, `packages/autogoal/test/bridge-chain-webhook.test.mjs`.)
+- **Defect 2 (MEDIUM) — plugin `session.idle` silently halts on corrupt goal state.** The auto-loop handler was using the deprecated `readGoalState` shim, which collapses both `absent` and `corrupt` to `null`. A corrupt goal-state file therefore halted the auto-loop with no user-visible surface. The v0.4.2 surfacing contract (pinned for the CLI by `test/v042-corrupt-surfacing.test.mjs`) is now extended to the auto-loop: replaced with `readGoalStateResult`, explicit `corrupt` handling logs `error: "skipping evaluation: goal state file is corrupt"` with the reason and quarantined artifact path. (Commit `bc7a22d07`, `packages/autogoal/test/session-idle-corrupt.test.mjs`.)
+- **Defect 3 (REVERTED, documented) — stale `stepMarkerAt` on chain-step handoff.** Initial audit claimed the resumed state kept a stale marker cutoff from the chain context. Investigation showed the existing `goal-chain.test.mjs:461` test deliberately pins this behavior — the resumed step's marker scan would otherwise re-fire the prior step's `GOAL_COMPLETE:`. Reverted; documented in `HANDOFF_AUTOGOAL_AUDIT.md` as "intentional, tested, working as designed."
+
+### Test contracts pinned
+
+- **F-1 JSON output contract** — `opencode-autogoal [--dir <p>] [--json] <command>` round-trips `{ok, kind, exitCode, message, state?}` exactly; parse errors and unknown commands honor the flag. Pinned in `test/cli-json.test.mjs`. (Commit `3cdc314a7`.)
+- **F-4 watch behavior** — live terminal dashboard via `createGoalWatcher` + `presentGoalState`; `--interval <ms>` in [250, 60000]; non-TTY prints one frame and exits 0; SIGINT disposes cleanly. Pinned in `test/cli-watch.test.mjs` (23 cases). (Commit `2b4f23610`.)
+- **Cross-platform test contracts** — Windows-native bash lookup, WSL `EBUSY` retry on `rmSync`, `pathToFileURL` Windows-path gating. Pinned in `test/cli.test.mjs` and `test/repo-identity.test.mjs`. WSL and Windows-native autogoal runs both green. (Commit `4d45aa23f`.)
+- **`chainMatchesGoal` pure helper** — extracted to keep goal-panel tests independent of the bridge, covered with regression cases. (Commit `99243e2d0`.)
+- **HMR-safe per-bag `_counter` regression** — blocks factory under HMR doesn't double-init. (Commit `0a555497c`.)
+
+### Mission Control goal-panel UI (App + Desktop)
+
+- **R1–R4 stats dashboard** — run-time stats surface (turns, tokens, time-in-state, eval-calls) wired into the goal panel header, with architecture-review fixes for the data flow. (Commit `6be9e8130`.)
+- **Visual polish (HSL pills, celebration layout, sky-blue family, purple-blue chain accent)** — RunMetricPill uses HSL-interpolated dynamic accents with gradient backgrounds; terminal result banner is a celebration layout with green hero tint; input/label colors unified to the sky-blue family across constraint stats, step rows, and goal input; chain-builder violet replaced with a visible purple-blue accent; empty-chain placeholder cleaned up. (Commit `7335e7133`.)
+- **Terminal-state escape hatch for chain step delete (v0.7.3)** — chain step can be deleted from a terminal (achieved/cleared/replaced) state without wedging the panel. (Commit `5c7caa930`.)
+- **Clear terminal goal state on plugin boot (v0.7.3)** — a stale terminal state from a prior process no longer poisons a fresh boot. (Commit `3bde2040a`.)
+- **i18n: terminal-result subtitle keys** — added for the result banner, English source + zh + zht. (Commit `3168e85c8`.)
+- **Stable skeleton in metric cards while data loads** — home page shows `"-"` placeholder while the metric fetch is in flight, preventing flicker between undefined and value. (Commit `a19c7c55a`.)
+- **Session goal panel polish + AGENTS.md refresh** — layout/typography pass and a fresh project contract. (Commit `22a509517`.)
+- **Goal panel — flatten running status cards (no borders, transparent bg, compact progress)**. (Commit `8c4431656`.)
+- **Goal panel — stabilize runtime command tray** (specs/desktop-ui-design.md §4). (Commit `7fdac9874`.)
+- **Goal panel — repair set-goal, steer, and handoff controls** (specs/desktop-ui-design.md §3). (Commit `d48dcc8db`.)
+- **Goal panel — hard pause aborts the in-flight turn.** (Commit `0ada70c67`.)
+- **Goal panel — single chain budget warning** instead of duplicate boxes. (Commit `33b31c810`.)
+- **Goal panel — running-screen label contrast** + Steer session guard. (Commit `9f6591bfb`.)
+- **Goal panel — single goal no longer renders stale chain draft as running.** (Commit `e6eb5cc80`.)
+- **Goal panel — readable Action Editor dropdowns** + themed Details pane. (Commit `d79c59d75`.)
+- **Goal panel — wire Action Editor routing** + close chain-builder UI contracts. (Commit `b5638b1a4`.)
+- **Goal panel — include default action templates** (specs/v0.4.0-roadmap.md §4). (Commit `54c93c485`.)
+- **Goal panel — wire lifecycle handoff and stop controls** (specs/desktop-ui-design.md §3). (Commit `44cd50403`.)
+- **Goal panel — streamline running dock + increase density.** (Commits `470cb5efc`, `936b365e9`.)
+- **Goal panel — harden desktop mission control.** (Commit `ece318a6c`.)
+- **Goal panel — clarify terminal goal workflow** (OpenGoal specs/desktop-ui-design.md §2). (Commit `06d0fdce8`.)
+- **Goal panel — extract `chainMatchesGoal` pure helper + tests** (also listed under test contracts). (Commit `99243e2d0`.)
+- **Goal panel — filter stale chain by id + parse goal-control error body.** (Commit `a213118fb`.)
+- **Goal panel — scope chain snapshots to current goal + clean up goal-panel assertions.** (Commit `c201397fe`.)
+- **App fix: surface save failures — silent success check now shows error text.** (Commit `1a7ec311b`.)
+- **App fix: validate button, host composer, no default chain steps.** (Commit `8a0be2cc4`.)
+- **App fix: gradient step numbers, flattened model select.** (Commit `63755a14f`.)
+- **App fix: flatten skill/model pill buttons — no borders, no shadows.** (Commit `d8c6507b3`.)
+- **App fix: flatten all budget/limit inputs — no borders, no backgrounds, centered numbers.** (Commit `d3cc528de`.)
+- **App fix: compact budget strip to single-row inline counter.** (Commit `92333bb6a`.)
+- **App fix: remove default built-in action templates.** (Commit `8002e9184`.)
+- **App fix: validateChainDraft model gap + 10 new contract tests** (specs/desktop-ui-design.md §3). (Commit `4c38125ef`.)
+- **App fix: consistency — unified h-7 buttons, flat step runtime, stripped remaining borders.** (Commit `738e9315c`.)
+- **App fix: even footer buttons, compact details + limits, inline +Chain.** (Commit `6f84e85ef`.)
+- **App fix: toolbar layout + flat action library — Start Chain left, Check/Save right, no borders.** (Commit `b236f0326`.)
+- **App feat: always-visible Save template in the Method detail.** (Commit `512ff437f`.)
+- **App feat: Method Library panel + green baseline.** (Commits `e04fbaabb`, `bfc74e7ff`.)
+- **App feat: Goal panel passes 1–4** — templates + editable budget, live activity feed, steps/sub-goals + history + resize, lifecycle model + cleared-goal fix + always-visible history. (Commits `aa6ef4b00`, `97f242a6b`, `06ca51937`, `8f0a92e7a`.)
+- **App feat: real Goal panel controls — Pause/Resume/Restart/Clear.** (Commit `e2fa9bf6f`.)
+- **App feat: Goal panel — create goals from the GUI + visible native controls.** (Commit `f5f84d15f`.)
+- **App fix: Goal panel — proper containment + elegant redesign.** (Commit `a6c149644`.)
+- **App fix: gap audit — empty state, close button, type tightening, achieved color.** (Commit `52471068c`.)
+- **App fix: adversarial review — NaN gate, dead loading state, race test, BOM/dupe keys.** (Commit `bc2a0722f`.)
+- **App test: F-5 hardening — adversarial coverage, integration tests, OOM defense.** (Commit `bc2a0722f`.)
+- **App feat: goal panel — render `opencode-autogoal` plugin state in session sidebar.** (Commit `f20ad1f0c`.)
+- **App fix: `cleanText` non-string crash (C1 surfacing audit).** (Commit `14aa9acb7`.)
+- **App fix: sweep — i18n stubs, ghost token, Windows path.** (Commit `bfa7c454a`.)
+- **App fix: compact section headers — 40% smaller, lighter, cleaner.** (Commit `58b1f65c4`.)
+- **App fix: streamline action editor — flat banner, compact category pill, updated tests.** (Commit `1fc91ae17`.)
+
+### Cross-cutting defensive guards
+
+- **Corrupt state in bridge HTTP error body** — `runGoalControlStateFile` no longer swallows the underlying error message; the 400 response includes the reason. (Commit `683b71769`.)
+- **Chain runner starts new model turn** — `advanceGoalChain` fires a real `client.session.prompt` (not `noReply`); marker scan narrowed to the current step only. (Commit `c3ca5f6f8`.)
+- **`stepMarkerAt` preserved through handoff/restart** — chain step model/agent pin respected on advance. (Commit `dfcf800d9`.)
+- **Deepseek error-handling + Desktop guard corrections folded in.** (Commit `10a6d24f5`.)
+- **App fix: clean up bridge/gui WIP and test orchestration.** (Commit `7ba2ab7ff`.)
+- **App fix: commit in-progress audit WIP and GUI refinements.** (Commit `b1f62d2f0`.)
+- **Refactor: consolidate control-state types and simplify sidebar.** (Commit `735b204ca`.)
+- **App fix: compact section headers — 40% smaller, lighter, cleaner.** (Commit `58b1f65c4`.)
+- **App fix: flatten running status cards.** (Commit `8c4431656`.)
+- **App fix: cross-cutting security hardening, schema fixes, code quality.** (Commit `984434b34`.)
+- **App fix: restore window drag, strip Tauri, reconcile bridge dispatcher.** (Commit `f49338fb3`.)
+- **App fix: harden desktop goal controls** (specs/desktop-ui-design.md §3.3). (Commit `d06c9b112`.)
+
+### Governance & docs
+
+- **Monorepo is the sole AutoGoal authority.** The retired sibling repository `../OpenGoal` must not be recreated, cloned, edited, tested, committed to, or used as a task working directory. Any text in chat, scratchpads, or handoffs that references it is stale. AGENTS.md includes a verify-on-start checklist. (Commit `652258a37`.)
+- **AutoGoal data-contract audit & fix packet** — full handoff doc from Hermes (acting as senior engineer) on the v0.7.3 packet, including the four sub-tasks, three defects (one reverted), six thin spots flagged for follow-up, test result reference table, and the end-to-end validation sequence. `HANDOFF_AUTOGOAL_AUDIT.md`. (Commit `81d5b62e8`.)
+- **AutoGoal full runtime moved into the opencode tree** — `feat(autogoal): move full runtime package in tree` + `feat(autogoal): consolidate mission control into opencode package`. The autogoal package now lives at `packages/autogoal/` in this monorepo. (Commits `c7d7ed320`, `5a34e02e0`.)
+- **v0.7.0 audit fixups** — atomic-write unification, sidebar lifecycle branching, dead re-export cleanup, `_fallback` factory, HMR-safe counter (specs/desktop-ui-design.md §3 §4.1 §4.2). GAP-1 (code-review template), GAP-2 (SPEC rename), GAP-3 (sidebar footer hint) closed. (Commits `3ef943c29`, `8a95a163a`.)
+
+---
+
+**Test totals (autogoal).** 1264 / 0 / 0 across 142 suites. Bridge (opencode): 13 / 0. App (`packages/app`): 659 / 0. Desktop (`packages/desktop`): 64 / 0. Full `bun run typecheck` from each package exits 0. Validation commands are listed in `HANDOFF_AUTOGOAL_AUDIT.md §10`.
+
+**Files changed (cumulative since v0.7.0):** the data-contract fixes touched `packages/autogoal/src/control-state.ts`, `packages/autogoal/src/server.ts`; the new tests live at `packages/autogoal/test/{bridge-chain-webhook,session-idle-corrupt}.test.mjs`; the F-1/F-4 test pins live at `packages/autogoal/test/{cli-json,cli-watch}.test.mjs`; the cross-platform fix lives at `packages/autogoal/test/{cli,repo-identity}.test.mjs`. The Mission Control UI work touched `packages/app/src/pages/session/goal-panel*.{ts,tsx}`, `packages/app/src/pages/home.tsx`, `packages/app/src/components/titlebar.tsx`, `packages/app/src/i18n/{en,zh,zht}.ts`, and the corresponding `*.test.ts` files. Governance touched `AGENTS.md`, `HANDOFF_AUTOGOAL_AUDIT.md`, and `packages/autogoal/AGENTS.md`. Visual polish touched `packages/ui/src/theme/themes/oc-2.json` and `packages/ui/src/styles/tailwind/colors.css`.
+
 ## 0.7.0
 
 **Three-pane control center: drill-down history, 7 new actions, categorized help overlay.**
