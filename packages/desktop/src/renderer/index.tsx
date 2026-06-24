@@ -94,12 +94,12 @@ const createPlatform = (): Platform => {
 
     const createStorage = (name: string) => {
       const api: AsyncStorage = {
-        getItem: (key: string) => window.api.storeGet(name, key),
-        setItem: (key: string, value: string) => window.api.storeSet(name, key, value),
-        removeItem: (key: string) => window.api.storeDelete(name, key),
-        clear: () => window.api.storeClear(name),
-        key: async (index: number) => (await window.api.storeKeys(name))[index],
-        getLength: () => window.api.storeLength(name),
+        getItem: (key: string) => window.api.storeGet(name, key).catch(() => null),
+        setItem: (key: string, value: string) => window.api.storeSet(name, key, value).catch(() => {}),
+        removeItem: (key: string) => window.api.storeDelete(name, key).catch(() => {}),
+        clear: () => window.api.storeClear(name).catch(() => {}),
+        key: async (index: number) => (await window.api.storeKeys(name).catch(() => []))[index],
+        getLength: () => window.api.storeLength(name).catch(() => 0),
         get length() {
           return api.getLength()
         },
