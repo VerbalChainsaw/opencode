@@ -87,6 +87,7 @@ export function registerIpcHandlers(deps: Deps) {
     if (name === "default.dat") return
     if (name === "opencode.global.dat") return
     if (name.startsWith("opencode.workspace.")) return
+    if (name.startsWith("opencode.draft.")) return
     throw new Error(`Store "${name}" is not accessible from the renderer.`)
   }
 
