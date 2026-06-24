@@ -3,77 +3,139 @@
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo" width="320">
     </picture>
   </a>
 </p>
-<p align="center">The open source AI coding agent.</p>
+
+<h1 align="center">OpenCode — VerbalChainsaw Edition</h1>
+
 <p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
+  <strong>The open source AI coding agent, now with autonomous goal-directed execution.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/VerbalChainsaw/opencode/releases"><img alt="Release" src="https://img.shields.io/github/v/release/VerbalChainsaw/opencode?style=flat-square&label=release" /></a>
+  <a href="https://github.com/VerbalChainsaw/opencode/actions/workflows/publish.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/VerbalChainsaw/opencode/publish.yml?style=flat-square&branch=dev" /></a>
   <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://github.com/VerbalChainsaw/opencode/blob/dev/LICENSE"><img alt="License" src="https://img.shields.io/github/license/VerbalChainsaw/opencode?style=flat-square" /></a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="#whats-different">What's Different</a> &bull;
+  <a href="#autogoal">AutoGoal</a> &bull;
+  <a href="#installation">Installation</a> &bull;
+  <a href="#desktop-app">Desktop App</a> &bull;
+  <a href="#documentation">Docs</a>
 </p>
-
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
 
 ---
 
-### Installation
+## What's Different
+
+This is a **fork** of [OpenCode](https://github.com/anomalyco/opencode) by [@VerbalChainsaw](https://github.com/VerbalChainsaw). Everything upstream works here — same CLI, same providers, same plugin system. The fork adds one major feature:
+
+### AutoGoal — Autonomous Goal-Directed Execution
+
+> **You:** *"Keep working until all tests pass and don't stop on your own."*
+>
+> **OpenCode:** *Goal set: tests pass — I'll keep going and check after each step.*
+
+Tell the agent what you want and it keeps working until the goal is met. No babysitting. Set it, walk away, come back to results.
+
+**What it does:**
+- **Conversational goal-setting** — just describe what you want in plain English
+- **Deterministic verification** — attach a shell command (`npm test`, `make build`) and it checks exit code 0 after every turn
+- **Chain execution** — sequence multiple actions (Plan → Build → Test → Review) with per-step constraints
+- **Turn/time/token limits** — hard safety rails so it can't run forever
+- **Live steering** — change the goal, add hints, pause/resume mid-run
+- **Handoff** — serialize state to a file, pick it up in another session or on another machine
+- **Full desktop UI** — Goal panel with real-time progress, metric pills, chain builder, run history
+
+AutoGoal ships as a built-in plugin (`@opencode-ai/autogoal`) with 100+ tests. It works in both the desktop app and the terminal.
+
+---
+
+## AutoGoal
+
+### Just Talk To It
+
+The plugin gives the agent five tools. You manage goals in plain language:
+
+| Say something like... | What happens |
+|---|---|
+| *"keep going until the tests pass"* | Sets a goal with auto-loop |
+| *"don't stop until the build is green"* | Same — conversational syntax |
+| *"what's my goal?"* | Shows current status + progress |
+| *"pause the goal for a sec"* | Pauses the auto-loop |
+| *"stop the goal, we're done"* | Clears the goal |
+
+### Or Use the `/goal` Command
+
+```
+/goal set "all tests pass" --command "npm test"
+/goal set "refactor auth module" stop after 15 turns
+/goal steer "focus on the error handling first"
+/goal pause / resume / clear
+/goal history
+```
+
+### Chain Execution
+
+Build multi-step workflows in the desktop Goal panel:
+
+```
+Step 1: Plan    → TURNS 3  / MIN 10  (map the work)
+Step 2: Build   → TURNS 8  / MIN 30  (implement changes)
+Step 3: Test    → TURNS 5  / MIN 15  (run and fix tests)
+Step 4: Review  → TURNS 3  / MIN 10  (review the diff)
+```
+
+Each step runs with its own constraints. The chain advances automatically when a step completes.
+
+### Standalone CLI
 
 ```bash
-# YOLO
+opencode-autogoal set "make all tests pass"
+opencode-autogoal status
+opencode-autogoal steer "focus on the flaky suite"
+opencode-autogoal watch          # live terminal dashboard
+opencode-autogoal tui            # full interactive control center
+opencode-autogoal doctor         # health check
+opencode-autogoal stats          # achievement history
+```
+
+Works from CI, cron jobs, shell scripts, or other agents — anything that can exec a subprocess.
+
+---
+
+## Installation
+
+### CLI
+
+```bash
+# Quick install
 curl -fsSL https://opencode.ai/install | bash
 
 # Package managers
 npm i -g opencode-ai@latest        # or bun/pnpm/yarn
 scoop install opencode             # Windows
 choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
+brew install anomalyco/tap/opencode # macOS/Linux
+nix run nixpkgs#opencode           # Nix
 mise use -g opencode               # Any OS
-nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev branch
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
+### Desktop App
 
-### Desktop App (BETA)
+Download from the [releases page](https://github.com/VerbalChainsaw/opencode/releases):
 
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
-
-| Platform              | Download                           |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`, `.rpm`, or `.AppImage`     |
+| Platform | Download |
+|---|---|
+| Windows | `opencode-desktop-windows-x64.exe` |
+| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg` |
+| macOS (Intel) | `opencode-desktop-mac-x64.dmg` |
+| Linux | `.deb`, `.rpm`, or `.AppImage` |
 
 ```bash
 # macOS (Homebrew)
@@ -82,48 +144,53 @@ brew install --cask opencode-desktop
 scoop bucket add extras; scoop install extras/opencode-desktop
 ```
 
-#### Installation Directory
+---
 
-The install script respects the following priority order for the installation path:
+## Desktop App
 
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+The desktop app is a full Electron application with:
 
-```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Agents
-
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
-
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
-
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
-
-Learn more about [agents](https://opencode.ai/docs/agents).
-
-### Documentation
-
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
-
-### Contributing
-
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
-
-### Building on OpenCode
-
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
+- **Session management** — multiple concurrent sessions with model/provider switching
+- **Goal panel** — visual chain builder, real-time metric pills, run history with achievement tracking
+- **Theme system** — 30+ themes (Catppuccin, Dracula, Nord, Tokyo Night, etc.)
+- **Multi-provider** — Claude, GPT, DeepSeek, Gemini, Ollama, and more
+- **MCP support** — connect external tools via Model Context Protocol
+- **Diff viewer** — inline code diffs with syntax highlighting
 
 ---
 
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+## Agents
+
+OpenCode includes two built-in agents (switch with `Tab`):
+
+- **build** — full-access agent for development work
+- **plan** — read-only agent for analysis and code exploration (denies edits, asks before running commands)
+
+A **general** subagent handles complex searches and multi-step tasks internally (invoke with `@general`).
+
+Learn more about [agents](https://opencode.ai/docs/agents).
+
+---
+
+## Documentation
+
+For configuration, providers, plugins, and more: [**opencode.ai/docs**](https://opencode.ai/docs)
+
+---
+
+## Contributing
+
+Read the [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
+
+---
+
+## Credits
+
+This fork is built on top of [OpenCode](https://github.com/anomalyco/opencode) by the OpenCode team. The AutoGoal system was inspired by [@mirsella](https://github.com/mirsella)'s [opencode-goal](https://github.com/mirsella/opencode-goal) — a clean, lightweight take on the same idea.
+
+---
+
+<p align="center">
+  <strong>Built by <a href="https://github.com/VerbalChainsaw">VerbalChainsaw</a></strong> &bull;
+  MIT License
+</p>
