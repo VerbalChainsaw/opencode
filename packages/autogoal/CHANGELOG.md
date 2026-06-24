@@ -4,9 +4,9 @@
 
 **VerbalChainsaw fork — first stable release. All AutoGoal work since v0.7.0 consolidated into a single major release.**
 
-This is the fork's first 1.0 milestone: data-contract bugs found and fixed, the F-1/F-4 CLI contracts pinned with regression tests, the Mission Control goal-panel hardened and visually polished, governance tightened (sibling repo retired, monorepo is sole authority), and the App-side goal integration brought into line with the v0.4.2 corrupt-state surfacing contract. Everything in this release has been verified against the autogoal suite (1264/0) on the committed branch and the cross-platform Windows/WSL paths.
+This is the fork's first 1.0 milestone: data-contract bugs found and fixed, the F-1/F-4 CLI contracts pinned with regression tests, the Mission Control goal-panel hardened and visually polished, governance tightened (sibling repo retired, monorepo is sole authority), and the App-side goal integration brought into line with the v0.4.2 corrupt-state surfacing contract. Everything in this release has been verified against the autogoal suite (1267/0) on the committed branch and the cross-platform Windows/WSL paths.
 
-**Note on the version number.** The package version moves from `1.17.3` (which mirrored upstream opencode's release tag) to `1.0.0` to mark this fork's first stable release of its own independent surface. The git tag is `v1.0.0` and points at the head of `dev` on `VerbalChainsaw/opencode`. Future fork releases will continue from `1.x.y`.
+**Note on the version number.** The package version moves from `1.17.3` (which mirrored upstream opencode's release tag) to `1.0.0` to mark this fork's first stable release of its own independent surface. The git tag is `verbalchainsaw-v1.0.0` (fork-prefixed to avoid collision with upstream opencode's `v1.0.0` from October 31, 2025) and points at the head of `dev` on `VerbalChainsaw/opencode`. Future fork releases will continue from `1.x.y`.
 
 ---
 
@@ -100,7 +100,7 @@ This is the fork's first 1.0 milestone: data-contract bugs found and fixed, the 
 
 ---
 
-**Test totals (autogoal).** 1264 / 0 / 0 across 142 suites. Bridge (opencode): 13 / 0. App (`packages/app`): 659 / 0. Desktop (`packages/desktop`): 64 / 0. Full `bun run typecheck` from each package exits 0. Validation commands are listed in `HANDOFF_AUTOGOAL_AUDIT.md §10`.
+**Test totals (autogoal).** 1267 / 0 / 0 across 142 suites. Bridge (opencode): 13 / 0. App (`packages/app`): 659 / 0. Desktop (`packages/desktop`): 64 / 0. Full `bun run typecheck` from each package exits 0. Validation commands are listed in `HANDOFF_AUTOGOAL_AUDIT.md §10`.
 
 **Files changed (cumulative since v0.7.0):** the data-contract fixes touched `packages/autogoal/src/control-state.ts`, `packages/autogoal/src/server.ts`; the new tests live at `packages/autogoal/test/{bridge-chain-webhook,session-idle-corrupt}.test.mjs`; the F-1/F-4 test pins live at `packages/autogoal/test/{cli-json,cli-watch}.test.mjs`; the cross-platform fix lives at `packages/autogoal/test/{cli,repo-identity}.test.mjs`. The Mission Control UI work touched `packages/app/src/pages/session/goal-panel*.{ts,tsx}`, `packages/app/src/pages/home.tsx`, `packages/app/src/components/titlebar.tsx`, `packages/app/src/i18n/{en,zh,zht}.ts`, and the corresponding `*.test.ts` files. Governance touched `AGENTS.md`, `HANDOFF_AUTOGOAL_AUDIT.md`, and `packages/autogoal/AGENTS.md`. Visual polish touched `packages/ui/src/theme/themes/oc-2.json` and `packages/ui/src/styles/tailwind/colors.css`.
 
