@@ -1108,20 +1108,32 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.handoff.placeholder")
   })
 
-  test("live run-order delete removes only pending steps through the chain command", async () => {
+  test("live run-order delete routes through chainStepVisibleAction (AG-P1-05)", async () => {
+    // AG-P1-05 — the previous `if (liveGoal()) return void removeLiveChainStep(index)`
+    // shape used `liveGoal()` as a proxy to decide draft-vs-live routing. The
+    // new contract: the call site passes an explicit `source` to
+    // `removeVisibleStep`, and the pure `chainStepVisibleAction` decides the
+    // action kind. The X-button handler must:
+    //   - import chainStepVisibleAction from ./goal-panel-pure
+    //   - call removeVisibleStep with the explicit source (live or draft)
+    //   - dispatch on action.kind, NOT on liveGoal()
+    // The chain-command path (removeLiveChainStep → sendGoalCommand chain remove)
+    // is unchanged for the pending-step case and is preserved here as a contract.
     const src = await goalPanelSource()
     expect(src).toContain("const removeLiveChainStep = async (index: number) => {")
-    // v0.7.3 — the original guard is now extended with a
-    // terminal-state escape hatch. The substring
-    // `index <= runningStepIndex()` is still present (the
-    // in-flight non-terminal case still blocks deletion).
     expect(src).toContain("index <= runningStepIndex()")
     expect(src).toContain('sendGoalCommand("chain", `chain remove ${index + 1}`)')
-    expect(src).toContain("if (liveGoal()) return void removeLiveChainStep(index)")
-    expect(src).toContain("removeDraftStep(step.id)")
+    // AG-P1-05 — the routing layer is the pure selector.
+    expect(src).toContain("chainStepVisibleAction")
+    // The X-button handler MUST pass an explicit `source` argument.
+    // (Substring match: the call is formatted across multiple lines in the
+    //  source so we look for the key fragments rather than the whole expression.)
+    expect(src).toMatch(/removeVisibleStep\(\s*step\s*,\s*i\(\)\s*,\s*liveGoal\(\)\s*\?\s*"live"\s*:\s*"draft"/)
+    // The old proxy-style guard should NOT be the primary dispatch.
+    expect(src).not.toContain("if (liveGoal()) return void removeLiveChainStep(index)")
+    // aria-label and disabled remain in place for accessibility.
     expect(src).toContain('aria-label={liveGoal() ? "Remove pending step" : "Remove"}')
     expect(src).toContain("disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}")
-    expect(src).toContain("onClick={() => removeVisibleStep(step, i())}")
   })
 
   test("live run-order delete permits deleting a done step when the run is terminal (v0.7.3)", async () => {

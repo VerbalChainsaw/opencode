@@ -1139,3 +1139,82 @@ export async function readHandoffFromSdk(sdk: GoalSdkClient): Promise<GoalHandof
     return { handoff: null, corrupt: false, loaded: true }
   }
 }
+
+// ── AG-P1-05: visible-source routing for chain row actions ──────────────────
+//
+// The chain panel renders the same row layout for three distinct data
+// sources: the local draft, the live runtime chain (current run), and
+// the terminal run history (last completed run). The previous code used
+// `liveGoal()` as a proxy to route the X button, which silently merged
+// "user is editing the draft" with "user is viewing a live run" — the
+// symptom was that X buttons claimed an operation the receiving backend
+// rejected or interpreted differently (e.g. the X on a terminal-history
+// row tried to delete from the live chain file).
+//
+// `ChainStepVisibleSource` is the metadata the row layout carries; the
+// tsx layer attaches it to each row and the X-button handler routes by
+// it, not by `liveGoal()`. This is testable in pure form here so the
+// invariant survives future tsx refactors.
+
+export type ChainStepVisibleSource = "draft" | "live" | "terminal-history";
+
+export type ChainStepVisibleAction =
+  | { kind: "edit-draft"; stepID: string }
+  | { kind: "remove-live-pending"; index: number }
+  | { kind: "dismiss-terminal" }
+  | { kind: "noop" };
+
+/**
+ * AG-P1-05 — pick what action the X button (or any other row-level
+ * destructive button) performs, given the visible source of the row
+ * and the run-state metadata. The handler in the tsx layer dispatches
+ * on `kind`; the pure module does not know about the backend.
+ *
+ * Invariants this function enforces (matches ticket AG-P1-05):
+ *   1. Draft rows always edit local draft; they never reach the
+ *      runtime chain file.
+ *   2. Live rows route to the live-pending remover; the runner's
+ *      own protection against removing running/done steps is
+ *      preserved by the live layer (`removeLiveChainStep` already
+ *      guards `index <= runningStepIndex()` for active runs).
+ *   3. Terminal-history rows never touch the live chain file; the
+ *      action is a distinct `dismiss-terminal` command, not a
+ *      remove. The tsx layer wires this to archive/reset.
+ *   4. Rows with `noop` action render the X as disabled (the tsx
+ *      layer also handles `disabled` from run-state — this function
+ *      just makes the contract explicit).
+ */
+export function chainStepVisibleAction(args: {
+  source: ChainStepVisibleSource;
+  stepID: string;
+  index: number;
+  /** Index of the currently-running live step, or -1 if no live run. */
+  runningStepIndex: number;
+  /** Live run status, or null if no live run. */
+  liveRunStatus: "achieved" | "cleared" | "paused" | "active" | null;
+}): ChainStepVisibleAction {
+  if (args.source === "draft") {
+    return { kind: "edit-draft", stepID: args.stepID };
+  }
+  if (args.source === "live") {
+    // v0.7.3 / audit June 2026 — terminal-state escape hatch: when
+    // the live run is in a terminal state (achieved / cleared) the
+    // engine is no longer driving the run, and the chain file's
+    // `current` index may still point at a step that the user wants
+    // to clear. In that case we allow the remove; otherwise we
+    // suppress it (the tsx layer's `disabled` already does the same).
+    if (
+      args.liveRunStatus === "achieved" ||
+      args.liveRunStatus === "cleared"
+    ) {
+      return { kind: "remove-live-pending", index: args.index };
+    }
+    if (args.index > args.runningStepIndex) {
+      return { kind: "remove-live-pending", index: args.index };
+    }
+    return { kind: "noop" };
+  }
+  // terminal-history: never mutate live chain. The action is a
+  // distinct dismiss command (archives the terminal run).
+  return { kind: "dismiss-terminal" };
+}

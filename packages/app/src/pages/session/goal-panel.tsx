@@ -94,6 +94,9 @@ import {
   type GoalTemplateModel,
   type GoalTemplateTone,
   type SkillPickerDisabledReason,
+  // AG-P1-05 — pure visible-source routing for chain row actions.
+  chainStepVisibleAction,
+  type ChainStepVisibleSource,
 } from "./goal-panel-pure"
 import { executeGoalCommand, pauseGoalRun, resetGoalWorkspaceState, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
@@ -3031,9 +3034,38 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
     return sendGoalCommand("chain", `chain remove ${index + 1}`)
   }
-  const removeVisibleStep = (step: GoalChainDraftStep, index: number) => {
-    if (liveGoal()) return void removeLiveChainStep(index)
-    removeDraftStep(step.id)
+  // AG-P1-05 — every X button routes by visible-source metadata, not
+  // by `liveGoal()` as a proxy. The pure selector `chainStepVisibleAction`
+  // decides the action kind from (source, run-state); this function
+  // dispatches on the returned kind. Callers MUST pass an explicit
+  // `source` matching the data the user is actually viewing on the row.
+  const removeVisibleStep = (
+    step: GoalChainDraftStep,
+    index: number,
+    source: ChainStepVisibleSource,
+  ) => {
+    const action = chainStepVisibleAction({
+      source,
+      stepID: step.id,
+      index,
+      runningStepIndex: runningStepIndex(),
+      liveRunStatus: liveRunStatus(),
+    });
+    switch (action.kind) {
+      case "edit-draft":
+        removeDraftStep(step.id);
+        return;
+      case "remove-live-pending":
+        return void removeLiveChainStep(action.index);
+      case "dismiss-terminal":
+        // Distinct terminal command — not yet wired (per ticket: requires
+        // a Dismiss/Archive/New-draft-from-run affordance). Surfaced as
+        // a no-op for now so the routing layer is correct end-to-end;
+        // adding the UI is a follow-up packet.
+        return;
+      case "noop":
+        return;
+    }
   }
   const unarchivedTerminalGoal = createMemo(() => {
     const goal = terminalGoal()
@@ -4743,7 +4775,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     class={inlineCommandButtonClass("remove")}
                                     style={inlineCommandButtonStyle("remove")}
                                     disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}
-                                    onClick={() => removeVisibleStep(step, i())}
+                                    // AG-P1-05 — pass the visible source
+                                    // explicitly so the pure selector
+                                    // decides the action kind instead
+                                    // of `liveGoal()` being used as a
+                                    // proxy inside removeVisibleStep.
+                                    onClick={() =>
+                                      removeVisibleStep(
+                                        step,
+                                        i(),
+                                        liveGoal() ? "live" : "draft",
+                                      )
+                                    }
                                   >
                                     ×
                                   </button>
