@@ -25,8 +25,8 @@
 | 6 | **AG-P0-04** chain draft provenance | ✅ **DONE** | `d6033a3b9` | green (657 pass, 12 pre-existing failures unrelated) | `ChainDraftSource` + selector with source param |
 | 7 | **AG-P1-05** separate draft/live/terminal actions | ✅ **DONE** | `b22ba7f84` | green (665 pass, 12 pre-existing failures unrelated) | `chainStepVisibleAction` selector; X-button routes by visible source |
 | 8 | **AG-P1-06** unify continuation delivery | 🟠 **PART 1 DONE** | `d9844d806` | green (1291/1291) | Decision function `decideContinuationRetry` shipped + 13 tests; dispatcher wrapper is a follow-up |
-| 9 | **AG-P1-07** ordered chain refresh commits | ⬜ not started | — | — | `goal-panel.tsx` |
-| 10 | **AG-P1-08** release smoke gate | ⬜ not started | — | — | Final |
+| 9 | **AG-P1-07** ordered chain refresh commits | ✅ **DONE** | `2bdbcd0ec` | green (672/12 baseline; pure 21/21) | `createOrderedChainRefresh` generation-counter discard pattern |
+| 10 | **AG-P1-08** release smoke gate | ⬜ not started | — | — | Final; requires real host binary |
 | 8b | **Geometry audit** (chain operator) | ✅ **DONE** | `1a34e23d4` | green (1304/1304) | 5 defects fixed (D1, D2, D5, D6, D9), D10 reclassified |
 
 ### Working tree right now
