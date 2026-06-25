@@ -97,6 +97,8 @@ import {
   // AG-P1-05 — pure visible-source routing for chain row actions.
   chainStepVisibleAction,
   type ChainStepVisibleSource,
+  // AG-P1-07 — ordered chain refresh guard (gen-counter discard pattern).
+  createOrderedChainRefresh,
 } from "./goal-panel-pure"
 import { executeGoalCommand, pauseGoalRun, resetGoalWorkspaceState, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
@@ -1665,12 +1667,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       .catch(ignoreRefreshError)
   const refreshHandoff = () => void readHandoffFromSdk(sdk as unknown as GoalSdkClient).then(setHandoff).catch(ignoreRefreshError)
 
+  // AG-P1-07 — single shared ordering guard for the polling tick AND
+  // command-triggered refreshes. Both paths funnel through the same
+  // generation counter so an in-flight request from one path cannot
+  // resurrect older state by overwriting a newer commit from the other.
+  const chainRefresh = createOrderedChainRefresh<ChainData | null>(
+    () => readChain(sdk),
+    (data) => setChain(data),
+  );
+
   onMount(() => {
     refreshSkills()
     const tick = () => {
       setNow(Date.now())
       void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)
-      void readChain(sdk).then(setChain).catch(ignoreRefreshError)
+      // AG-P1-07 — shared guard (not a bare `void readChain...then(setChain)`).
+      void chainRefresh.request()
       refreshHandoff()
       void refreshTemplates()
       refreshArchive()
@@ -1678,14 +1690,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }
     tick()
     const timer = setInterval(tick, 2000)
-    onCleanup(() => clearInterval(timer))
+    // AG-P1-07 — dispose the guard on unmount so a late network completion
+    // from a discarded component instance cannot resurrect older state.
+    onCleanup(() => {
+      clearInterval(timer)
+      chainRefresh.dispose()
+    })
   })
 
-  const refreshChain = () => void readChain(sdk).then(setChain).catch(ignoreRefreshError)
+  // AG-P1-07 — `refreshChain` now returns a Promise (the ticket requires
+  // this). Callers that ignored the return value before still work; the
+  // poll loop awaits internally and the guard discards stale results.
+  const refreshChain = (): Promise<void> => chainRefresh.request()
 
   const refreshGoalSurfaces = async (options: { templates?: boolean } = {}) => {
     await props.goal.refresh().catch(ignoreRefreshError)
-    refreshChain()
+    await refreshChain()
     refreshHandoff()
     refreshArchive()
     if (options.templates) await refreshTemplates()

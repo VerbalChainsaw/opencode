@@ -1218,3 +1218,78 @@ export function chainStepVisibleAction(args: {
   // distinct dismiss command (archives the terminal run).
   return { kind: "dismiss-terminal" };
 }
+
+// ── AG-P1-07: ordered chain refresh dispatch ────────────────────────────────
+//
+// The chain panel polls the runtime chain file every 2 seconds and also
+// refreshes on user actions (start, advance, archive). The pre-fix code
+// fired `void readChain(sdk).then(setChain)` from both paths; if two
+// requests raced on the network, request 2 could finish first and commit,
+// then request 1's late completion would overwrite the newer state.
+// "Polling can no longer resurrect older chain state through out-of-order
+// network completion." (ticket acceptance criterion.)
+//
+// `createOrderedChainRefresh` is the central ordering guard. Each
+// `request()` bumps a monotonic generation counter and stores it on the
+// in-flight Promise. When the Promise resolves, the result is committed
+// ONLY if its generation matches the current generation — stale results
+// are discarded.
+//
+// `dispose()` cancels future late commits (component cleanup). The
+// returned `request()` Promise always resolves (never hangs forever),
+// so `await refreshGoalSurfaces()` and the polling tick can rely on it.
+
+export interface OrderedChainRefresh {
+  /**
+   * Request a refresh. Returns a Promise that resolves when this request's
+   * result is either committed (and matched the current generation) or
+   * discarded (because a newer request superseded it).
+   */
+  request(): Promise<void>;
+  /**
+   * Cancel any in-flight requests and prevent future late commits.
+   * Idempotent. Safe to call from a SolidJS `onCleanup` handler.
+   */
+  dispose(): void;
+}
+
+export function createOrderedChainRefresh<T>(
+  readFn: () => Promise<T | null>,
+  onCommit: (data: T | null) => void,
+): OrderedChainRefresh {
+  // The current generation. Every request bumps it. Only the request
+  // whose generation matches `current` at the moment its result resolves
+  // gets to commit. After dispose(), the flag flips and all pending
+  // resolves see it and skip the commit.
+  let current = 0;
+  let disposed = false;
+
+  function request(): Promise<void> {
+    if (disposed) return Promise.resolve();
+    const myGeneration = ++current;
+    return readFn().then(
+      (data) => {
+        if (disposed) return;
+        // Discard stale results: if a newer request bumped the counter
+        // beyond myGeneration, my result is no longer the latest. Drop it.
+        if (myGeneration !== current) return;
+        onCommit(data);
+      },
+      // Errors are also discarded if stale; the caller is responsible
+      // for any logging (the tsx layer uses an `ignoreRefreshError` helper).
+      () => {
+        /* no-op: errors don't poison the ordering guard */
+      },
+    );
+  }
+
+  function dispose(): void {
+    disposed = true;
+    // Note: we don't clear `current` — any pending requests still in
+    // flight will see `myGeneration !== current` and skip the commit.
+    // That is the desired cleanup behavior: late network completions
+    // can no longer resurrect older state.
+  }
+
+  return { request, dispose };
+}

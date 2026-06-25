@@ -106,7 +106,13 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("const refreshGoalSurfaces = async")
     expect(src).toContain("await props.goal.refresh().catch(ignoreRefreshError)")
     expect(src).toContain("void props.goal.refresh().catch(ignoreRefreshError)")
-    expect(src).toContain("const refreshChain = () => void readChain(sdk).then(setChain).catch(ignoreRefreshError)")
+    // AG-P1-07 — refreshChain is now backed by createOrderedChainRefresh
+    // (gen-counter discard pattern) and returns a Promise so callers can
+    // await it. The old `() => void readChain(sdk).then(setChain).catch(...)`
+    // shape is gone — replace it with the new shape assertion below.
+    expect(src).toContain("createOrderedChainRefresh")
+    expect(src).not.toContain("const refreshChain = () => void readChain(sdk).then(setChain)")
+    expect(src).toMatch(/const refreshChain = \(\): Promise<void>/)
     expect(src).toContain("void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)")
     expect(src).toContain(".catch(() => setOptimisticStatus(null))")
 

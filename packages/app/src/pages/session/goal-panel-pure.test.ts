@@ -209,3 +209,244 @@ describe("AG-P0-04: selectRunnableChainSteps with explicit draft provenance", ()
     ).toEqual([]);
   });
 });
+
+// ── AG-P1-07 — ordered chain refresh commits ─────────────────────────────────
+//
+// Acceptance criterion (ticket text):
+//   "Polling can no longer resurrect older chain state through
+//    out-of-order network completion."
+//
+// Required behavior:
+//   - each read receives a monotonically increasing generation OR an abort signal
+//   - only the latest generation commits to `setChain`
+//   - `refreshChain()` returns a promise
+//   - `refreshGoalSurfaces()` awaits the requested chain refresh
+//   - interval and command-triggered refreshes share the same ordering guard
+//   - component cleanup prevents late commits
+//
+// The pre-fix contract: `refreshChain = () => void readChain(sdk).then(setChain).catch(...)`.
+// Returns void (not a promise). Two concurrent reads race on the network:
+// request 2 finishes first and commits; request 1's late completion overwrites
+// the newer state. The test pins this with an artificially-slow readChain mock.
+//
+// This test imports the dispatch helper (`createOrderedChainRefresh`) which the
+// fix introduces. The helper takes a `readFn` that returns a Promise<ChainData | null>,
+// an `onCommit` callback for setting the chain state, and returns a function
+// that callers invoke to request a refresh. Each invocation bumps a generation
+// counter; only the most recent generation's result commits.
+
+type ChainData = {
+  id: string;
+  current: number;
+  steps: Array<{ id: string }>;
+};
+
+interface OrderedChainRefresh {
+  /** Request a refresh. Returns a promise that resolves when this request's
+   *  result is either committed or discarded by the ordering guard. */
+  request(): Promise<void>;
+  /** Cancel any in-flight requests and prevent future late commits. */
+  dispose(): void;
+}
+
+let createOrderedChainRefresh: (
+  readFn: () => Promise<ChainData | null>,
+  onCommit: (data: ChainData | null) => void,
+) => OrderedChainRefresh;
+
+test("AG-P1-07: goal-panel-pure exports createOrderedChainRefresh", async () => {
+  const mod = await import("./goal-panel-pure");
+  expect(typeof mod.createOrderedChainRefresh).toBe("function");
+  createOrderedChainRefresh = mod.createOrderedChainRefresh;
+});
+
+describe("AG-P1-07: createOrderedChainRefresh ordering guard", () => {
+  test("1. resolves request 2 first, then request 1's late completion is ignored", async () => {
+    let calls = 0;
+    const commits: Array<ChainData | null> = [];
+
+    // Mock readFn where request 2's network completes BEFORE request 1's.
+    // The PRE-FIX code would commit request 2, then request 1's late
+    // completion would overwrite the newer state — that's the defect.
+    // POST-FIX: request 1's result must be discarded because it's stale.
+    const readFn = () => {
+      const myCall = ++calls;
+      return new Promise<ChainData | null>((resolve) => {
+        const delay = myCall === 1 ? 50 : 10;
+        setTimeout(() => {
+          resolve({
+            id: "chain-1",
+            current: myCall,
+            steps: [{ id: `step-from-call-${myCall}` }],
+          });
+        }, delay);
+      });
+    };
+
+    const refresh = createOrderedChainRefresh(readFn, (data) => {
+      commits.push(data);
+    });
+
+    const r1 = refresh.request();
+    const r2 = refresh.request();
+    await Promise.all([r1, r2]);
+
+    // Final state must reflect request 2, not request 1.
+    expect(commits.length).toBeGreaterThanOrEqual(1);
+    const final = commits[commits.length - 1];
+    expect(final?.current).toBe(2);
+    expect(final?.steps[0].id).toBe("step-from-call-2");
+
+    // Request 1's stale result was discarded — commits never show current=1.
+    const staleCommit = commits.find((c) => c?.current === 1);
+    expect(staleCommit).toBeUndefined();
+
+    refresh.dispose();
+  });
+
+  test("2. sequential requests commit in order, no commits are dropped", async () => {
+    let calls = 0;
+    const commits: Array<ChainData | null> = [];
+
+    const readFn = () => {
+      calls++;
+      return Promise.resolve({
+        id: "chain-1",
+        current: calls,
+        steps: [{ id: `step-${calls}` }],
+      } satisfies ChainData);
+    };
+
+    const refresh = createOrderedChainRefresh(readFn, (data) => {
+      commits.push(data);
+    });
+
+    await refresh.request();
+    await refresh.request();
+    await refresh.request();
+
+    expect(commits.map((c) => c?.current)).toEqual([1, 2, 3]);
+    expect(calls).toBe(3);
+    refresh.dispose();
+  });
+
+  test("3. each request's returned promise resolves when its result is committed or discarded", async () => {
+    let calls = 0;
+    let pending: Array<(v: ChainData | null) => void> = [];
+
+    const readFn = () => {
+      calls++;
+      return new Promise<ChainData | null>((resolve) => {
+        pending.push(resolve);
+      });
+    };
+
+    const refresh = createOrderedChainRefresh(readFn, () => {});
+
+    const r1 = refresh.request();
+    const r2 = refresh.request();
+    const r3 = refresh.request();
+
+    expect(calls).toBe(3);
+
+    // Resolve in REVERSE order: r3 first, r1 last.
+    pending[2]({ id: "c", current: 3, steps: [] });
+    pending[1]({ id: "b", current: 2, steps: [] });
+    pending[0]({ id: "a", current: 1, steps: [] });
+
+    // All three promises must resolve (none hang forever).
+    await Promise.all([r1, r2, r3]);
+    refresh.dispose();
+  });
+
+  test("4. dispose() prevents late commits from in-flight requests", async () => {
+    let calls = 0;
+    const commits: Array<ChainData | null> = [];
+
+    const readFn = () => {
+      calls++;
+      return new Promise<ChainData | null>((resolve) => {
+        setTimeout(() => {
+          resolve({ id: "c", current: calls, steps: [] });
+        }, 20);
+      });
+    };
+
+    const refresh = createOrderedChainRefresh(readFn, (data) => {
+      commits.push(data);
+    });
+
+    refresh.request();
+    refresh.request();
+    refresh.dispose();
+
+    // Wait long enough for the setTimeout to fire.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // No commits should have happened after dispose.
+    expect(commits.length).toBe(0);
+  });
+
+  test("5. null result (chain absent) commits as null, does not break ordering", async () => {
+    const commits: Array<ChainData | null> = [];
+    let calls = 0;
+
+    const readFn = () => {
+      calls++;
+      return calls === 1
+        ? Promise.resolve({ id: "c", current: 0, steps: [] } satisfies ChainData)
+        : Promise.resolve(null);
+    };
+
+    const refresh = createOrderedChainRefresh(readFn, (data) => {
+      commits.push(data);
+    });
+
+    await refresh.request();
+    await refresh.request();
+
+    expect(commits).toHaveLength(2);
+    expect(commits[0]?.current).toBe(0);
+    expect(commits[1]).toBeNull();
+    refresh.dispose();
+  });
+
+  test("6. rapid burst of N requests: only the last one's result commits", async () => {
+    let calls = 0;
+    const commits: Array<ChainData | null> = [];
+
+    const readFn = () => {
+      const myCall = ++calls;
+      // Each call takes a slightly different time so they finish out of order.
+      return new Promise<ChainData | null>((resolve) => {
+        setTimeout(
+          () => {
+            resolve({ id: "c", current: myCall, steps: [] });
+          },
+          // Reverse ordering of completion times vs call order:
+          // call 1 finishes last (100ms), call N finishes first (10ms).
+          100 - myCall * 10 + 10,
+        );
+      });
+    };
+
+    const refresh = createOrderedChainRefresh(readFn, (data) => {
+      commits.push(data);
+    });
+
+    const promises = Array.from({ length: 5 }, () => refresh.request());
+    await Promise.all(promises);
+
+    // Only the LAST-requested result commits. The exact data is the
+    // call-N result where N=5.
+    expect(commits.length).toBeGreaterThanOrEqual(1);
+    const final = commits[commits.length - 1];
+    expect(final?.current).toBe(5);
+
+    // No commit with current < 5 should appear (those were stale).
+    const stale = commits.find((c) => c?.current !== undefined && c.current < 5);
+    expect(stale).toBeUndefined();
+
+    refresh.dispose();
+  });
+});
