@@ -27,6 +27,7 @@
 | 8 | **AG-P1-06** unify continuation delivery | 🟠 **PART 1 DONE** | `d9844d806` | green (1291/1291) | Decision function `decideContinuationRetry` shipped + 13 tests; dispatcher wrapper is a follow-up |
 | 9 | **AG-P1-07** ordered chain refresh commits | ⬜ not started | — | — | `goal-panel.tsx` |
 | 10 | **AG-P1-08** release smoke gate | ⬜ not started | — | — | Final |
+| 8b | **Geometry audit** (chain operator) | ✅ **DONE** | `1a34e23d4` | green (1304/1304) | 5 defects fixed (D1, D2, D5, D6, D9), D10 reclassified |
 
 ### Working tree right now
 
