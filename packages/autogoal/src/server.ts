@@ -282,6 +282,167 @@ export function decideContinuationRetry(args: {
   };
 }
 
+// AG-P1-06 part 2 — unified continuation-delivery dispatcher.
+//
+// The pre-fix contract: the chain-advance prompt path and the
+// continue-nudge path both called `client.session.prompt(...).then().catch()`
+// inline. The two paths DIVIDED the failure-handling responsibilities:
+// the nudge path had bounded-retry accounting (via `recordNudgeFailure` +
+// `nudgeFailureCounts`), exhaustion pause, and notify; the chain-advance
+// path handled only hard-error pauses inline. Transient failures on the
+// chain-advance path silently dropped the prompt — the chain sat
+// active with no turn in flight and no recovery path.
+//
+// `deliverContinuation` is the dispatcher both paths route through.
+// It owns:
+//   - the per-session failure counter (per-session, NOT global)
+//   - the per-session idempotency key (prevents duplicate prompt delivery)
+//   - the bounded-retry loop with classify-once semantics via
+//     `decideContinuationRetry` (defined above)
+//   - pause-with-deterministic-reason on hard error or exhaustion,
+//     driving `transitionGoal` + `fireWebhook` + `notify` for visibility
+//   - counter reset on success
+//
+// The function takes callbacks (`onPause`, `onNotify`, `onWebhookFire`,
+// `onReset`) so unit tests can drive the dispatcher without faking the
+// full goalState file system. The production call sites inject the
+// real implementations; tests inject observation-only stubs.
+//
+// Acceptance (ticket text): "Every delivery attempt ends in delivered,
+// safely retrying, or visibly paused. 'Active but nothing is happening'
+// is not a legal state."
+
+export type ContinuationDeliveryStatus = "delivered" | "duplicate-suppressed" | "paused";
+
+export type ContinuationDeliveryOutcome =
+  | { status: "delivered" }
+  | { status: "duplicate-suppressed" }
+  | { status: "paused"; reason: string };
+
+export interface ContinuationDeliveryDeps {
+  /** Pause the goal with a deterministic reason. Called on hard errors and exhaustion. */
+  onPause(reason: string): Promise<void> | void;
+  /** Send a visible user notification. Called on every pause. */
+  onNotify(title: string, message: string, level: "info" | "success" | "warning" | "error"): Promise<void> | void;
+  /** Fire the goal-state webhook (if any). Called on every pause. */
+  onWebhookFire(status: GoalStatus): void;
+  /** Reset the per-session failure counter. Called on every successful delivery. */
+  onReset(): void;
+}
+
+/**
+ * AG-P1-06 part 2 — the dispatcher. Both the chain-advance prompt and
+ * the continue-nudge path should funnel through this function. It
+ * returns a discriminated union describing the outcome so callers
+ * (typically the `evaluate()` post-hook in `server.ts`) can chain
+ * downstream side effects like webhook fan-out for "delivered" or
+ * state-of-the-world updates for "paused".
+ *
+ * The retry loop runs synchronously per attempt but the inner
+ * `client.session.prompt(...)` call is awaited. We deliberately do NOT
+ * add artificial backoff sleep between attempts — the SDK call is the
+ * rate-limit gate, not our loop. A future hardening could add jittered
+ * backoff for known-flaky providers, but that's out of scope for this
+ * ticket.
+ */
+export async function deliverContinuation(
+  client: { session: { prompt: (args: unknown) => Promise<unknown> } },
+  opts: {
+    sessionId: string;
+    /** Idempotency key derived from (sessionID, goalState.id, chainStep). */
+    idempotencyKey: string;
+    /** Prompt body passed verbatim to client.session.prompt. */
+    body: unknown;
+    /** Maximum attempts before exhaustion pause. Defaults to 3. */
+    maxAttempts?: number;
+    deps: ContinuationDeliveryDeps;
+  },
+): Promise<ContinuationDeliveryOutcome> {
+  const maxAttempts = opts.maxAttempts ?? 3;
+
+  // Idempotency check: did we already deliver this exact key? If so,
+  // the dispatcher's caller already produced this prompt and any
+  // subsequent call is suppressed.
+  if (lastDeliveredKeyBySession.get(opts.sessionId) === opts.idempotencyKey) {
+    return { status: "duplicate-suppressed" };
+  }
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await client.session.prompt({
+        path: { id: opts.sessionId },
+        body: opts.body,
+      });
+
+      // Success path.
+      opts.deps.onReset();
+      lastDeliveredKeyBySession.set(opts.sessionId, opts.idempotencyKey);
+      return { status: "delivered" };
+    } catch (err) {
+      const failure = classifyNudgeFailure(err);
+      const decision = decideContinuationRetry({
+        failure: failure.kind,
+        attempt,
+        maxAttempts,
+        idempotencyKey: opts.idempotencyKey,
+        lastDeliveredKey: lastDeliveredKeyBySession.get(opts.sessionId) ?? null,
+      });
+
+      if (decision.status === "pause-immediately" || decision.status === "exhausted") {
+        const reason =
+          decision.status === "pause-immediately"
+            ? decision.reason
+            : decision.reason;
+        await opts.deps.onPause(reason);
+        await opts.deps.onNotify(
+          "Goal paused — continuation delivery failed",
+          reason,
+          decision.status === "pause-immediately" ? "error" : "warning",
+        );
+        opts.deps.onWebhookFire("paused");
+        opts.deps.onReset();
+        return { status: "paused", reason };
+      }
+
+      if (decision.status === "retryable") {
+        // Loop continues to the next attempt.
+        continue;
+      }
+      // Status `delivered` and `duplicate-suppressed` are not produced
+      // in the catch branch; if we reach here it's an unexpected
+      // outcome type. Treat as paused for safety.
+      await opts.deps.onPause("Continuation dispatcher: unexpected outcome");
+      await opts.deps.onNotify(
+        "Goal paused — continuation delivery failed",
+        "Continuation dispatcher: unexpected outcome",
+        "error",
+      );
+      opts.deps.onWebhookFire("paused");
+      opts.deps.onReset();
+      return { status: "paused", reason: "Continuation dispatcher: unexpected outcome" };
+    }
+  }
+
+  // Should be unreachable (the loop returns on the final attempt via
+  // the exhausted decision). Defensive fallback.
+  await opts.deps.onPause("Continuation dispatcher: loop fell through");
+  await opts.deps.onNotify(
+    "Goal paused — continuation delivery failed",
+    "Continuation dispatcher: loop fell through",
+    "error",
+  );
+  opts.deps.onWebhookFire("paused");
+  opts.deps.onReset();
+  return { status: "paused", reason: "Continuation dispatcher: loop fell through" };
+}
+
+// AG-P1-06 part 2 — per-session idempotency state. Module-scoped Map
+// keyed by sessionId, value is the most recently delivered idempotency
+// key for that session. This is in-memory only; cleared on plugin
+// restart. Per-process scope matches the rest of the dispatcher's
+// in-memory state.
+const lastDeliveredKeyBySession = new Map<string, string>();
+
 // v0.4.0+ — SSRF guard. Returns true for `localhost` (any port), the entire
 // `127.0.0.0/8` loopback range, IPv6 loopback `[::1]`, the unspecified
 // addresses `0.0.0.0` / `[::]`, AND the IPv4-mapped IPv6 forms of loopback
