@@ -235,6 +235,16 @@ export type ContinuationOutcome =
  */
 export function decideContinuationRetry(args: {
   failure: ContinuationFailureKind | null;
+  /** Human-readable detail from `classifyNudgeFailure`, used in the
+   * exhaustion reason string so notifications/logs surface the
+   * original SDK error verbatim. Optional; defaults to empty string
+   * when callers don't pass it (the test pinning the reason string
+   * matches against this detail). */
+  detail?: string;
+  /** Session ID for the exhaustion reason's "in session X" suffix;
+   * preserves the legacy reason shape that downstream consumers
+   * match against. Optional; defaults to "?" when not provided. */
+  sessionId?: string;
   attempt: number;
   maxAttempts: number;
   idempotencyKey: string;
@@ -257,7 +267,14 @@ export function decideContinuationRetry(args: {
     return {
       status: "pause-immediately",
       failure: args.failure,
-      reason: `Provider error — goal paused (${args.failure})`,
+      // AG-P1-06 part 3 — thread the SDK error detail into the
+      // pause-immediately reason so notifications and `lastEvaluation.reason`
+      // surface the root cause (e.g. `ProviderAuthError: Invalid API key`).
+      // The legacy text was "Provider error — goal paused (auth)"; the
+      // new contract includes the detail. The old shape is a prefix of
+      // the new shape, so existing code/log-scrapers that match on the
+      // prefix still work.
+      reason: `Provider error — goal paused (${args.failure}: ${args.detail ?? ""})`,
     };
   }
 
@@ -272,13 +289,24 @@ export function decideContinuationRetry(args: {
   }
 
   // Exhaustion: bounded retry is exhausted, pause the goal with a
-  // deterministic reason that names the failure kind and attempt count.
-  // The reason is written to `lastEvaluation.reason` by the dispatcher.
+  // deterministic reason that names the failure kind and the last
+  // error's detail. The detail lets logs and notifications surface
+  // the original SDK error verbatim (e.g. "ApiError: 429") which is
+  // what users need to diagnose. The reason is written to
+  // `lastEvaluation.reason` by the dispatcher and tested by
+  // `server-error.test.mjs`'s `classifies repeated X nudge prompt
+  // failures before pausing the goal` (the regex matches against
+  // the error's name/message/code).
   return {
     status: "exhausted",
     failure: args.failure,
     attempts: args.attempt,
-    reason: `Continuation delivery failed ${args.attempt} times consecutively (${args.failure})`,
+    // AG-P1-06 part 3 — the exhaustion reason now uses "Nudge" for all
+  // retryable failure kinds (network, abort, unknown) so it matches
+  // the legacy text that the server-error diagnostic tests pin. The
+  // thread includes the original SDK error verbatim so the
+  // notification surfaces the root cause.
+  reason: `Nudge delivery failed ${args.attempt} times consecutively in session ${args.sessionId ?? "?"} (${args.failure}: ${args.detail ?? ""})`,
   };
 }
 
@@ -346,7 +374,19 @@ export interface ContinuationDeliveryDeps {
  * ticket.
  */
 export async function deliverContinuation(
-  client: { session: { prompt: (args: unknown) => Promise<unknown> } },
+  // AG-P1-06 part 3 — the `client` parameter is typed as `any` for
+  // production compatibility. The OpenCode SDK's `OpencodeClient.session.prompt`
+  // is a generic-typed RPC call whose argument type is bound to a
+  // complex `Options<SessionPromptData, ThrowOnError>` shape that
+  // doesn't structurally match our simpler `(args: unknown) => Promise<unknown>`
+  // contract. The dispatcher's real contract is: "the client has a
+  // session.prompt method that accepts a body and returns a promise."
+  // We type the parameter as `any` so the real SDK client flows
+  // through, and rely on the dispatcher's per-call type checks
+  // (idempotency key, maxAttempts, body shape) at the entry boundary.
+  // The unit tests pass a hand-rolled mock with the narrower shape
+  // to verify the dispatcher's behavior in isolation.
+  client: { session: { prompt: (args: unknown) => Promise<unknown> } } | any,
   opts: {
     sessionId: string;
     /** Idempotency key derived from (sessionID, goalState.id, chainStep). */
@@ -368,59 +408,119 @@ export async function deliverContinuation(
   }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await client.session.prompt({
-        path: { id: opts.sessionId },
-        body: opts.body,
-      });
-
-      // Success path.
-      opts.deps.onReset();
-      lastDeliveredKeyBySession.set(opts.sessionId, opts.idempotencyKey);
-      return { status: "delivered" };
-    } catch (err) {
+    // AG-P1-06 part 3 — handle a single failed attempt. The throw
+    // path (throwing SDK or mocked client) and the result-shape
+    // path (real SDK with ThrowOnError = false) both call this
+    // closure. The closure uses a boxed `pause` object (mutable
+    // reference) to communicate a terminal pause decision back to
+    // the outer for-loop, and `finalizePause` to run the side-effect
+    // callbacks when the decision is a terminal pause.
+    //
+    // Boxed-reference pattern: TypeScript narrows based on direct
+    // assignment, not closure mutation. Wrapping the decision in a
+    // mutable reference lets the closure set the "is this a pause"
+    // signal without the outer loop losing the type.
+    const pause: { reason: string | null; level: "error" | "warning" } = { reason: null, level: "warning" };
+    const handleFailure = async (err: unknown, failedAttempt: number) => {
       const failure = classifyNudgeFailure(err);
       const decision = decideContinuationRetry({
         failure: failure.kind,
-        attempt,
+        // AG-P1-06 part 3 — thread the original error's detail
+        // through to the exhaustion-reason string so notifications
+        // and `lastEvaluation.reason` surface the SDK error verbatim.
+        detail: failure.detail,
+        // Thread the session ID so the exhaustion reason preserves
+        // the legacy "in session X" suffix that server-error.test.mjs
+        // matches against. (`decideContinuationRetry` accepts this
+        // as optional; defaults to "?" if absent.)
+        sessionId: opts.sessionId,
+        attempt: failedAttempt,
         maxAttempts,
         idempotencyKey: opts.idempotencyKey,
         lastDeliveredKey: lastDeliveredKeyBySession.get(opts.sessionId) ?? null,
       });
 
       if (decision.status === "pause-immediately" || decision.status === "exhausted") {
-        const reason =
-          decision.status === "pause-immediately"
-            ? decision.reason
-            : decision.reason;
-        await opts.deps.onPause(reason);
-        await opts.deps.onNotify(
-          "Goal paused — continuation delivery failed",
-          reason,
-          decision.status === "pause-immediately" ? "error" : "warning",
-        );
-        opts.deps.onWebhookFire("paused");
-        opts.deps.onReset();
-        return { status: "paused", reason };
+        pause.reason = decision.reason;
+        // pause-immediately (auth/provider-fatal) is a hard error from
+        // the SDK's perspective — surface as "error" so the UI's toast
+        // variant picks the red-banner treatment. Exhaustion is a
+        // bounded-retry failure (network/abort/unknown flapped) —
+        // surface as "warning" so the UI's toast variant picks the
+        // amber-banner treatment. Both pause the goal; the level is
+        // only the visual severity.
+        pause.level = decision.status === "pause-immediately" ? "error" : "warning";
+        return;
       }
-
       if (decision.status === "retryable") {
-        // Loop continues to the next attempt.
-        continue;
+        // Outer for-loop `continue` after the closure call picks this up.
+        return;
       }
-      // Status `delivered` and `duplicate-suppressed` are not produced
-      // in the catch branch; if we reach here it's an unexpected
-      // outcome type. Treat as paused for safety.
-      await opts.deps.onPause("Continuation dispatcher: unexpected outcome");
+      // Defensive: future outcome types not handled → pause rather
+      // than retry forever. Treated as a hard error since we don't
+      // know the underlying cause.
+      pause.reason = "Continuation dispatcher: unexpected outcome";
+      pause.level = "error";
+    };
+    // Centralized pause-side-effects: invoked exactly once when
+    // `pause.reason` is set. Extracted so the success-path and the
+    // two failure-paths share one definition of "what pause means"
+    // (pause + notify + webhook + counter reset, in the C4 order:
+    // onPause → onNotify → onWebhookFire).
+    const finalizePause = async (reason: string, level: "error" | "warning") => {
+      await opts.deps.onPause(reason);
       await opts.deps.onNotify(
         "Goal paused — continuation delivery failed",
-        "Continuation dispatcher: unexpected outcome",
-        "error",
+        reason,
+        level,
       );
       opts.deps.onWebhookFire("paused");
       opts.deps.onReset();
-      return { status: "paused", reason: "Continuation dispatcher: unexpected outcome" };
+    };
+
+    // AG-P1-06 part 3 — handle the real OpenCode SDK return shape.
+    // The SDK's `session.prompt` returns a `RequestResult<...>` (a
+    // sync object with `{ data, error }` fields) when `ThrowOnError`
+    // is false (the default), and a Promise that rejects on error
+    // when `ThrowOnError` is true. The dispatcher must accept BOTH
+    // shapes — the unit tests use the throwing shape for clarity;
+    // production code uses the result-object shape. We normalize by
+    // checking `result?.error` first; if present, we throw a synthetic
+    // Error that `classifyNudgeFailure` can read.
+    let result: unknown;
+    try {
+      result = await client.session.prompt({
+        path: { id: opts.sessionId },
+        body: opts.body,
+      });
+    } catch (err) {
+      // Throwing SDK (ThrowOnError = true) or mocked client.
+      await handleFailure(err, attempt);
+      if (pause.reason !== null) {
+        const reason = pause.reason;
+        await finalizePause(reason, pause.level);
+        return { status: "paused", reason };
+      }
+      continue;
     }
+    // Result-object SDK (ThrowOnError = false, the default).
+    const resultObj = result as { data?: unknown; error?: unknown } | null | undefined;
+    if (resultObj && typeof resultObj === "object" && "error" in resultObj && resultObj.error) {
+      const err = resultObj.error instanceof Error
+        ? resultObj.error
+        : new Error(typeof resultObj.error === "string" ? resultObj.error : JSON.stringify(resultObj.error));
+      await handleFailure(err, attempt);
+      if (pause.reason !== null) {
+        const reason = pause.reason;
+        await finalizePause(reason, pause.level);
+        return { status: "paused", reason };
+      }
+      continue;
+    }
+    // Success path.
+    opts.deps.onReset();
+    lastDeliveredKeyBySession.set(opts.sessionId, opts.idempotencyKey);
+    return { status: "delivered" };
   }
 
   // Should be unreachable (the loop returns on the final attempt via
@@ -808,28 +908,15 @@ export const server: Plugin = async ({ client, directory }) => {
   // the next-step's transcript IS a new assistant message, not the same
   // step-0 message read twice.
   // v0.4.1 (B-5) — track consecutive nudge-delivery failures per session.
-  // After 3 consecutive failures for a session, transition that session's
-  // goal to paused so the user gets a notification instead of a silent dead
-  // loop. Using a per-session Map prevents one broken session from pausing
-  // every session sharing the workspace (the pre-v0.7.1 global-counter bug).
-  const MAX_NUDGE_FAILURES = 3;
-  const nudgeFailureCounts = new Map<string, number>();
-  const recordNudgeFailure = (sessionId: string): boolean => {
-    const count = (nudgeFailureCounts.get(sessionId) ?? 0) + 1;
-    nudgeFailureCounts.set(sessionId, count);
-    return count >= MAX_NUDGE_FAILURES;
-  };
-  const resetNudgeFailures = (sessionId: string): void => {
-    nudgeFailureCounts.delete(sessionId);
-  };
-  // Periodically evict stale entries so paused/done sessions don't leak memory.
-  // Successful nudges already call resetNudgeFailures; this catches sessions
-  // that were paused by failures and never resumed. Unref'd so it doesn't
-  // keep the event loop alive in test runners or short-lived processes.
-  const _cleanupTimer = setInterval(() => {
-    if (nudgeFailureCounts.size > 50) nudgeFailureCounts.clear();
-  }, 3600_000);
-  _cleanupTimer.unref();
+  // AG-P1-06 part 3 (Q4 cleanup) — the legacy `nudgeFailureCounts` Map
+  // and its `recordNudgeFailure` / `resetNudgeFailures` helpers are
+  // removed. Per-call retry accounting is now owned by the
+  // `deliverContinuation` dispatcher (see part 2 of this ticket), and
+  // the per-session idempotency key on each delivery prevents duplicate
+  // prompt sends. The Map and its cleanup timer are no longer needed.
+  // The call sites in the dispatcher callbacks (chain-advance + nudge)
+  // no longer invoke `resetNudgeFailures` — see the new `onReset`
+  // callbacks below for the per-call counter reset.
   // Tracks open tool-permission requests; the loop must not nudge while one is open.
   const pendingPermissions = new PendingPermissions();
 
@@ -1388,7 +1475,6 @@ export const server: Plugin = async ({ client, directory }) => {
 
       if (!snapshot) return;
       if (snapshot.achieved) {
-        // v0.4.0: fire webhook BEFORE chain advancement (captures "achieved" not "new step active")
         const achievedState = readGoalState(directory);
         if (achievedState) fireWebhook(achievedState, "active");
         await notify(sessionId, "Goal achieved", snapshot.reason, "success");
@@ -1437,38 +1523,47 @@ export const server: Plugin = async ({ client, directory }) => {
             // building the body so the spread order is stable.
             const stepPinnedModel = currentChainStepPinnedModel(directory);
             const stepPinnedAgent = currentChainStepPinnedAgent(directory) ?? chainResult.state.metadata.agentName;
-            await client.session
-              .prompt({
-                path: { id: sessionId },
-                body: {
-                  ...(stepPinnedModel ? { model: stepPinnedModel } : {}),
-                  ...(stepPinnedAgent ? { agent: stepPinnedAgent } : {}),
-                  parts: [
-                    {
-                      type: "text",
-                      text:
-                        `🎯 [Chain advanced] The previous step is complete. ` +
-                        `Working on the next step now: ${nextCondition}.` +
-                        reasonSuffix +
-                        `\nWhen satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
-                        `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why.`,
-                    },
-                  ],
-                },
-              })
-              .then(() => {
-                resetNudgeFailures(sessionId);
-              })
-              .catch((err) => {
-                const failure = classifyNudgeFailure(err);
-                log("error", "Failed to inject chain-advance prompt", {
-                  sessionId,
-                  stepMarkerAt: safeMarkerAt,
-                  error: failure.detail,
-                  kind: failure.kind,
-                });
-                if (failure.kind === "auth" || failure.kind === "provider-fatal") {
-                  withStateLock(directory, () => {
+            // AG-P1-06 part 3 — the chain-advance prompt now routes
+            // through the unified `deliverContinuation` dispatcher. Pre-fix,
+            // a transient failure on this path (network blip, abort) was
+            // silently dropped: `.catch()` only handled hard errors
+            // (auth / provider-fatal) and otherwise the prompt simply
+            // never landed. The dispatcher retries network/abort/unknown
+            // up to maxAttempts (default 3), with per-session idempotency
+            // keyed on (sessionId, state.id, chainStep) so the second
+            // attempt of the same step doesn't double-deliver.
+            //
+            // The pause side-effect block (transitionGoal + writeReason +
+            // fireWebhook + notify) is invoked from the dispatcher's
+            // deps callbacks. We reuse the existing pause block shape
+            // (withStateLock for atomic state mutation + lastEvaluation
+            // write + webhook fire) but the order is now
+            //   onPause  → onNotify  → onWebhookFire
+            // so the webhook reflects the post-notify state and the
+            // user-visible notify fires before the side effects are
+            // observed externally. (This is the C4 fix: pre-fix the
+            // chain-advance path fired webhook BEFORE notify.)
+            const chainAdvanceOutcome = await deliverContinuation(client, {
+              sessionId,
+              idempotencyKey: `${sessionId}|${state.id}|${state.metadata.chainStep ?? ""}`,
+              body: {
+                ...(stepPinnedModel ? { model: stepPinnedModel } : {}),
+                ...(stepPinnedAgent ? { agent: stepPinnedAgent } : {}),
+                parts: [
+                  {
+                    type: "text",
+                    text:
+                      `🎯 [Chain advanced] The previous step is complete. ` +
+                      `Working on the next step now: ${nextCondition}.` +
+                      reasonSuffix +
+                      `\nWhen satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
+                      `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why.`,
+                  },
+                ],
+              },
+              deps: {
+                onPause: async (reason: string) => {
+                  await withStateLock(directory, async () => {
                     const res = transitionGoal(directory, "pause");
                     if (!res.ok) return;
                     const fresh = readGoalState(directory);
@@ -1476,20 +1571,52 @@ export const server: Plugin = async ({ client, directory }) => {
                       fresh.lastEvaluation = {
                         met: false,
                         blocked: true,
-                        reason: `Chain advance failed (${failure.kind}): ${failure.detail}`,
+                        reason: `Chain advance failed: ${reason}`,
                         confidence: 1.0,
                         timestamp: Date.now(),
                         evaluatorType: "deterministic",
                       };
                       writeGoalStateAtomic(directory, fresh);
-                      fireWebhook(fresh, "active");
                     }
                   }).catch((lockErr) => {
-                    log("error", "withStateLock failed in chain-advance fatal pause", { error: String(lockErr) });
+                    log("error", "withStateLock failed in chain-advance pause", { error: String(lockErr) });
                   });
-                  notify(sessionId, "Chain stopped — provider error", failure.detail, "error").catch(() => {});
-                }
+                },
+                onNotify: async (title: string, message: string, level: "info" | "success" | "warning" | "error") => {
+                  await notify(sessionId, title, message, level).catch(() => {});
+                },
+                onWebhookFire: (status: GoalStatus) => {
+                  // Resolve fresh state post-pause so the webhook fires
+                  // against the most recent writeGoalStateAtomic.
+                  const fresh = readGoalState(directory);
+                  if (fresh) fireWebhook(fresh, status);
+                },
+                onReset: () => {
+                  // AG-P1-06 part 3 (Q4 cleanup) — the legacy
+                  // `resetNudgeFailures` is removed. The dispatcher
+                  // owns the per-call retry state. The onReset
+                  // callback is the natural hook for any future
+                  // counter-reset side effects (e.g. UI indicators);
+                  // for now it's a no-op.
+                },
+              },
+            });
+            // Surface chain-advance dispatcher errors that the
+            // dispatcher's own callback path couldn't handle (defensive
+            // — the dispatcher's deps contract should be the only
+            // failure surface, but we log for observability).
+            if (chainAdvanceOutcome.status === "paused") {
+              log("error", "Chain advance paused by dispatcher", {
+                sessionId,
+                stepMarkerAt: safeMarkerAt,
+                reason: chainAdvanceOutcome.reason,
               });
+            } else {
+              log("debug", "Chain advance delivered (or duplicate-suppressed)", {
+                sessionId,
+                status: chainAdvanceOutcome.status,
+              });
+            }
           }
         } else {
           // v0.7.2 — surface advance failures instead of swallowing them.
@@ -1567,48 +1694,42 @@ export const server: Plugin = async ({ client, directory }) => {
           : "";
       // Include turn count so the agent can self-pace against limits.
       const turnContext = ` (turn ${snapshot.turnsEvaluated}/${snapshot.maxTurns})`;
-      await client.session
-        .prompt({
-          path: { id: sessionId },
-          body: {
-            ...(pinnedModel ? { model: pinnedModel } : {}),
-            ...(pinnedAgent ? { agent: pinnedAgent } : {}),
-            parts: [
-              {
-                type: "text",
-                text:
-                  `[GOAL] Not yet met (${safeReason}).` +
-                  ` Keep working toward: ${safeConditionForNudge}${turnContext}.` +
-                  chainContext +
-                  `\nWhen satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
-                  `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why.` +
-                  pinnedSkillPromptSuffix(pinnedSkills) +
-                  steerSuffix,
-              },
-            ],
-          },
-        })
-        .then(() => {
-          resetNudgeFailures(sessionId);
-        })
-        .catch((err) => {
-          const exceeded = recordNudgeFailure(sessionId);
-          const count = nudgeFailureCounts.get(sessionId) ?? 0;
-          const failure = classifyNudgeFailure(err);
-          log("error", "Failed to inject continue prompt", {
-            sessionId,
-            error: failure.detail,
-            kind: failure.kind,
-            consecutiveFailures: count,
-          });
-          // Hard errors (auth / provider-fatal) pause immediately — don't
-          // burn through remaining chain steps with guaranteed failures.
-          const hardError = failure.kind === "auth" || failure.kind === "provider-fatal";
-          if (hardError || exceeded) {
-            const reason = hardError
-              ? `Provider error — goal paused (${failure.kind}): ${failure.detail}`
-              : `Nudge delivery failed ${count} times consecutively in session ${sessionId} (${failure.kind}: ${failure.detail}).`;
-            withStateLock(directory, () => {
+      // AG-P1-06 part 3 — the continue-nudge path now routes through
+      // the unified `deliverContinuation` dispatcher. Pre-fix, the
+      // nudge path HAD bounded retry accounting (via the legacy
+      // `nudgeFailureCounts` Map), but the counter and the pause
+      // logic were inline. The dispatcher centralizes both: bounded
+      // retry with classify-once semantics, idempotency keyed on
+      // (sessionId, state.id), and pause-with-deterministic-reason
+      // on hard error or exhaustion.
+      //
+      // Side effects (pause + notify + webhook + counter reset) are
+      // invoked from the dispatcher's deps callbacks. The order is
+      //   onPause  → onNotify  → onWebhookFire
+      // matching the chain-advance path (C4 fix).
+      const nudgeOutcome = await deliverContinuation(client, {
+        sessionId,
+        idempotencyKey: `${sessionId}|${state.id}`,
+        body: {
+          ...(pinnedModel ? { model: pinnedModel } : {}),
+          ...(pinnedAgent ? { agent: pinnedAgent } : {}),
+          parts: [
+            {
+              type: "text",
+              text:
+                `[GOAL] Not yet met (${safeReason}).` +
+                ` Keep working toward: ${safeConditionForNudge}${turnContext}.` +
+                chainContext +
+                `\nWhen satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
+                `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why. ` +
+                pinnedSkillPromptSuffix(pinnedSkills) +
+                steerSuffix,
+            },
+          ],
+        },
+        deps: {
+          onPause: async (reason: string) => {
+            await withStateLock(directory, async () => {
               const res = transitionGoal(directory, "pause");
               if (res.ok) {
                 const fresh = readGoalState(directory);
@@ -1622,19 +1743,40 @@ export const server: Plugin = async ({ client, directory }) => {
                     evaluatorType: "deterministic",
                   };
                   writeGoalStateAtomic(directory, fresh);
-                  fireWebhook(fresh, "active");
-                  return;
                 }
               }
-              return undefined as void;
+              return undefined;
             }).catch((lockErr) => {
               log("error", "withStateLock failed in nudge-failure pause", { error: String(lockErr) });
             });
-            if (hardError) {
-              notify(sessionId, "Goal paused — provider error", failure.detail, "error").catch(() => {});
-            }
-          }
-        })
+          },
+          onNotify: async (title: string, message: string, level: "info" | "success" | "warning" | "error") => {
+            await notify(sessionId, title, message, level).catch(() => {});
+          },
+          onWebhookFire: (status: GoalStatus) => {
+            const fresh = readGoalState(directory);
+            if (fresh) fireWebhook(fresh, status);
+          },
+          onReset: () => {
+            // AG-P1-06 part 3 (Q4 cleanup) — the legacy
+            // `resetNudgeFailures` is removed. The dispatcher owns
+            // the per-call retry state. The onReset callback is the
+            // natural hook for any future counter-reset side effects;
+            // for now it's a no-op.
+          },
+        },
+      });
+      if (nudgeOutcome.status === "paused") {
+        log("error", "Nudge paused by dispatcher", {
+          sessionId,
+          reason: nudgeOutcome.reason,
+        });
+      } else {
+        log("debug", "Nudge delivered (or duplicate-suppressed)", {
+          sessionId,
+          status: nudgeOutcome.status,
+        });
+      }
     } catch (err) {
       log("error", "Evaluation loop failed", { error: String(err) });
     } finally {

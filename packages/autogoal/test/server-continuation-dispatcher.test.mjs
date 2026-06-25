@@ -151,7 +151,17 @@ test("AG-P1-06.2.3: exhaustion pauses the goal and writes deterministic reason",
   });
 
   assert.equal(result.status, "paused");
-  assert.equal(result.reason, "Continuation delivery failed 3 times consecutively (network)");
+  // AG-P1-06 part 3 — the exhaustion reason now matches the legacy
+  // shape that the server-error diagnostic tests pin:
+  //   "Nudge delivery failed N times consecutively in session X
+  //    (kind: detail)"
+  // The kind and detail are threaded through from
+  // `classifyNudgeFailure`. The dispatcher unit test doesn't assert
+  // exact equality because the detail string is the mock's error
+  // message verbatim; we match on the structural pieces.
+  assert.match(result.reason ?? "", /Nudge delivery failed 3 times consecutively/);
+  assert.match(result.reason ?? "", /network/);
+  assert.match(result.reason ?? "", /s-3/);
   assert.match(pauseReason ?? "", /network/i);
   assert.match(pauseReason ?? "", /3/);
   assert.equal(notifyTitle, "Goal paused — continuation delivery failed");
