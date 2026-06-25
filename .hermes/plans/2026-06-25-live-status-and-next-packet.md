@@ -25,8 +25,14 @@
 | 6 | **AG-P0-04** chain draft provenance | ✅ **DONE** | `d6033a3b9` | green (657 pass, 12 pre-existing failures unrelated) | `ChainDraftSource` + selector with source param |
 | 7 | **AG-P1-05** separate draft/live/terminal actions | ✅ **DONE** | `b22ba7f84` | green (665 pass, 12 pre-existing failures unrelated) | `chainStepVisibleAction` selector; X-button routes by visible source |
 | 8 | **AG-P1-06** unify continuation delivery | ✅ **PARTS 1+2 DONE** | `f925c389a` (dispatcher), `d9844d806` (decision) | green (1313/1313) | Decision function + dispatcher shipped; call-site migration is a follow-up |
+| 8 | **AG-P1-06** unify continuation delivery | ✅ **ALL PARTS DONE** | `eef28483c` (call-sites), `f925c389a` (dispatcher), `d9844d806` (decision) | green (1319/1319) | Decision function + dispatcher + both call sites migrated; legacy `nudgeFailureCounts` Map removed (Q4); side-effect order pause→notify→webhook (C4); notify level differentiated by decision status |
 | 9 | **AG-P1-07** ordered chain refresh commits | ✅ **DONE** | `2bdbcd0ec` | green (672/12 baseline; pure 21/21) | `createOrderedChainRefresh` generation-counter discard pattern |
-| 10 | **AG-P1-08** release smoke gate | ⬜ not started | — | — | Final; requires real host binary |
+| 10 | **AG-P1-08** release smoke gate | ⬜ not started | — | — | Final; needs real host binary (Windows side) |
+
+## Notes
+
+- Push remains blocked on credentials. `git push origin dev` from the user's shell is the move.
+- App suite not re-run this iteration: `bun` is unavailable in this WSL session. App changes from prior commits were verified to baseline at the end of step-9 work.
 | 8b | **Geometry audit** (chain operator) | ✅ **DONE** | `1a34e23d4` | green (1304/1304) | 5 defects fixed (D1, D2, D5, D6, D9), D10 reclassified |
 
 ### Working tree right now
