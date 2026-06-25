@@ -49,7 +49,7 @@ import {
   type GoalStatus,
   type Verification,
 } from "./goal-state.js";
-import { advanceGoalChain, readGoalChain, readGoalChainResult, setChainWebhook, goalChainPath, type GoalPinnedModel } from "./goal-chain.js";
+import { advanceGoalChain, advanceGoalChainAtomic, readGoalChain, readGoalChainResult, setChainWebhook, goalChainPath, type GoalPinnedModel } from "./goal-chain.js";
 import { dispatchGoalCommandStructured, goalInstructions, plainStatus, presentGoalCommandResult } from "./command.js";
 import { appendGoalArchive } from "./goal-archive.js";
 import { writeGoalHistorySnapshot } from "./goal-history.js";
@@ -1236,8 +1236,17 @@ export const server: Plugin = async ({ client, directory }) => {
         // new step's `state.metadata.stepMarkerAt` is set on the new
         // state. This is the durable per-step filter that replaces the
         // v0.7.x `skipNextEvaluation` one-shot flag.
+        // AG-P1-06 / audit 2026-06-25 (D6 + D10) — use the lock-wrapped atomic
+        // variant. The synchronous `advanceGoalChain` did two separate file
+        // writes (chain then state) without holding a lock; a concurrent
+        // session.idle between those writes could re-advance and corrupt
+        // the chain/state pairing. `advanceGoalChainAtomic` wraps the same
+        // body in `withStateLock(directory, ...)` so concurrent advances
+        // serialize. The error path is now also handled: a write failure
+        // logs at error level and notifies the user so silent advance
+        // drops (the pre-fix D10 bug) are visible.
         const stepMarkerAt = typeof evaluation.markerAt === "number" ? evaluation.markerAt : 0;
-        const chainResult = advanceGoalChain(directory, Date.now(), { stepMarkerAt });
+        const chainResult = await advanceGoalChainAtomic(directory, Date.now(), { stepMarkerAt });
         if (chainResult.ok) {
           if (chainResult.message) {
             await notify(sessionId, "Chain advanced", chainResult.message, "success");

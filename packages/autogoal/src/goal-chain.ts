@@ -21,6 +21,7 @@ import {
   readGoalState,
   writeGoalStateAtomic,
   createGoalState,
+  withStateLock,
   type GoalState,
   type GoalConstraints,
   type Verification,
@@ -61,7 +62,16 @@ export interface GoalPinnedModel {
 }
 
 export interface ChainMasterBudget {
+  /**
+   * Maximum total turn count across the entire chain lifetime (NOT per-step,
+   * NOT per-cycle). `resetGoalChain` zeros this counter; the loop path
+   * in `advanceGoalChain` does NOT (accumulate across cycles).
+   */
   maxTurns?: number;
+  /**
+   * Maximum total minute count across the entire chain lifetime. Same
+   * accumulation semantics as `maxTurns`.
+   */
   maxMinutes?: number;
   turnsUsed: number;
   minutesUsed: number;
@@ -488,8 +498,20 @@ function constraintsForStep(step: GoalChainStep, chain: Pick<GoalChain, "master"
 
 function recordMasterUsage(chain: GoalChain, state: GoalState, now: number): void {
   if (!chain.master) return;
-  chain.master.turnsUsed += Math.max(0, Math.round(state.turnsEvaluated));
-  chain.master.minutesUsed += Math.max(0, Math.floor((now - state.startedAt) / 60_000));
+  // AG-P1-06 / audit 2026-06-25 (D1) — guard against NaN/Infinity in the
+  // inputs. JSON.stringify coerces these to null on disk, so a single
+  // corrupt value would silently zero the master counter on next load
+  // (or make it appear exhausted). Clamp to 0 instead.
+  const turnsRaw = state.turnsEvaluated;
+  const turnsDelta =
+    Number.isFinite(turnsRaw) && turnsRaw > 0 ? Math.round(turnsRaw) : 0;
+  const minutesRaw = now - state.startedAt;
+  const minutesDelta =
+    Number.isFinite(state.startedAt) && state.startedAt > 0 && minutesRaw > 0
+      ? Math.floor(minutesRaw / 60_000)
+      : 0;
+  chain.master.turnsUsed += turnsDelta;
+  chain.master.minutesUsed += minutesDelta;
 }
 
 function masterBudgetExhausted(chain: GoalChain): boolean {
@@ -692,6 +714,18 @@ export function advanceGoalChain(
       // Loop: go back to step 0
       chain.cycles += 1;
       chain.current = 0;
+    } else if (masterBudgetExhausted(chain)) {
+      // AG-P1-06 / audit 2026-06-25 (D2) — distinguish "budget reached"
+      // from "all chain steps completed". Pre-fix, a single-step chain at
+      // exhausted budget returned "All chain steps completed" because the
+      // budget check happened AFTER the next>=steps.length branch. The
+      // two reasons have different user-facing semantics: a chain that
+      // hit its budget did NOT actually complete all its steps.
+      return {
+        ok: true,
+        completed: true,
+        message: `Chain master budget reached before completing step ${chain.current + 1}.`,
+      };
     } else {
       return { ok: true, completed: true, message: "All chain steps completed." };
     }
@@ -739,9 +773,17 @@ export function advanceGoalChain(
   // correct behavior: the assistant message that triggered the prior
   // step's met=true (the shell output, the HTTP response, etc.) is
   // older than the advance time and is excluded.
+  // AG-P1-06 / audit 2026-06-25 (D5) — `stepMarkerAt` must be a finite
+  // positive number. JSON.stringify coerces Infinity to null and NaN to
+  // null, which would silently zero the cutoff on next read and
+  // reintroduce the v0.7.x stale-marker bug the field was introduced to
+  // fix. The runtime check `typeof === "number"` accepts both Infinity
+  // and NaN (both are of type "number"); we add `Number.isFinite` to
+  // reject both.
+  const rawMarker = opts.stepMarkerAt;
   const cutoff =
-    typeof opts.stepMarkerAt === "number" && opts.stepMarkerAt > 0
-      ? opts.stepMarkerAt
+    typeof rawMarker === "number" && Number.isFinite(rawMarker) && rawMarker > 0
+      ? rawMarker
       : now;
   newState.metadata.stepMarkerAt = cutoff;
 
@@ -762,6 +804,26 @@ export function advanceGoalChain(
     state: newState,
     message: `Step ${chain.current + 1}/${chain.steps.length}: ${step.condition.slice(0, 60)}`,
   };
+}
+
+// AG-P1-06 / audit 2026-06-25 (D6) — lock-wrapped async variant. The
+// synchronous `advanceGoalChain` above does two separate file writes
+// (chain file, then state file) without holding a lock. A concurrent
+// `session.idle` arriving between those writes sees the new chain but
+// the OLD state, and re-advances — double-advance + state/chain
+// divergence. `advanceGoalChainAtomic` wraps the same body in
+// `withStateLock(directory, ...)` so concurrent advances serialize
+// through the per-directory promise chain. The lock primitive is the
+// same one already used by `evaluate()`'s state-write path, so
+// callers do not need to introduce a new locking discipline.
+export async function advanceGoalChainAtomic(
+  directory: string,
+  now: number = Date.now(),
+  opts: { stepMarkerAt?: number } = {},
+): Promise<AdvanceChainResult> {
+  return withStateLock(directory, () =>
+    advanceGoalChain(directory, now, opts),
+  );
 }
 
 /**
