@@ -146,6 +146,67 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("setOptimisticStatus(null)")
   })
 
+  // P3 lifecycle audit C0 (2026-06-24): the corrupt Match block used to
+  // be text-only and forced the user to type "/goal clear" in the chat.
+  // The panel must offer an in-panel reset control that calls the same
+  // resetGoalWorkspaceState primitive the terminal-summary reset uses,
+  // so a stuck corrupt file is recoverable without leaving the side panel.
+  test("corrupt goal state surfaces an in-panel reset control wired to the same primitive as the terminal reset", async () => {
+    const src = await goalPanelSource()
+    // Find the corrupt Match block.
+    const corruptStart = src.indexOf("<Match when={props.goal.store.corrupt}>")
+    expect(corruptStart).toBeGreaterThan(-1)
+    // Walk forward to find the closing </Match> for the same block. The
+    // panel has nested <Match> blocks; we want the first </Match> AFTER
+    // corruptStart whose line depth matches the opener.
+    let depth = 1
+    let cursor = src.indexOf("<Match", corruptStart + 1)
+    let end = -1
+    while (cursor !== -1 && depth > 0) {
+      const closeAt = src.indexOf("</Match>", cursor)
+      if (closeAt === -1) break
+      // Each <Match> opens a depth; we approximate by counting opens vs closes.
+      const nextOpen = src.indexOf("<Match", cursor + 1)
+      const nextClose = src.indexOf("</Match>", cursor + 1)
+      // Naive: every <Match> adds depth, every </Match> subtracts. The
+      // next </Match> at or before the next <Match> closes our block.
+      if (nextClose !== -1 && (nextOpen === -1 || nextClose < nextOpen)) {
+        depth -= 1
+        cursor = nextClose + 1
+        if (depth === 0) {
+          end = nextClose
+          break
+        }
+      } else if (nextOpen !== -1) {
+        depth += 1
+        cursor = nextOpen
+      } else {
+        break
+      }
+    }
+    expect(end).toBeGreaterThan(corruptStart)
+    const corruptBlock = src.slice(corruptStart, end)
+
+    // The corrupt block must call the same primitive as the terminal reset.
+    // We don't constrain the button's exact markup; we constrain that the
+    // primitive is reachable from the block (either inline or via a helper
+    // that contains it).
+    const resetPrimitiveReachable =
+      corruptBlock.includes("resetGoalWorkspaceState") ||
+      src.includes("const resetGoalState = async") &&
+        src.indexOf("resetGoalState") > corruptStart
+    expect(resetPrimitiveReachable).toBe(true)
+
+    // The user-visible reset control must be inside the corrupt block.
+    expect(corruptBlock).toMatch(/data-component="goal-corrupt-reset"/)
+    expect(corruptBlock).toMatch(/session\.goal\.error\.corrupt\.reset/)
+
+    // The corrupt block must NOT still instruct the user to use chat.
+    // The old hint copy was: "Run /goal clear in the chat to reset it."
+    // A new in-panel button makes that direction obsolete.
+    expect(corruptBlock).not.toMatch(/in the chat to reset/i)
+  })
+
   test("runtime detail actions share one stable tray slot instead of mounting page sections", async () => {
     const src = await goalPanelSource()
     expect(src).toContain('data-component="goal-runtime-command-tray"')

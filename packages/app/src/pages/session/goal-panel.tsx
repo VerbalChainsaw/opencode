@@ -3126,9 +3126,36 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           </div>
         </Match>
         <Match when={props.goal.store.corrupt}>
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-2" data-component="goal-corrupt-banner">
             <div class="text-14-medium text-text-warning-base">⚠ {language.t("session.goal.error.corrupt")}</div>
             <div class="text-12-regular text-text-weak">{language.t("session.goal.error.corrupt.hint")}</div>
+            <div class="flex" data-component="goal-corrupt-reset">
+              <ActionButton
+                label={language.t("session.goal.error.corrupt.reset")}
+                tone="danger"
+                variant="primary"
+                busy={busy() === "fresh"}
+                disabled={busy() !== null || !props.sessionID}
+                onClick={async () => {
+                  if (!props.sessionID || busy()) return
+                  setBusy("fresh")
+                  try {
+                    const result = await resetGoalWorkspaceState(sdk.client, {
+                      sessionID: props.sessionID,
+                      directory: sdk.directory,
+                    })
+                    if (result.ok) {
+                      setControlError(null)
+                      await props.goal.refresh()
+                    } else {
+                      setControlError(result.error)
+                    }
+                  } finally {
+                    setBusy(null)
+                  }
+                }}
+              />
+            </div>
           </div>
         </Match>
         <Match when={props.goal.store.loaded && !props.goal.store.corrupt}>
