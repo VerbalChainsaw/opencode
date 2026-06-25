@@ -501,8 +501,22 @@ export const server: Plugin = async ({ client, directory }) => {
   // preserved (a user resuming a goal across an app restart is a
   // legitimate use case).
 
-  let lastEvaluationTime = 0;
+  // AG-P0-03 — replace the v0.7.x process-wide 5s debounce with
+  // identity-keyed deduplication. The previous clock suppressed legitimate
+  // rapid evaluations of distinct message IDs (notably: step-2 of a chain
+  // whose step-1 achieved within the window — see AG-P0-01 regression).
+  //
+  // New contract: identity = `sessionID + goalState.id + chainStep +
+  // latestAssistantMessageId`. A new identity evaluates immediately.
+  // An exact-duplicate identity inside the dedup window is skipped.
+  // One pending event is retained while evaluation is in flight so a
+  // second distinct event that arrives during evaluation is not lost
+  // (it runs after the current one finishes). The dedup window is the
+  // same `evaluationDebounceSec` for backward compatibility with the
+  // prior stopwatch — what changed is the key.
+  let lastEvaluationByIdentity: Map<string, number> = new Map();
   let isEvaluating = false;
+  let pendingEvaluation: { state: GoalState; sessionId: string } | null = null;
   // v0.7.2 — removed the v0.7.x `skipNextEvaluation` one-shot flag. The
   // chain runner no longer relies on it. The replacement is the per-step
   // `state.metadata.stepMarkerAt` cutoff in `evaluateByTranscript`, which
@@ -997,11 +1011,36 @@ export const server: Plugin = async ({ client, directory }) => {
   }
 
   async function evaluate(state: GoalState, sessionId: string): Promise<void> {
-    if (isEvaluating) return;
+    if (isEvaluating) {
+      // AG-P0-03 — retain one pending event so a distinct second event
+      // that arrives during evaluation is not lost. The previous code
+      // silently dropped these; the AG-P0-01 chain-step race is one
+      // symptom. Replace any earlier pending entry (only the most recent
+      // distinct identity matters; the rest are stale by definition).
+      pendingEvaluation = { state, sessionId };
+      return;
+    }
     const now = Date.now();
-    if (now - lastEvaluationTime < CONFIG.evaluationDebounceSec * 1000) return;
+    // AG-P0-03 — identity = sessionID + goalState.id + chainStep +
+    // latestAssistantMessageId. Read the latest assistant message once
+    // (the call we would make anyway inside evaluateGoal) and key on it.
+    // If the latest message can't be resolved (e.g. transient SDK error)
+    // we fall back to evaluating immediately rather than blocking the
+    // auto-loop indefinitely — the prior stopwatch never blocked; we
+    // must not regress to "no evaluation ever".
+    const identityLatest = await getLatestAssistantMeta(sessionId);
+    const identityKey = identityLatest
+      ? `${sessionId}|${state.id}|${state.metadata.chainStep ?? ""}|${identityLatest.messageId}`
+      : null;
+    if (identityKey) {
+      const lastAt = lastEvaluationByIdentity.get(identityKey);
+      if (lastAt !== undefined && now - lastAt < CONFIG.evaluationDebounceSec * 1000) {
+        // Exact-duplicate identity inside the dedup window — skip.
+        return;
+      }
+      lastEvaluationByIdentity.set(identityKey, now);
+    }
     isEvaluating = true;
-    lastEvaluationTime = now;
     try {
       // v0.4.1 — constraint check on fresh disk state (not the idle snapshot).
       const constraintResult = await checkConstraints(state, now);
@@ -1309,6 +1348,21 @@ export const server: Plugin = async ({ client, directory }) => {
       log("error", "Evaluation loop failed", { error: String(err) });
     } finally {
       isEvaluating = false;
+      // AG-P0-03 — drain one pending evaluation that arrived during this
+      // run. We only keep the most recent pending entry (any older ones
+      // are stale by definition — distinct events for the same identity
+      // within the same tick are exactly what we want to coalesce).
+      // The drain is async and detached from the current call stack so
+      // a late event does not block the caller. We intentionally do NOT
+      // re-check the dedup map here: the caller already won the dedup
+      // race when it set `pendingEvaluation`, and re-running the check
+      // would re-introduce the v0.7.x starvation that AG-P0-01 catches.
+      const pending = pendingEvaluation;
+      pendingEvaluation = null;
+      if (pending) {
+        // Fire-and-forget. Errors are logged inside evaluate()'s try.
+        void evaluate(pending.state, pending.sessionId);
+      }
     }
   }
 
@@ -1929,7 +1983,10 @@ export const server: Plugin = async ({ client, directory }) => {
           // for the full evaluationDebounceSec window. Without this,
           // a compacted session's auto-loop stalls for 5s after every
           // compaction even though the session is immediately ready.
-          lastEvaluationTime = 0;
+          // AG-P0-03 — clear the identity-keyed dedup map (every prior
+          // identity is now stale post-compaction; none should suppress
+          // the first post-compaction idle's evaluation).
+          lastEvaluationByIdentity.clear();
           return;
         }
         case "session.created": {
@@ -1940,8 +1997,12 @@ export const server: Plugin = async ({ client, directory }) => {
           // (see server.ts:265-266), not per-session, so a new session
           // inherits the old session's lock. Reset here gives the new
           // session a clean slate.
+          // AG-P0-03 — also clear the identity-keyed dedup map. The new
+          // session has a fresh sessionID so the key prefix changes
+          // anyway, but clearing is cheaper than letting stale entries
+          // accumulate across long-lived plugin instances.
           isEvaluating = false;
-          lastEvaluationTime = 0;
+          lastEvaluationByIdentity.clear();
           return;
         }
         case "session.deleted": {
