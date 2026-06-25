@@ -1346,15 +1346,27 @@ function terminalResultAccent(status: GoalState["status"]): {
   }
 }
 
+// AG-P0-04 — explicit draft provenance. The previous `steps: []` shape
+// could not distinguish "no draft ever set" (recoverable from a runtime
+// chain) from "user explicitly cleared the draft" (must remain empty).
+// `source` records which side of that line the current draft sits on.
+type ChainDraftSource = "uninitialized" | "draft";
+
 interface ChainDraftState {
-  steps: GoalChainDraftStep[]
-  master: { maxTurns: number; maxTimeMinutes: number }
+  source: ChainDraftSource;
+  steps: GoalChainDraftStep[];
+  master: { maxTurns: number; maxTimeMinutes: number };
   /** Run-level objective that fills `{scope}` across every chain step at start. */
-  objective: string
+  objective: string;
 }
 
 function defaultChainDraft(): ChainDraftState {
-  return { steps: [], master: { maxTurns: 20, maxTimeMinutes: 60 }, objective: "" }
+  return {
+    source: "uninitialized",
+    steps: [],
+    master: { maxTurns: 20, maxTimeMinutes: 60 },
+    objective: "",
+  };
 }
 
 function chainDraftStorageKey(sessionID?: string) {
@@ -1363,7 +1375,13 @@ function chainDraftStorageKey(sessionID?: string) {
 
 function isStoredChainDraft(value: unknown): value is ChainDraftState {
   if (!value || typeof value !== "object") return false
-  const draft = value as { steps?: unknown; master?: unknown; objective?: unknown }
+  const draft = value as { source?: unknown; steps?: unknown; master?: unknown; objective?: unknown }
+  // AG-P0-04 — `source` is optional on the validator because old stored
+  // drafts predate the field. `readStoredChainDraft` always assigns
+  // `source: "draft"` on the way out, so an absent field round-trips
+  // as `draft` (a persisted explicit-empty stays explicit-empty; only
+  // a fresh `defaultChainDraft()` returns `uninitialized`).
+  if (draft.source !== undefined && draft.source !== "uninitialized" && draft.source !== "draft") return false;
   if (!Array.isArray(draft.steps)) return false
   if (!draft.master || typeof draft.master !== "object") return false
   if (draft.objective !== undefined && typeof draft.objective !== "string") return false
@@ -1419,7 +1437,17 @@ function readStoredChainDraft(sessionID?: string): ChainDraftState {
     if (!raw) return defaultChainDraft()
     const parsed: unknown = JSON.parse(raw)
     if (!isStoredChainDraft(parsed)) return defaultChainDraft()
+    // AG-P0-04 — if a key exists in sessionStorage, the user (or a prior
+    // load) has touched this draft. Treat it as `draft` regardless of
+    // whether steps is empty; an explicitly empty draft is still a draft.
+    // Only `defaultChainDraft()` returns `uninitialized`. The persisted
+    // `source` field, if present, wins — this lets a future caller store
+    // `uninitialized` explicitly (currently no caller does, but the
+    // forward-compatibility is cheap).
+    const persistedSource: ChainDraftSource =
+      parsed.source === "uninitialized" ? "uninitialized" : "draft";
     return {
+      source: persistedSource,
       steps: parsed.steps.map((step) => ({
         id: step.id,
         actionID: step.actionID,
@@ -1546,6 +1574,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (sessionID === loadedDraftSessionID()) return
     const next = readStoredChainDraft(sessionID)
     setLoadedDraftSessionID(sessionID)
+    // AG-P0-04 — restore `source` from the freshly-loaded draft so the
+    // "explicit empty" state survives session switches (this is what
+    // prevents the "last X revives the whole list" sequence when the
+    // user cleared the draft in another session).
+    setChainDraft("source", next.source)
     setChainDraft("steps", next.steps)
     setChainDraft("master", "maxTurns", next.master.maxTurns)
     setChainDraft("master", "maxTimeMinutes", next.master.maxTimeMinutes)
@@ -1556,6 +1589,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
   createEffect(() => {
     writeStoredChainDraft(props.sessionID, {
+      // AG-P0-04 — persist `source` so the explicit-empty state survives
+      // a reload. Without this, a reload of a `{source: "draft", steps: []}`
+      // would round-trip through defaultChainDraft() and become
+      // `uninitialized` again, re-enabling recovery from runtime.
+      source: chainDraft.source,
       steps: chainDraft.steps.map((step) => ({ ...step })),
       master: {
         maxTurns: chainDraft.master.maxTurns,
@@ -1755,6 +1793,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       setConfirmingClear(false)
       setChain(null)
       setActivity([])
+      // AG-P0-04 — explicit reset clears the draft intentionally; mark
+      // `source: "draft"` so the empty state survives any later recovery
+      // attempt from a runtime chain.
+      setChainDraft("source", "draft")
       setChainDraft("steps", [])
       setChainDraft("objective", "")
       setChainErrors([])
@@ -1943,9 +1985,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       ...(scope && template.variables?.scope ? { scope } : {}),
     }
   }
+  // AG-P0-04 — every draft mutation flips `source` to `"draft"` so the
+  // "intentionally empty after explicit clear" case is distinguishable
+  // from "never touched". Centralize the flip in one helper rather than
+  // scattering `setChainDraft("source", "draft")` calls.
+  const markDraftTouched = () => {
+    if (chainDraft.source !== "draft") setChainDraft("source", "draft");
+  };
+
   const addActionToChain = (template: GoalTemplateButton, vars = varsForAction(template)) => {
     const step = chainStepFromTemplate(template, vars, `${template.id}-${Date.now()}-${chainDraft.steps.length}`)
     if (!step.condition.trim()) return
+    markDraftTouched();
     setChainDraft("steps", chainDraft.steps.length, step)
   }
   const moveDraftStep = (from: number, to: number) => {
@@ -1954,9 +2005,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const [step] = next.splice(from, 1)
     if (!step) return
     next.splice(to, 0, step)
+    markDraftTouched();
     setChainDraft("steps", next)
   }
   const removeDraftStep = (id: string) => {
+    markDraftTouched();
     setChainDraft(
       "steps",
       chainDraft.steps.filter((step) => step.id !== id),
@@ -1967,11 +2020,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (index === -1) return
     const value = Number.parseInt(raw, 10)
     if (!Number.isFinite(value)) return
+    markDraftTouched();
     setChainDraft("steps", index, field, Math.max(1, value))
   }
   const updateMasterBudget = (field: "maxTurns" | "maxTimeMinutes", raw: string) => {
     const value = Number.parseInt(raw, 10)
     if (!Number.isFinite(value)) return
+    markDraftTouched();
     setChainDraft("master", field, Math.max(1, value))
   }
   const modelOptions = createMemo(() =>
@@ -2402,7 +2457,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const terminalGoal = createMemo(() => terminalGoalOf(state()))
   const runnableChainSteps = () => {
     if (liveGoal()) return []
-    return selectRunnableChainSteps(chainDraft.steps, chainSnapshotSteps())
+    // AG-P0-04 — pass `source` so the selector knows whether the empty
+    // draft is "uninitialized → recoverable" or "explicitly cleared →
+    // must remain empty". This is the central fix for the "last X
+    // revives the whole list" sequence.
+    return selectRunnableChainSteps(chainDraft.steps, chainSnapshotSteps(), chainDraft.source)
   }
   // What a step's condition will actually run as, given the current objective.
   const stepConditionPreview = (step: GoalChainDraftStep) =>
@@ -4713,6 +4772,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               title={language.t("session.goal.chainBuilder.clearDraftHint")}
                               disabled={busy() !== null}
                               onClick={() => {
+                                // AG-P0-04 — explicit Clear Draft keeps
+                                // `source: "draft"` so the empty state
+                                // is recognized as intentional, not as
+                                // "uninitialized → recoverable from runtime".
+                                setChainDraft("source", "draft")
                                 setChainDraft("steps", [])
                                 setChainErrors([])
                               }}

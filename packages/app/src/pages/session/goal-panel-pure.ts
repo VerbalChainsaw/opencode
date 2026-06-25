@@ -715,8 +715,26 @@ export interface GoalChainMasterBudget {
   maxTimeMinutes: number
 }
 
-export function selectRunnableChainSteps<T>(draftSteps: T[], visibleSteps: T[]): T[] {
-  return draftSteps.length > 0 ? draftSteps : visibleSteps
+/**
+ * AG-P0-04 — choose which chain steps are runnable.
+ *
+ * Returns `draftSteps` if the user has populated the local draft.
+ * Returns `visibleSteps` (the runtime chain snapshot) only when the
+ * local draft is `uninitialized` — i.e. the user has never touched
+ * the draft in this session. If `source === "draft"` but the steps
+ * are empty, that is an EXPLICIT clear and we return empty (no
+ * fallback). Without this guard, deleting the last step in a draft
+ * would resurrect the runtime chain's steps ("the last X revives
+ * the whole list" sequence).
+ */
+export function selectRunnableChainSteps<T>(
+  draftSteps: T[],
+  visibleSteps: T[],
+  source: "uninitialized" | "draft" = "uninitialized",
+): T[] {
+  if (draftSteps.length > 0) return draftSteps;
+  if (source === "draft") return [];
+  return visibleSteps;
 }
 
 export function chainStepFromTemplate(
