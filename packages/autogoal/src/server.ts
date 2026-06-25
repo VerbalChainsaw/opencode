@@ -332,6 +332,87 @@ export function detectConstraintStop(state: GoalState): { exceeded: boolean; rea
   return { exceeded: false, reason: "" };
 }
 
+/**
+ * AG-P0-02 — Pick the most recent assistant message from a raw SDK
+ * messages array. Pure: takes `unknown[]` and returns
+ * `{ text, createdAt, messageId } | null`. Does not depend on the
+ * plugin instance, client, or directory.
+ *
+ * Timestamp precedence (per AG-P0-02):
+ *   1. `info.time.created` (OpenCode SDK v2 canonical)
+ *   2. `info.metadata.time.created` (legacy v1 fallback)
+ *
+ * Out-of-order arrays: scans every assistant message and selects the
+ * one with the maximum valid timestamp (positive finite number). When
+ * all candidates lack timestamps, falls back to array position (last
+ * assistant wins) — preserving v0.7.x behavior for hosts that have
+ * not yet migrated to v2.
+ *
+ * Forbidden by the ticket:
+ *   - changing goal evaluation semantics (this helper only selects the
+ *     message; the cutoff check lives in evaluateByTranscript)
+ *   - weakening the stale-marker cutoff
+ *   - replacing timestamps with `Date.now()` before comparison (we
+ *     preserve the SDK timestamp as-is; the caller decides how to use it)
+ */
+export function pickLatestAssistant(
+  messages: unknown,
+): { text: string; createdAt: number; messageId: string } | null {
+  if (!Array.isArray(messages)) return null;
+
+  type SdkMessage = {
+    info?: {
+      id?: string;
+      role?: string;
+      // v2 canonical
+      time?: { created?: number };
+      // v1 legacy
+      metadata?: { time?: { created?: number } };
+    };
+    parts?: Array<{ type?: string; text?: string }>;
+  };
+  const msgs = messages as SdkMessage[];
+
+  let best: { text: string; createdAt: number; messageId: string } | null = null;
+  let bestTimestamp = -1;
+
+  for (const m of msgs) {
+    if (m?.info?.role !== "assistant") continue;
+
+    const text = (m.parts ?? [])
+      .filter((p) => p.type === "text")
+      .map((p) => p.text ?? "")
+      .join("\n");
+
+    // v2 canonical first; legacy as fallback. Invalid types normalize to 0.
+    const v2 = m.info?.time?.created;
+    const legacy = m.info?.metadata?.time?.created;
+    const raw =
+      typeof v2 === "number" && Number.isFinite(v2) && v2 > 0
+        ? v2
+        : typeof legacy === "number" && Number.isFinite(legacy) && legacy > 0
+          ? legacy
+          : 0;
+
+    const candidate = {
+      text,
+      createdAt: raw,
+      messageId: typeof m.info?.id === "string" ? m.info.id : "",
+    };
+
+    if (raw > bestTimestamp) {
+      best = candidate;
+      bestTimestamp = raw;
+    } else if (raw === 0 && bestTimestamp === 0 && best !== null) {
+      // Tie on zero (no timestamp on either): deterministic fallback
+      // is "last assistant by array position", so the later one wins.
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
 function currentChainStepPinnedModel(directory: string): GoalPinnedModel | null {
   const chain = readGoalChain(directory);
   if (!chain || chain.current < 0 || chain.current >= chain.steps.length) return null;
@@ -630,31 +711,13 @@ export const server: Plugin = async ({ client, directory }) => {
   ): Promise<{ text: string; createdAt: number; messageId: string } | null> {
     try {
       const res = await client.session.messages({ path: { id: sessionId } });
-      // v0.4.1 (B-1) — the SDK response shape is structurally { info: { id,
-      // role, ... }, parts: Array<{ type, text }> }. `id` and the metadata
-      // `time.created` are the two stable per-message identifiers; we keep
-      // both. The `time.created` is the more useful comparison key (it is
-      // monotonic for messages emitted in the same session and is also
-      // emitted by message-v2 across the v1/v2 transition).
-      type SdkMessage = {
-        info?: { id?: string; role?: string; metadata?: { time?: { created?: number } } };
-        parts?: Array<{ type?: string; text?: string }>;
-      };
-      const msgs = (res.data ?? []) as SdkMessage[];
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        const m = msgs[i];
-        if (m?.info?.role !== "assistant") continue;
-        const text = (m.parts ?? [])
-          .filter((p) => p.type === "text")
-          .map((p) => p.text ?? "")
-          .join("\n");
-        return {
-          text,
-          createdAt: typeof m.info?.metadata?.time?.created === "number" ? m.info.metadata.time.created : 0,
-          messageId: typeof m.info?.id === "string" ? m.info.id : "",
-        };
-      }
-      return null;
+      // AG-P0-02 — delegate to the pure `pickLatestAssistant` helper so
+      // the v2 timestamp contract (`info.time.created`) is enforced in
+      // one place. The legacy `info.metadata.time.created` is the
+      // fallback inside the helper. This wrapper still owns the
+      // try/catch + log path because errors here mean "could not
+      // reach the session", not "malformed message".
+      return pickLatestAssistant(res.data ?? []);
     } catch (err) {
       log("debug", "Could not read messages", { error: String(err) });
       return null;
