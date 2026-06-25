@@ -17,7 +17,6 @@ import {
 } from "@opencode-ai/app"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import * as Sentry from "@sentry/solid"
-import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
 import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
@@ -25,6 +24,7 @@ import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
 import { listenForDesktopDeepLinks } from "./deep-links"
+import { createStorageFactory } from "./storage"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
@@ -90,30 +90,7 @@ const createPlatform = (): Platform => {
   }
 
   const storage = (() => {
-    const cache = new Map<string, AsyncStorage>()
-
-    const createStorage = (name: string) => {
-      const api: AsyncStorage = {
-        getItem: (key: string) => window.api.storeGet(name, key).catch(() => null),
-        setItem: (key: string, value: string) => window.api.storeSet(name, key, value).catch(() => {}),
-        removeItem: (key: string) => window.api.storeDelete(name, key).catch(() => {}),
-        clear: () => window.api.storeClear(name).catch(() => {}),
-        key: async (index: number) => (await window.api.storeKeys(name).catch(() => []))[index],
-        getLength: () => window.api.storeLength(name).catch(() => 0),
-        get length() {
-          return api.getLength()
-        },
-      }
-      return api
-    }
-
-    return (name = "default.dat") => {
-      const cached = cache.get(name)
-      if (cached) return cached
-      const api = createStorage(name)
-      cache.set(name, api)
-      return api
-    }
+    return createStorageFactory(window.api)
   })()
 
   const wslServersApi = os === "windows" ? window.api.wslServers : undefined
