@@ -161,6 +161,127 @@ function classifyNudgeFailure(err: unknown): { kind: NudgeFailureKind; detail: s
   return { kind: "unknown", detail: safeDetail };
 }
 
+// ── AG-P1-06: continuation-delivery decision function ───────────────────────
+//
+// The autogoal plugin issues continuation prompts in two places: the
+// chain-advance prompt after a chain step achieves, and the
+// continue-working nudge when an evaluation returned not-met. Both call
+// `client.session.prompt(...)` and route failures through
+// `classifyNudgeFailure`. The pre-fix contract diverged on retry
+// accounting: the nudge path had bounded retry + exhaustion pause, the
+// chain-advance path did NOT — a transient failure on chain-advance
+// silently dropped the prompt and the chain sat active with no turn
+// in flight and no recovery path.
+//
+// `decideContinuationRetry` is the pure decision function the unified
+// dispatcher delegates to. It encodes the ticket's "Required behavior":
+//
+//   - failure classified once (input is already a NudgeFailureKind)
+//   - per-session/step idempotency key (duplicate-suppressed decision)
+//   - auth and provider-fatal → pause immediately
+//   - network, abort, unknown → bounded retry (retryable up to maxAttempts)
+//   - exhaustion → paused with deterministic reason naming the failure
+//     kind and attempt count
+//   - success → delivered; reset is the caller's responsibility
+//
+// The function is pure and side-effect free: callers drive the retry
+// loop, the state writes (transitionGoal), the webhook, and the notify.
+// This keeps the decision testable in isolation (see
+// test/server-continuation-dispatch.test.mjs) and makes the chain-advance
+// and continue-nudge paths interchangeable.
+
+export type ContinuationFailureKind = NudgeFailureKind;
+
+export type ContinuationOutcome =
+  | { status: "delivered" }
+  | { status: "duplicate-suppressed" }
+  | {
+      status: "pause-immediately";
+      failure: ContinuationFailureKind;
+      reason: string;
+    }
+  | {
+      status: "retryable";
+      failure: ContinuationFailureKind;
+      attempt: number;
+    }
+  | {
+      status: "exhausted";
+      failure: ContinuationFailureKind;
+      attempts: number;
+      reason: string;
+    };
+
+/**
+ * AG-P1-06 — pure decision function for continuation delivery retry
+ * behavior. See the comment block above for the full rationale.
+ *
+ * Inputs:
+ *   - `failure`: the classification of the most recent attempt's outcome.
+ *     `null` means the most recent attempt succeeded.
+ *   - `attempt`: 1-indexed count of attempts so far (including the most
+ *     recent one if it failed).
+ *   - `maxAttempts`: total attempts allowed before exhaustion.
+ *   - `idempotencyKey`: a key the caller derives from
+ *     (sessionID, goalState.id, chainStep) to detect duplicate-delivery.
+ *     If `lastDeliveredKey` equals this key, the caller has already
+ *     delivered successfully and any subsequent call is suppressed.
+ *   - `lastDeliveredKey`: the most recent successfully-delivered key,
+ *     or `null` if no delivery has happened.
+ *
+ * Output: the decision the dispatcher should act on. The dispatcher
+ * (not this function) actually calls `client.session.prompt`, writes
+ * state, fires the webhook, and notifies the user.
+ */
+export function decideContinuationRetry(args: {
+  failure: ContinuationFailureKind | null;
+  attempt: number;
+  maxAttempts: number;
+  idempotencyKey: string;
+  lastDeliveredKey: string | null;
+}): ContinuationOutcome {
+  // Success path.
+  if (args.failure === null) {
+    // Idempotency check: if the caller already delivered this exact
+    // key, the second call is suppressed. This is the "per-session/step
+    // idempotency key to prevent duplicate prompt delivery" requirement.
+    if (args.lastDeliveredKey === args.idempotencyKey) {
+      return { status: "duplicate-suppressed" };
+    }
+    return { status: "delivered" };
+  }
+
+  // Hard-error paths: auth + provider-fatal pause immediately. Do NOT
+  // burn through remaining chain steps with guaranteed failures.
+  if (args.failure === "auth" || args.failure === "provider-fatal") {
+    return {
+      status: "pause-immediately",
+      failure: args.failure,
+      reason: `Provider error — goal paused (${args.failure})`,
+    };
+  }
+
+  // Retryable paths: network, abort, unknown. The attempt counter
+  // determines whether we retry or declare exhaustion.
+  if (args.attempt < args.maxAttempts) {
+    return {
+      status: "retryable",
+      failure: args.failure,
+      attempt: args.attempt,
+    };
+  }
+
+  // Exhaustion: bounded retry is exhausted, pause the goal with a
+  // deterministic reason that names the failure kind and attempt count.
+  // The reason is written to `lastEvaluation.reason` by the dispatcher.
+  return {
+    status: "exhausted",
+    failure: args.failure,
+    attempts: args.attempt,
+    reason: `Continuation delivery failed ${args.attempt} times consecutively (${args.failure})`,
+  };
+}
+
 // v0.4.0+ — SSRF guard. Returns true for `localhost` (any port), the entire
 // `127.0.0.0/8` loopback range, IPv6 loopback `[::1]`, the unspecified
 // addresses `0.0.0.0` / `[::]`, AND the IPv4-mapped IPv6 forms of loopback
