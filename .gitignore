@@ -30,8 +30,12 @@ target
 opencode-dev
 UPCOMING_CHANGELOG.md
 logs/
-.hermes/runtime-logs/
+.hermes/
 output/playwright/
 *.bun-build
 tsconfig.tsbuildinfo
 .aider*
+AUTOGOAL_CHAIN_REPAIR_PROOF/
+AUTOGOAL_CHAIN_REPAIR_PROOF.zip
+center-audit-*.json
+center-audit-*.md

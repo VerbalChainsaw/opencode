@@ -1039,6 +1039,11 @@ export interface GoalStore {
   state: GoalState | null
   corrupt: boolean
   loaded: boolean
+  /** True when the most recent fetch failed with something other than
+   *  a file-not-found / file-empty signal. Distinguishes "no goal" from
+   *  "backend unreachable" so the panel can surface a connectivity hint
+   *  instead of silently showing the empty state. (CENTER-AUDIT NCO1 fix.) */
+  unreachable?: boolean
 }
 
 export interface GoalHandoff {
@@ -1110,11 +1115,44 @@ export async function readGoalFromSdk(sdk: GoalSdkClient): Promise<GoalStore> {
       return { state: null, corrupt: true, loaded: true }
     }
     return { state: parsed, corrupt: false, loaded: true }
-  } catch {
-    // Read error: file missing or unreadable. A missing file is the
-    // normal "no goal" case — never alarm on it.
-    return { state: null, corrupt: false, loaded: true }
+  } catch (err) {
+    // CENTER-AUDIT NCO1 (2026-06-26): distinguish legitimate file-not-found
+    // (no goal set) from backend-unreachable (server crashed, network blip,
+    // 5xx). The pre-fix catch-all returned `{state: null}` for everything,
+    // making a dead backend look identical to "no goal" — a user whose
+    // server died mid-run saw the empty state with no signal.
+    if (isFileNotFoundError(err)) {
+      return { state: null, corrupt: false, loaded: true }
+    }
+    return { state: null, corrupt: false, loaded: true, unreachable: true }
   }
+}
+
+/** True when the error from sdk.client.file.read corresponds to the file
+ *  not existing (the legitimate "no goal" case) rather than the backend
+ *  itself being unreachable. The opencode SDK surfaces file-not-found as
+ *  HTTP 404 or an Error whose message contains "ENOENT" / "not found" /
+ *  "no such file". Any other shape (network error, 5xx, TypeError from a
+ *  rejected fetch, etc.) means the backend is the problem — not absence. */
+function isFileNotFoundError(err: unknown): boolean {
+  if (!err) return false
+  const probe = err as { status?: unknown; response?: { status?: unknown } }
+  if (typeof probe.status === "number" && probe.status === 404) return true
+  if (probe.response && typeof probe.response.status === "number" && probe.response.status === 404) return true
+  const msg =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : ""
+  if (!msg) return false
+  const lower = msg.toLowerCase()
+  return (
+    lower.includes("enoent") ||
+    lower.includes("not found") ||
+    lower.includes("no such file") ||
+    lower.includes("does not exist")
+  )
 }
 
 export async function readHandoffFromSdk(sdk: GoalSdkClient): Promise<GoalHandoffStore> {

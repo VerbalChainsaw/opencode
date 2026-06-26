@@ -1,28 +1,39 @@
 {
   "version": 1,
-  "id": "cca06a15-8217-4aa0-af31-cc28ab29013b",
+  "id": "6522f9e7-0822-4877-991e-40497c4866b8",
   "steps": [
     {
-      "condition": "Create a concise implementation plan for the current coding request. Identify the files, sequence, risks, and verification needed before changing code.",
+      "condition": "Typecheck the current change. Find the repository's relevant typecheck command, run it, fix type errors without broad refactors, and re-run until clean.",
       "verification": {
         "type": "marker"
       },
       "maxTurns": 3,
       "maxMinutes": 10,
-      "category": "Planning",
-      "tone": "violet",
-      "elevation": "raised"
+      "category": "Testing",
+      "tone": "emerald",
+      "elevation": "flat"
     },
     {
-      "condition": "Debug the reported failure. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
+      "condition": "Adversarially scan the current change. Exercise invalid inputs, stale state, missing files, repeated clicks, interrupted turns, and upstream/downstream regressions; harden the code where needed.",
       "verification": {
         "type": "marker"
       },
-      "maxTurns": 8,
-      "maxMinutes": 30,
-      "category": "Debugging",
-      "tone": "orange",
+      "maxTurns": 4,
+      "maxMinutes": 15,
+      "category": "Review",
+      "tone": "fuchsia",
       "elevation": "raised"
+    },
+    {
+      "condition": "Trace the wiring for the current UI flow. For each visible control, identify the handler, deterministic state write, model-turn boundary, error path, and verification evidence.",
+      "verification": {
+        "type": "marker"
+      },
+      "maxTurns": 3,
+      "maxMinutes": 10,
+      "category": "Review",
+      "tone": "blue",
+      "elevation": "flat"
     }
   ],
   "current": 0,
@@ -36,8 +47,8 @@
     "minutesUsed": 0
   },
   "metadata": {
-    "createdAt": 1782257425663,
+    "createdAt": 1782446990827,
     "setBy": "chain",
-    "sessionId": "ses_10feebdefffenhh0IHhIR1uIuJ"
+    "sessionId": "ses_0fded6dcaffe8LvLEhVnVISX93"
   }
 }

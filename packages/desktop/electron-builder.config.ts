@@ -135,7 +135,12 @@ function getConfig() {
         appId,
         productName: "OpenCode",
         protocols: { name: "OpenCode", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        // VerbalChainsaw fork: auto-updater points at this repo's releases,
+        // NOT upstream anomalyco/opencode. Without this redirect every
+        // shipped exe would check upstream for updates, find binaries
+        // signed for upstream's appId, and either fail to install or
+        // (worse) install upstream over the fork.
+        publish: { provider: "github", owner: "VerbalChainsaw", repo: "opencode", channel: "latest" },
         deb: { fpm: [legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [legacyDesktopEntryFpm] },
       }

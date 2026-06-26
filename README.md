@@ -111,38 +111,30 @@ Works from CI, cron jobs, shell scripts, or other agents — anything that can e
 
 ## Installation
 
-### CLI
+This fork currently ships **only the Windows desktop app**. The CLI install methods on opencode.ai (`npm`, `scoop`, `choco`, `brew`, etc.) install the upstream [anomalyco/opencode](https://github.com/anomalyco/opencode) — they will NOT give you the AutoGoal feature this fork adds. To get AutoGoal, use the desktop download below or build from source.
+
+### Desktop App (Windows)
+
+Download the signed installer from the [releases page](https://github.com/VerbalChainsaw/opencode/releases/latest):
+
+| Platform | File | Status |
+|---|---|---|
+| Windows x64 | [`opencode-desktop-win-x64.exe`](https://github.com/VerbalChainsaw/opencode/releases/latest) | ✅ shipping |
+| macOS | — | planned |
+| Linux | — | planned |
+
+**Windows SmartScreen note:** the current builds are not yet signed with an EV code-signing certificate, so SmartScreen will say *"Windows protected your PC — Unrecognized app"*. Click **More info → Run anyway**. The exe is built locally from this repo's `dev` branch and uploaded straight to releases — verify the `sha256` against the release page if you want to double-check.
+
+### Build from source
 
 ```bash
-# Quick install
-curl -fsSL https://opencode.ai/install | bash
-
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS/Linux
-nix run nixpkgs#opencode           # Nix
-mise use -g opencode               # Any OS
+git clone https://github.com/VerbalChainsaw/opencode.git
+cd opencode
+bun install
+cd packages/desktop && bun run package:win   # Windows exe
 ```
 
-### Desktop App
-
-Download from the [releases page](https://github.com/VerbalChainsaw/opencode/releases):
-
-| Platform | Download |
-|---|---|
-| Windows | `opencode-desktop-windows-x64.exe` |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg` |
-| macOS (Intel) | `opencode-desktop-mac-x64.dmg` |
-| Linux | `.deb`, `.rpm`, or `.AppImage` |
-
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
+The output lands at `packages/desktop/dist/opencode-desktop-win-x64.exe`.
 
 ---
 

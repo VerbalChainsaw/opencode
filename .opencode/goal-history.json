@@ -3,6 +3,29 @@
   "runs": [
     {
       "summary": {
+        "goalID": "9f81a2e4-4a7e-4132-bbe2-4f3d3883673c",
+        "title": "Debug the reported failure. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and impl",
+        "status": "failure",
+        "outcome": "cleared",
+        "turns": 0,
+        "elapsedMs": 257505,
+        "successCount": 0,
+        "failureCount": 0,
+        "archivedAt": 1782447258590
+      },
+      "detail": {
+        "latestReason": "",
+        "cycles": [],
+        "template": {
+          "source": "manual",
+          "label": "Ad hoc run",
+          "reuseCommand": "set \"Debug the reported failure. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.\" --command \"cd C:\\Users\\zerop\\Development\\opencode-source && bun run typecheck 2>&1 | tail -5 && echo ---tests--- && cd packages/app && bun test --preload ./happydom.ts 2>&1 | tail -10\"",
+          "canGenerate": false
+        }
+      }
+    },
+    {
+      "summary": {
         "goalID": "0fc5ba4b-35ee-4275-87c6-b971b4ebb9fe",
         "title": "Create a concise implementation plan for the current coding request. Identify the files, sequence, risks, and verification needed before cha",
         "status": "failure",

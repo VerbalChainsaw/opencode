@@ -1,31 +1,24 @@
 {
   "version": 1,
-  "id": "0fc5ba4b-35ee-4275-87c6-b971b4ebb9fe",
-  "condition": "Create a concise implementation plan for the current coding request. Identify the files, sequence, risks, and verification needed before changing code.",
-  "command": null,
-  "verification": {
-    "type": "marker"
-  },
+  "id": "9f81a2e4-4a7e-4132-bbe2-4f3d3883673c",
+  "condition": "Debug the reported failure. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
+  "command": "cd \"C:\\Users\\zerop\\Development\\opencode-source\" && bun run typecheck 2>&1 | tail -5 && echo \"---tests---\" && cd packages/app && bun test --preload ./happydom.ts 2>&1 | tail -10",
   "status": "cleared",
-  "createdAt": 1782257425663,
-  "startedAt": 1782257425663,
-  "completedAt": 1782257430399,
-  "pausedAt": null,
+  "createdAt": 1782447001083,
+  "startedAt": 1782447001083,
+  "completedAt": 1782447258588,
+  "pausedAt": 1782447185285,
   "resumedAt": null,
   "turnsEvaluated": 0,
   "tokensUsed": 0,
   "lastEvaluation": null,
   "evaluationHistory": [],
   "constraints": {
-    "maxTurns": 3,
-    "maxTimeMinutes": 10,
+    "maxTurns": 8,
+    "maxTimeMinutes": 30,
     "maxTokens": 100000
   },
   "metadata": {
-    "setBy": "chain",
-    "chainId": "cca06a15-8217-4aa0-af31-cc28ab29013b",
-    "chainStep": 0,
-    "chainTotal": 2,
-    "sessionId": "ses_10feebdefffenhh0IHhIR1uIuJ"
+    "setBy": "user"
   }
 }

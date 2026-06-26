@@ -833,6 +833,7 @@ export const dict = {
   "session.goal.chainBuilder.stepRemove": "Remove",
   "session.goal.chainBuilder.stepRemovePending": "Remove pending step",
   "session.goal.chainBuilder.addDisabledRunning": "Stop the running chain to edit the draft",
+  "session.goal.backendUnreachable": "Cannot reach the OpenCode backend. Goal state may be stale until the connection recovers.",
   "session.goal.chainBuilder.stepEditAria": "Edit {{label}}",
   "session.goal.chainBuilder.stepTurnsAria": "Turns for {{label}}",
   "session.goal.chainBuilder.stepMinutesAria": "Minutes for {{label}}",

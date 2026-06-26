@@ -155,6 +155,10 @@ export function useGoal() {
     const next = await readGoalFromSdk(sdk as unknown as GoalSdkClient)
     setStore("loaded", next.loaded)
     setStore("corrupt", next.corrupt)
+    // CENTER-AUDIT NCO1 — `unreachable` is undefined on a healthy fetch,
+    // true after a non-FileNotFound error. The panel uses this to surface
+    // a connectivity hint instead of conflating it with "no goal".
+    setStore("unreachable", next.unreachable ?? false)
     // Reconcile (keyed on the goal `id`) instead of replacing the object so
     // the proxy reference stays stable across polls when it's the same goal.
     // The live-goal subtree is rendered with `<Match … keyed>`; replacing the
@@ -3549,6 +3553,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     </button>
                   </div>
                 )}
+              </Show>
+              {/* CENTER-AUDIT NCO1 banner: backend connectivity hint. Only
+                  surfaces when the most recent fetch failed with something
+                  other than file-not-found — i.e., the server itself is
+                  unreachable. Suppressed once a live goal is showing so a
+                  transient blip during an active run doesn't blank the panel
+                  state. */}
+              <Show when={props.goal.store.unreachable && !liveGoal() && !terminalGoal()}>
+                <div
+                  data-component="goal-backend-unreachable"
+                  role="status"
+                  class="xl:col-span-2 flex items-center gap-2 rounded-md border border-amber-400/35 bg-amber-400/8 px-3 py-2 text-12-regular text-amber-100/86"
+                >
+                  <span class="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-300" aria-hidden />
+                  <span class="min-w-0 flex-1">{language.t("session.goal.backendUnreachable")}</span>
+                </div>
               </Show>
               <div class="flex min-h-0 min-w-0 flex-col gap-3">
               <GoalConsoleSection
