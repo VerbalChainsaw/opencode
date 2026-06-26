@@ -50,10 +50,10 @@ async function tryAcquire(p: string): Promise<FileHandle | null> {
   }
 }
 
-async function isStale(p: string): Promise<boolean> {
+async function isStale(p: string, staleMs: number, now: () => number): Promise<boolean> {
   try {
     const s = await stat(p);
-    return Date.now() - s.mtimeMs > STALE_LOCK_MS;
+    return now() - s.mtimeMs > staleMs;
   } catch {
     return false;
   }
@@ -72,6 +72,20 @@ export interface FileLockOptions {
   acquireTimeoutMs?: number;
   /** If true, never throw — fall through to running fn unlocked. */
   bestEffort?: boolean;
+  /**
+   * v0.7.3 / scan 2026-06-25 (Q7) — override the staleness check.
+   * Default: 10000ms (a lock older than 10s is considered stale
+   * and a previous holder is assumed to have crashed). Tests can
+   * pass 0 or a small value to force the stale-clear path without
+   * needing to manipulate mtime.
+   */
+  staleMs?: number;
+  /**
+   * v0.7.3 / scan 2026-06-25 (Q7) — override the clock for the
+   * staleness check. Default: Date.now(). Tests inject a fixed
+   * clock to verify stale-clear without sleeping.
+   */
+  now?: () => number;
 }
 
 export async function withFileLock<T>(
@@ -81,19 +95,21 @@ export async function withFileLock<T>(
 ): Promise<T | undefined> {
   const acquireTimeout = opts.acquireTimeoutMs ?? ACQUIRE_TIMEOUT_MS;
   const bestEffort = opts.bestEffort ?? true;
+  const staleMs = opts.staleMs ?? STALE_LOCK_MS;
+  const now = opts.now ?? Date.now;
   const p = lockPath(directory);
 
   let fd: FileHandle | null = null;
   try {
     await ensureLockDir(p);
-    const start = Date.now();
+    const start = now();
     let pollMs = POLL_BASE_MS;
-    while (Date.now() - start < acquireTimeout) {
+    while (now() - start < acquireTimeout) {
       fd = await tryAcquire(p);
       if (fd !== null) break;
-      // Stale-lock check: if older than STALE_LOCK_MS, previous
+      // Stale-lock check: if older than staleMs, previous
       // holder likely crashed. Remove and retry.
-      if (await isStale(p)) {
+      if (await isStale(p, staleMs, now)) {
         try { await unlink(p); } catch { /* race; ignore */ }
       }
       await sleep(pollMs);
