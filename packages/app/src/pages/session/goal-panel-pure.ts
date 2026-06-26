@@ -1273,6 +1273,16 @@ export function chainStepVisibleAction(args: {
   return { kind: "dismiss-terminal" };
 }
 
+export function chainStepVisibleSourceForState(args: {
+  hasLiveGoal: boolean;
+  hasTerminalGoal: boolean;
+  hasChainSnapshot: boolean;
+}): ChainStepVisibleSource {
+  if (args.hasLiveGoal) return "live"
+  if (args.hasTerminalGoal && args.hasChainSnapshot) return "live"
+  return "draft"
+}
+
 // ── AG-P1-07: ordered chain refresh dispatch ────────────────────────────────
 //
 // The chain panel polls the runtime chain file every 2 seconds and also

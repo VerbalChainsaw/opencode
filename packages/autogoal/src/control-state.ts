@@ -464,10 +464,18 @@ async function removeChainStep(directory: string, index: number, now: number) {
   if (index < 0 || index >= chain.steps.length) {
     throw new Error("Chain remove index is out of range.")
   }
+  const state = await readGoalStateOptional(directory)
+  const terminalChainState =
+    state?.metadata?.chainId === chain.id &&
+    (state.status === "achieved" || state.status === "cleared")
   if (chain.steps.length <= 1) {
+    if (terminalChainState) {
+      await unlinkWithRetry(goalChainPath(directory))
+      return result(`Chain step removed: ${index + 1}`, "chain", now)
+    }
     throw new Error("Cannot remove the only step in the chain; clear the goal instead.")
   }
-  if (index === chain.current) {
+  if (!terminalChainState && index === chain.current) {
     throw new Error("Cannot remove the step that is currently running.")
   }
   // Preserve which step is active by identity, then re-derive its index after splice.

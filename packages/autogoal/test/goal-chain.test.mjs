@@ -1113,6 +1113,69 @@ describe("Coverage: removeChainStep guards", () => {
       assert.equal(chain.steps[0].condition, "sole");
     } finally { cleanDir(dir); }
   });
+
+  it("removes the only step from a terminal chain by deleting the chain file", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "sole" }]);
+      assert.equal(create.ok, true);
+
+      const state = readGoalState(dir);
+      state.status = "achieved";
+      state.completedAt = Date.now();
+      writeGoalStateAtomic(dir, state);
+
+      const res = removeChainStep(dir, 0);
+      assert.equal(res.ok, true, `terminal remove should succeed; got: ${res.error}`);
+      assert.equal(readGoalChain(dir), null, "removing the last terminal step should remove the chain");
+      assert.equal(existsSync(join(dir, CHAIN_FILE)), false, "chain file should be gone after the last step is removed");
+    } finally { cleanDir(dir); }
+  });
+});
+
+describe("stop/cancel chain advance guards", () => {
+  it("advanceGoalChain refuses to advance a cleared chain state even when chainId still matches", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      assert.equal(create.ok, true);
+
+      const clear = transitionGoal(dir, "clear");
+      assert.equal(clear.ok, true, `precondition: clear should succeed; got: ${clear.error}`);
+
+      const res = advanceGoalChain(dir);
+      assert.equal(res.ok, false, "a stopped chain must not advance from a cleared state");
+      assert.match(res.error, /cleared|stopped|interrupted/i);
+
+      const chain = readGoalChain(dir);
+      assert.ok(chain);
+      assert.equal(chain.current, 0, "failed advance must not move chain.current");
+      assert.equal(readGoalState(dir).condition, "first", "failed advance must not activate the next step");
+      assert.equal(readGoalState(dir).status, "cleared");
+    } finally { cleanDir(dir); }
+  });
+
+  it("clear can cancel an achieved chain step before the orchestrator advances it", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      assert.equal(create.ok, true);
+
+      const state = readGoalState(dir);
+      state.status = "achieved";
+      state.completedAt = Date.now();
+      writeGoalStateAtomic(dir, state);
+
+      const clear = transitionGoal(dir, "clear");
+      assert.equal(clear.ok, true, `clear should cancel the achieved step; got: ${clear.error}`);
+      assert.equal(readGoalState(dir).status, "cleared");
+
+      const res = advanceGoalChain(dir);
+      assert.equal(res.ok, false, "a user-cleared achieved step must not advance afterward");
+      assert.match(res.error, /cleared|stopped|interrupted/i);
+      assert.equal(readGoalState(dir).condition, "first");
+    } finally { cleanDir(dir); }
+  });
 });
 
 describe("Coverage: reorderChainStep active-step anchoring", () => {

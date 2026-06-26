@@ -701,6 +701,9 @@ export function advanceGoalChain(
   if (!state || state.metadata.chainId !== chain.id) {
     return { ok: false, error: "Chain interrupted — goal was manually overridden. Use 'chain reset' to restart." };
   }
+  if (state.status === "cleared") {
+    return { ok: false, error: "Chain stopped — the current goal was cleared." };
+  }
   recordMasterUsage(chain, state, now);
 
   const next = chain.current + 1;
@@ -1083,14 +1086,29 @@ export function removeChainStep(
   if (!Number.isInteger(index) || index < 0 || index >= n) {
     return { ok: false, error: "Step index out of range." };
   }
-  if (n <= 1) return { ok: false, error: "Cannot remove the only chain step." };
-  if (chain.current >= 0 && index <= chain.current) {
+  const state = readGoalState(directory);
+  const terminalChainState =
+    state?.metadata.chainId === chain.id &&
+    (state.status === "achieved" || state.status === "cleared");
+
+  if (n <= 1) {
+    if (!terminalChainState) return { ok: false, error: "Cannot remove the only chain step." };
+    try {
+      unlinkSync(goalChainPath(directory));
+    } catch (err: unknown) {
+      return { ok: false, error: `Failed to remove chain: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    return { ok: true };
+  }
+  if (!terminalChainState && chain.current >= 0 && index <= chain.current) {
     return { ok: false, error: "Only pending future steps can be removed from a live chain. Stop or reset before editing the active step." };
   }
 
   chain.steps.splice(index, 1);
 
-  const state = readGoalState(directory);
+  if (terminalChainState && chain.current >= chain.steps.length) {
+    chain.current = chain.steps.length - 1;
+  }
   if (state?.metadata.chainId === chain.id) {
     state.metadata.chainTotal = chain.steps.length;
   }

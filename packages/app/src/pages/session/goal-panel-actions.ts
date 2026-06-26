@@ -30,6 +30,12 @@ type GoalPromptAsyncInput = {
   variant?: string
 }
 
+type GoalSessionScope = {
+  sessionID: string
+  directory?: string
+  workspace?: string
+}
+
 export interface GoalCommandClient {
   client?: GoalTransport
   tool?: {
@@ -37,7 +43,8 @@ export interface GoalCommandClient {
     control?: (this: { client?: GoalTransport }, args: GoalControlArguments) => Promise<unknown>
   }
   session?: {
-    abort?: (args: { sessionID: string }) => Promise<unknown>
+    abort?: (args: GoalSessionScope) => Promise<unknown>
+    children?: (args: GoalSessionScope) => Promise<unknown>
     prompt?: (args: {
       sessionID: string
       directory?: string
@@ -118,6 +125,81 @@ function withPinnedSkills(text: string, skills: string[] | undefined) {
     `Pinned skills for this OpenGoal action: ${clean.join(", ")}.`,
     "If these skills are available, load and use them before working this action.",
   ].join("\n")
+}
+
+function goalSessionScope(input: GoalSessionScope, sessionID = input.sessionID): GoalSessionScope {
+  return {
+    sessionID,
+    ...(input.directory ? { directory: input.directory } : {}),
+    ...(input.workspace ? { workspace: input.workspace } : {}),
+  }
+}
+
+function childSessionIDs(response: unknown) {
+  const data =
+    response && typeof response === "object" && "data" in response
+      ? (response as { data?: unknown }).data
+      : response
+  if (!Array.isArray(data)) return []
+  const ids: string[] = []
+  for (const item of data) {
+    if (!item || typeof item !== "object") continue
+    const id = (item as { id?: unknown }).id
+    if (typeof id !== "string" || !id.trim()) continue
+    ids.push(id)
+  }
+  return ids
+}
+
+async function collectSessionTreeIDs(client: GoalCommandClient, input: GoalSessionScope) {
+  if (!client.session?.children) return [input.sessionID]
+  const ids = [input.sessionID]
+  const seen = new Set(ids)
+  const queue = [input.sessionID]
+  for (let i = 0; i < queue.length; i++) {
+    const parentID = queue[i]
+    if (!parentID) continue
+    const response = await client.session.children(goalSessionScope(input, parentID))
+    for (const childID of childSessionIDs(response)) {
+      if (seen.has(childID)) continue
+      seen.add(childID)
+      ids.push(childID)
+      queue.push(childID)
+    }
+  }
+  return ids
+}
+
+async function abortActiveSessionTree(
+  client: GoalCommandClient,
+  input: GoalSessionScope,
+  label: "Goal cleared" | "Goal paused",
+) {
+  if (!client.session?.abort) {
+    return { ok: true, warning: `${label}, but this OpenCode client cannot abort the active turn.` } as const
+  }
+
+  let ids = [input.sessionID]
+  const warnings: string[] = []
+  try {
+    ids = await collectSessionTreeIDs(client, input)
+  } catch (error) {
+    warnings.push(`child session discovery failed: ${errorText(error)}`)
+  }
+
+  const abortIDs = [...ids].reverse()
+  for (const sessionID of abortIDs) {
+    try {
+      await client.session.abort(goalSessionScope(input, sessionID))
+    } catch (error) {
+      warnings.push(`${sessionID} did not abort: ${errorText(error)}`)
+    }
+  }
+
+  if (warnings.length > 0) {
+    return { ok: true, warning: `${label}, but ${warnings.join("; ")}` } as const
+  }
+  return { ok: true } as const
 }
 
 export function goalSteerPrompt(note: string) {
@@ -244,15 +326,7 @@ export async function stopGoalRun(
   })
   if (!result.ok) return result
   if (!input.abortActiveTurn) return result
-  if (!client.session?.abort) {
-    return { ok: true, warning: "Goal cleared, but this OpenCode client cannot abort the active turn." } as const
-  }
-  try {
-    await client.session.abort({ sessionID: input.sessionID })
-    return result
-  } catch (error) {
-    return { ok: true, warning: `Goal cleared, but the active turn did not abort: ${errorText(error)}` } as const
-  }
+  return abortActiveSessionTree(client, input, "Goal cleared")
 }
 
 export async function resetGoalWorkspaceState(
@@ -292,15 +366,7 @@ export async function pauseGoalRun(
   })
   if (!result.ok) return result
   if (!input.abortActiveTurn) return result
-  if (!client.session?.abort) {
-    return { ok: true, warning: "Goal paused, but this OpenCode client cannot abort the active turn." } as const
-  }
-  try {
-    await client.session.abort({ sessionID: input.sessionID })
-    return result
-  } catch (error) {
-    return { ok: true, warning: `Goal paused, but the active turn did not abort: ${errorText(error)}` } as const
-  }
+  return abortActiveSessionTree(client, input, "Goal paused")
 }
 
 export async function steerGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput, note: string) {

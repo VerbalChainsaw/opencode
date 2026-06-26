@@ -127,7 +127,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("const refreshChain = () => void readChain(sdk).then(setChain)")
     expect(src).toMatch(/const refreshChain = \(\): Promise<void>/)
     expect(src).toContain("void readActivity(sdk).then(setActivity).catch(ignoreRefreshError(")
-    expect(src).toContain(".catch(() => setOptimisticStatus(null))")
+    expect(src).toContain("setOptimisticStatus(null)")
 
     const sendGoalStart = src.indexOf("const sendGoalCommand = async")
     const sendGoalEnd = src.indexOf("const runAction = async", sendGoalStart)
@@ -155,8 +155,8 @@ describe("goal panel mission-control contracts", () => {
     const src = await goalPanelSource()
     expect(src).toContain("const resetGoalState = async")
     expect(src).toContain("resetGoalWorkspaceState")
-    expect(src).toContain('data-component="goal-terminal-reset-state"')
     expect(src).toContain("session.goal.action.resetState")
+    expect(src).toContain("session.goal.action.resetStateHint")
     expect(src).toContain("setActivity([])")
     expect(src).toContain('setChainDraft("steps", [])')
     expect(src).toContain('setChainDraft("objective", "")')
@@ -232,9 +232,19 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-runtime-detail-slot"')
     expect(src).toContain('data-component="goal-runtime-primary-actions"')
     expect(src).toContain('data-component="goal-runtime-support-actions"')
+    expect(src).toContain('class="grid min-w-0 gap-1.5"')
+    expect(src).toContain('grid-cols-[repeat(auto-fit,minmax(96px,1fr))]')
+    expect(src).toContain('grid-cols-[repeat(auto-fit,minmax(88px,1fr))]')
+    expect(src).toContain('class="h-7 w-full min-w-0 px-2 text-11-medium"')
+    expect(src).toContain('class="grid min-h-9 min-w-0 grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 rounded-md border px-2 py-1.5"')
+    expect(src).toContain('class="min-w-0 [grid-column:1/-1]"')
+    expect(src).toContain('class="h-8 w-full min-w-0 px-2 text-11-medium"')
     expect(src).toMatch(/const runtimeDetailState = createMemo[\s\S]*confirmingClear\(\)[\s\S]*steerOpen\(\)[\s\S]*handoffOpen\(\)/)
     expect(src).toMatch(/const openRuntimePanel = [\s\S]*setConfirmingClear\(panel === "stop"\)[\s\S]*setSteerOpen\(panel === "steer"\)[\s\S]*setHandoffOpen\(panel === "handoff"\)/)
     expect(src).toContain('onClick={() => openRuntimePanel("stop")}')
+    expect(src).not.toContain("sm:grid-cols-[minmax(0,1fr)_auto]")
+    expect(src).not.toContain("grid-cols-3 gap-1 sm:flex sm:justify-end")
+    expect(src).not.toContain('class="min-w-44 flex-1"')
     expect(src).not.toContain("<Show when={liveGoal() && confirmingClear()}>")
     expect(src).not.toContain("<Show when={liveGoal() && steerOpen()}>")
     expect(src).not.toContain("<Show when={liveGoal() && handoffOpen()}>")
@@ -366,7 +376,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.chainBuilder.objective")
     expect(src).toContain("session.goal.chainBuilder.objectivePlaceholder")
     expect(src).toContain('onInput={(event) => setChainDraft("objective", event.currentTarget.value)}')
-    expect(src).toContain('label="Check"')
+    expect(src).toContain("session.goal.chainBuilder.check")
     expect(src).toContain('data-component="goal-chain-draft-autosave"')
     expect(src).toContain("session.goal.chainBuilder.autosave")
     expect(src).not.toContain('label="Save"')
@@ -431,12 +441,14 @@ describe("goal panel mission-control contracts", () => {
 
     expect(row).toContain('data-component="goal-chain-step-number"')
     expect(row).not.toContain('border-l border-violet-400/18')
-    expect(row).toContain('data-component="goal-chain-step-runtime"')
-    expect(row).toContain("stepRuntimeModelLabel(step)")
-    expect(row).toContain("stepRuntimeSkillLabel(step)")
+    expect(row).toContain('title={stepRuntimeTitle(step)}')
+    expect(src).toContain("const stepRuntimeModelLabel = (step: GoalChainDraftStep)")
+    expect(src).toContain("const stepRuntimeSkillLabel = (step: GoalChainDraftStep) =>")
     expect(row).toContain('title={stepRuntimeTitle(step)}')
     expect(row).toContain('title={language.t("session.goal.template.editRunStep")}')
     expect(row).toContain("onClick={() => editChainStepDraft(step)}")
+    expect(row).toContain('class={inlineCommandButtonClass("edit")}')
+    expect(row).not.toContain('title={language.t("session.goal.template.editRunStep")}\r\n                                    class={inlineCommandButtonClass("move")}')
     expect(row).not.toContain("chainStepRunLabel")
     expect(src).toContain("const [editingChainStepID, setEditingChainStepID]")
     expect(src).toContain("const updateEditingChainStep = () =>")
@@ -509,17 +521,20 @@ describe("goal panel mission-control contracts", () => {
     const src = await goalPanelSource()
     expect(src).toContain('data-component="goal-chain-run-rail"')
     expect(src).toContain('data-density="compact-chain-row"')
-    expect(src).toContain("grid-cols-[30px_40px_minmax(220px,1fr)_96px_154px_194px]")
+    expect(src).toContain("grid-cols-[28px_36px_minmax(132px,1fr)_72px_136px_104px]")
+    expect(src).not.toContain("min-w-[640px]")
+    expect(src).not.toContain("grid-cols-[30px_40px_minmax(180px,1fr)_96px_154px_auto]")
     expect(src).toContain('data-component="goal-chain-step-number"')
     expect(src).toContain('data-component="goal-chain-step-icon"')
     expect(src).toContain('data-component="goal-chain-step-budget"')
-    expect(src).toContain('data-component="goal-chain-step-runtime"')
+    expect(src).toContain("grid-cols-[34px_30px]")
+    expect(src).toContain("grid-cols-[24px_34px]")
+    expect(src).toContain("title={stepRuntimeTitle(step)}")
     expect(src).toContain('data-component="goal-chain-step-actions"')
     expect(src).toContain("chainStepRowStyle")
     expect(src).toContain("chainStepBadgeStyle")
     expect(src).toContain("chainStepSoftStyle")
     expect(src).toContain("flex min-w-0 flex-col gap-1")
-    expect(src).not.toContain("min-w-[560px]")
     expect(src).toContain('data-component="goal-chain-empty-state"')
     expect(src).toContain('data-component="goal-chain-execution-note"')
     expect(src).toContain('data-component="goal-chain-summary-line"')
@@ -598,22 +613,25 @@ describe("goal panel mission-control contracts", () => {
   test("active goals with stale activity render a waiting state instead of claiming active work", async () => {
     const src = await goalPanelSource()
     expect(src).toContain("const latestActivityAt = createMemo")
-    expect(src).toContain("isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), Date.now())")
-    expect(src).toContain("goalIdleMinutes(latestActivityAt(), Date.now())")
+    expect(src).toContain("isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), now())")
+    expect(src).toContain("goalIdleMinutes(latestActivityAt(), now())")
     expect(src).toContain('if (status === "active") return liveRunStalled() ? "stalled" : "running"')
     expect(src).toContain('liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton")')
   })
 
   test("chain builder empty state names the real execution boundary instead of implying drag and drop", async () => {
     const src = await goalPanelSource()
+    const en = await sourceText("../../i18n/en.ts")
     const emptyStart = src.indexOf('data-component="goal-chain-empty-state"')
     const emptyEnd = src.indexOf("<For each={visibleChainSteps()}>", emptyStart)
     expect(emptyStart).toBeGreaterThan(-1)
     expect(emptyEnd).toBeGreaterThan(emptyStart)
     const emptySrc = src.slice(emptyStart, emptyEnd)
-    expect(emptySrc).toContain("No chain items are required")
-    expect(emptySrc).toContain("Start Goal runs the goal above")
-    expect(emptySrc).toContain("Chain item edits stay local")
+    expect(emptySrc).toContain("session.goal.chainBuilder.emptyChainDesc")
+    expect(emptySrc).toContain("session.goal.chainBuilder.emptyChainNote")
+    expect(en).toContain("No chain items are required")
+    expect(en).toContain("Start Goal runs the goal above")
+    expect(en).toContain("Chain item edits stay local")
     expect(emptySrc).not.toContain("border-dashed")
     expect(emptySrc).not.toContain("Plan</span>")
     expect(emptySrc).not.toContain("Build</span>")
@@ -637,19 +655,19 @@ describe("goal panel mission-control contracts", () => {
     // GoalConsoleSection accent is single-sourced as inline style: the inline
     // border-color rgba is the source of truth (the parallel Tailwind border-*
     // accent classes were dead — overridden by inline — and were removed).
-    expect(src).toContain('"border-color": "rgba(139, 92, 246, 0.20)"')
-    expect(src).toContain('"border-color": "rgba(52, 211, 153, 0.34)"')
+    expect(src).toContain('"border-color": "rgba(120, 100, 200, 0.28)"')
+    expect(src).toContain('"border-color": "rgba(148, 163, 184, 0.18)"')
     expect(src).toContain('"border-color": "rgba(148, 163, 184, 0.24)"')
     expect(src).toContain("markerStyle")
     // The accent object no longer pairs a Tailwind border class or bg marker
     // class with its inline style, so the two mechanisms can't drift.
     expect(src).not.toContain('marker: "bg-')
     expect(src).toContain('title={language.t("session.goal.chainBuilder.shortTitle")}')
-    expect(src).toContain("text-[13px] font-black uppercase leading-4 tracking-[0.12em] text-white")
+    expect(src).toContain("text-[13px] font-black uppercase leading-4 tracking-[0.12em] text-white/88")
     expect(src).toContain("session.goal.chainBuilder.sectionHint")
     expect(src).toContain("session.goal.template.libraryShortTitle")
     expect(src).toContain("session.goal.template.editorShortTitle")
-    expect(src).toContain('"border-bottom-color": "rgba(167, 139, 250, 0.10)"')
+    expect(src).toContain('"box-shadow": "inset 3px 0 0 rgba(167, 139, 250, 0.48)')
     expect(src).toContain('"border-color": "rgba(167, 139, 250, 0.10)"')
     expect(src).not.toContain("border-violet-500/45")
     expect(src).not.toContain('title="Action Library"')
@@ -673,12 +691,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-terminal-result-banner"')
     expect(src).toContain('data-component="goal-terminal-outcome-badge"')
     expect(src).toContain('role="status"')
-    expect(src).toContain("Most recent completed run")
-    expect(src).toContain('data-component="goal-terminal-start-again"')
-    expect(src).toContain("session.goal.terminal.startAgainHint")
+    expect(src).toContain("session.goal.lastResult")
+    expect(src).toContain("session.goal.action.resetState")
     expect(src).toContain("cursor-default")
     expect(src).toContain("select-none")
-    expect(src).toContain("hover:border-amber-200/45")
+    expect(src).toContain("hover:bg-background-base/40")
     expect(src).toContain("border-amber-400/35")
     expect(src).toContain("bg-amber-400/8")
     expect(src).toContain("grid-cols-[auto_minmax(0,1fr)_auto]")
@@ -742,10 +759,14 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("numericHighlightClass")
     expect(src).toContain("numericHighlightStyle")
     expect(src).toContain("goal-number-highlight")
-    expect(src).toContain("inline-flex items-center justify-center rounded px-2")
+    expect(src).toContain("inline-flex min-w-0 items-center justify-center truncate rounded border px-2")
     expect(src).toContain('"background-color": "rgba(59, 130, 246, 0.14)"')
+    expect(src).toContain('"border-color": "rgba(96, 165, 250, 0.34)"')
     expect(src).toContain('"background-color": "rgba(239, 68, 68, 0.12)"')
+    expect(src).toContain('"border-color": "rgba(248, 113, 113, 0.38)"')
     expect(src).toContain('"background-color": "rgba(16, 185, 129, 0.12)"')
+    expect(src).toContain("goal-inline-command-remove w-6 border-orange-300/48")
+    expect(src).toContain('"background-color": "rgba(249, 115, 22, 0.16)"')
     expect(src).toContain("function actionEditorPanelStyle")
     expect(src).toContain("rgba(148, 163, 184, 0.24)")
     expect(src).toContain('"background-color": "rgba(239, 68, 68, 0.12)"')
@@ -756,13 +777,13 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("items-baseline gap-2")
     expect(src).toContain("border-l border-white/16 pl-2")
     expect(src).toContain("linear-gradient(90deg")
-    expect(src).toContain("Most recent completed run")
+    expect(src).toContain("session.goal.lastResult")
     expect(src).toContain('data-component="goal-chain-target-field"')
     expect(src).toContain('data-component="goal-standalone-command-field"')
     expect(src).toContain("primaryRunDisabled")
     expect(src).toContain("startGoalOrChain")
     expect(src).toContain("session.goal.chainBuilder.planChainHint")
-    expect(src).toContain("Progress, controls, and step status stay in this workspace.")
+    expect(src).toContain("session.goal.chainBuilder.runningSubtitle")
     expect(src).toContain('data-component="goal-running-deck-header"')
     expect(src).toContain('data-component="goal-running-execution-contract"')
     expect(src).toContain('data-component="goal-running-clock"')
@@ -774,7 +795,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-runtime-primary-actions"')
     expect(src).toContain('data-component="goal-runtime-support-actions"')
     expect(src).toContain("runtimeDetailState")
-    expect(src).toContain("flex h-9 min-w-0 items-center justify-between")
+    expect(src).toContain("grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_auto]")
     expect(src).toContain('data-component="goal-running-inline-panel"')
     expect(src).toContain("runningInlinePanelStyle")
     expect(src).toContain('role="progressbar"')
@@ -782,12 +803,12 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("text-[38px]")
     expect(src).not.toContain("ticks used")
     expect(src).not.toContain("current item")
-    expect(src).toContain('label="Check"')
+    expect(src).toContain("session.goal.chainBuilder.check")
     expect(src).toContain('data-component="goal-chain-draft-autosave"')
     expect(src).not.toContain('label="Save"')
     expect(src).toContain("session.goal.template.librarySubtitle")
     expect(src).toContain("session.goal.template.editorSubtitle")
-    expect(src).toContain("Plus adds to Run Order. Edit opens the editor.")
+    expect(src).toContain("session.goal.template.librarySubtitle")
     expect(src).not.toContain("Always shows the outcome of the most recent run.")
     expect(src).not.toContain("Manage reusable actions and selected details.")
     expect(src).not.toContain("Shows the ordered list of actions that will run.")
@@ -983,6 +1004,18 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("runnableChainSteps().length === 0")
   })
 
+  test("visible chain list preserves an explicitly emptied draft instead of reviving runtime steps", async () => {
+    const src = await goalPanelSource()
+    const visibleStart = src.indexOf("const visibleChainSteps = createMemo")
+    const visibleEnd = src.indexOf("const visibleStepCount = createMemo", visibleStart)
+    expect(visibleStart).toBeGreaterThan(-1)
+    expect(visibleEnd).toBeGreaterThan(visibleStart)
+    const visible = src.slice(visibleStart, visibleEnd)
+
+    expect(visible).toContain("selectRunnableChainSteps(chainDraft.steps, snapshot, chainDraft.source)")
+    expect(visible).not.toContain("if (snapshot.length > 0) return snapshot")
+  })
+
   test("start chain admits exactly one run after deterministic chain state write", async () => {
     const src = await goalPanelSource()
     const startChainStart = src.indexOf("const startGoalChain = async () => {")
@@ -1147,11 +1180,13 @@ describe("goal panel mission-control contracts", () => {
     // The X-button handler MUST pass an explicit `source` argument.
     // (Substring match: the call is formatted across multiple lines in the
     //  source so we look for the key fragments rather than the whole expression.)
-    expect(src).toMatch(/removeVisibleStep\(\s*step\s*,\s*i\(\)\s*,\s*liveGoal\(\)\s*\?\s*"live"\s*:\s*"draft"/)
+    expect(src).toMatch(/removeVisibleStep\(\s*step\s*,\s*i\(\)\s*,\s*visibleChainStepSource\(\)/)
+    expect(src).toContain("chainStepVisibleSourceForState")
+    expect(src).not.toContain('chain() && !chainDraft.steps.length) ? "live" : "draft"')
     // The old proxy-style guard should NOT be the primary dispatch.
     expect(src).not.toContain("if (liveGoal()) return void removeLiveChainStep(index)")
     // aria-label and disabled remain in place for accessibility.
-    expect(src).toContain('aria-label={liveGoal() ? "Remove pending step" : "Remove"}')
+    expect(src).toContain('aria-label={language.t(liveGoal() ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}')
     expect(src).toContain("disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}")
   })
 
@@ -1220,6 +1255,7 @@ describe("goal panel mission-control contracts", () => {
 
   test("recent-run history labels are routed through i18n", async () => {
     const src = await goalPanelSource()
+    const en = await sourceText("../../i18n/en.ts")
     for (const key of [
       "session.goal.history.archivedRuns",
       "session.goal.history.details",
@@ -1234,7 +1270,7 @@ describe("goal panel mission-control contracts", () => {
       "session.goal.history.notMet",
       "session.goal.history.latestReason",
     ]) {
-      expect(src).toContain(key)
+      expect(src.includes(key) || en.includes(`"${key}"`)).toBe(true)
     }
 
     for (const hardcoded of [
@@ -2194,7 +2230,44 @@ describe("stopGoalRun", () => {
         arguments: { command: "clear" },
       },
     })
-    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1" })
+    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1", directory: "C:\\repo\\project" })
+  })
+
+  test("aborts subagent sessions before aborting the parent", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const childQueries: Array<{ sessionID: string; directory?: string }> = []
+    const children = mock(async (args: { sessionID: string; directory?: string }) => {
+      childQueries.push(args)
+      if (args.sessionID === "session-1") return { data: [{ id: "child-1" }, { id: "child-2" }] }
+      if (args.sessionID === "child-1") return { data: [{ id: "grandchild-1" }] }
+      return { data: [] }
+    })
+    const aborted: Array<{ sessionID: string; directory?: string }> = []
+    const abort = mock(async (args: { sessionID: string; directory?: string }) => {
+      aborted.push(args)
+    })
+
+    const result = await stopGoalRun(
+      {
+        client: { post },
+        session: { abort, children },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(childQueries).toEqual([
+      { sessionID: "session-1", directory: "C:\\repo\\project" },
+      { sessionID: "child-1", directory: "C:\\repo\\project" },
+      { sessionID: "child-2", directory: "C:\\repo\\project" },
+      { sessionID: "grandchild-1", directory: "C:\\repo\\project" },
+    ])
+    expect(aborted).toEqual([
+      { sessionID: "grandchild-1", directory: "C:\\repo\\project" },
+      { sessionID: "child-2", directory: "C:\\repo\\project" },
+      { sessionID: "child-1", directory: "C:\\repo\\project" },
+      { sessionID: "session-1", directory: "C:\\repo\\project" },
+    ])
   })
 
   test("does not abort when the session is already idle", async () => {
@@ -2254,7 +2327,7 @@ describe("pauseGoalRun", () => {
         arguments: { command: "pause" },
       },
     })
-    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1" })
+    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1", directory: "C:\\repo\\project" })
   })
 
   test("does not abort when the session is already idle (plain soft pause)", async () => {

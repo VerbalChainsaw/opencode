@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { chainStepVisibleAction } from "./goal-panel-pure";
+import { chainStepVisibleAction, chainStepVisibleSourceForState } from "./goal-panel-pure";
 
 describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
   test("1. draft row always edits the local draft, never the live chain", () => {
@@ -92,6 +92,19 @@ describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
       });
       expect(action).toEqual({ kind: "remove-live-pending", index: 0 });
     }
+  });
+
+  test("2d. terminal achieved rows with a matching chain snapshot still route as live rows", () => {
+    expect(chainStepVisibleSourceForState({
+      hasLiveGoal: false,
+      hasTerminalGoal: true,
+      hasChainSnapshot: true,
+    })).toBe("live");
+    expect(chainStepVisibleSourceForState({
+      hasLiveGoal: false,
+      hasTerminalGoal: true,
+      hasChainSnapshot: false,
+    })).toBe("draft");
   });
 
   test("3. terminal-history row never touches the live chain file", () => {

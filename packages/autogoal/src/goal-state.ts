@@ -990,7 +990,7 @@ export function transitionGoal(directory: string, action: TransitionAction, now:
     }
 
     if (action === "clear") {
-      if (state.status === "cleared" || state.status === "achieved") {
+      if (state.status === "cleared" || (state.status === "achieved" && !state.metadata.chainId)) {
         return { ok: false, error: "No active goal to clear.", reason: "no-goal" };
       }
       state.status = "cleared";

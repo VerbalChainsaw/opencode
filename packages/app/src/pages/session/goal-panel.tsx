@@ -60,6 +60,7 @@ import {
   chainMatchesGoal,
   chainStartPayload,
   chainStepFromTemplate,
+  chainStepVisibleSourceForState,
   resolveStepConditionWithObjective,
   cleanText,
   completionRuleTranslationKey,
@@ -500,15 +501,23 @@ function ActionButton(props: {
 }
 
 function goalCommandButtonClass(_variant: "primary" | "secondary" | "ghost", _tone: "default" | "success" | "danger") {
-  return "inline-flex items-center justify-center rounded px-2 py-1 text-11-medium font-semibold transition disabled:cursor-not-allowed disabled:opacity-30"
+  return "inline-flex min-w-0 items-center justify-center truncate rounded border px-2 py-1 text-11-medium font-semibold transition disabled:cursor-not-allowed disabled:opacity-30"
 }
 
 function goalCommandButtonStyle(variant: "primary" | "secondary" | "ghost", tone: "default" | "success" | "danger") {
-  if (tone === "danger") return { "background-color": "rgba(239, 68, 68, 0.12)", color: "rgb(252, 165, 165)" }
-  if (tone === "success") return { "background-color": "rgba(16, 185, 129, 0.12)", color: "rgb(167, 243, 208)" }
-  if (variant === "primary") return { "background-color": "rgba(59, 130, 246, 0.14)", color: "rgb(191, 219, 254)" }
-  if (variant === "ghost") return { color: "rgb(161, 161, 170)" }
-  return { "background-color": "rgba(14, 165, 233, 0.10)", color: "rgb(186, 230, 253)" }
+  if (tone === "danger") {
+    return { "background-color": "rgba(239, 68, 68, 0.12)", "border-color": "rgba(248, 113, 113, 0.38)", color: "rgb(252, 165, 165)" }
+  }
+  if (tone === "success") {
+    return { "background-color": "rgba(16, 185, 129, 0.12)", "border-color": "rgba(52, 211, 153, 0.34)", color: "rgb(167, 243, 208)" }
+  }
+  if (variant === "primary") {
+    return { "background-color": "rgba(59, 130, 246, 0.14)", "border-color": "rgba(96, 165, 250, 0.34)", color: "rgb(191, 219, 254)" }
+  }
+  if (variant === "ghost") {
+    return { "background-color": "rgba(148, 163, 184, 0.06)", "border-color": "rgba(148, 163, 184, 0.16)", color: "rgb(161, 161, 170)" }
+  }
+  return { "background-color": "rgba(14, 165, 233, 0.10)", "border-color": "rgba(125, 211, 252, 0.24)", color: "rgb(186, 230, 253)" }
 }
 
 function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
@@ -518,7 +527,7 @@ function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
     return `${base} goal-inline-command-add w-6 border-emerald-300/32 bg-emerald-500/10 text-emerald-100 hover:border-emerald-200/58 hover:bg-emerald-500/18 focus-visible:ring-emerald-200/60`
   }
   if (tone === "remove") {
-    return `${base} goal-inline-command-remove border-orange-300/75 bg-orange-500/55 text-white shadow-[0_6px_14px_rgba(249,115,22,0.18)] hover:bg-orange-400 hover:ring-orange-300/45 focus-visible:ring-orange-300/65`
+    return `${base} goal-inline-command-remove w-6 border-orange-300/48 bg-orange-500/14 text-orange-100 hover:border-orange-200/72 hover:bg-orange-500/22 focus-visible:ring-orange-300/58`
   }
   if (tone === "move") {
     return `${base} goal-inline-command-move w-[22px] border-border-base bg-background-base text-text-weak hover:border-border-strong hover:bg-white/[0.06] hover:text-text-base focus-visible:ring-border-strong`
@@ -536,10 +545,9 @@ function inlineCommandButtonStyle(tone: "add" | "edit" | "move" | "remove") {
   }
   if (tone === "remove") {
     return {
-      "background-color": "rgba(249, 115, 22, 0.58)",
-      "border-color": "rgba(253, 186, 116, 0.84)",
-      color: "rgb(255, 255, 255)",
-      "box-shadow": "0 6px 14px rgba(249, 115, 22, 0.18)",
+      "background-color": "rgba(249, 115, 22, 0.16)",
+      "border-color": "rgba(253, 186, 116, 0.50)",
+      color: "rgb(255, 237, 213)",
     } satisfies JSX.CSSProperties
   }
   if (tone === "edit") {
@@ -1815,7 +1823,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       abortActiveTurn: sync.data.session_working(sessionID),
     })
     if (result.ok) {
-      setControlError("warning" in result ? result.warning : null)
+      setControlError("warning" in result && typeof result.warning === "string" ? result.warning : null)
     } else {
       setControlError(result.error)
     }
@@ -1837,7 +1845,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       abortActiveTurn: sync.data.session_working(sessionID),
     })
     if (result.ok) {
-      setControlError("warning" in result ? result.warning : null)
+      setControlError("warning" in result && typeof result.warning === "string" ? result.warning : null)
     } else {
       setControlError(result.error)
     }
@@ -3053,7 +3061,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const runningChain = chain()
     if (runningChain) {
       const snapshot = chainSnapshotSteps()
-      if (snapshot.length > 0) return snapshot
+      if (live && snapshot.length > 0) return snapshot
+      const selected = selectRunnableChainSteps(chainDraft.steps, snapshot, chainDraft.source)
+      if (selected.length > 0 || chainDraft.source === "draft") return selected
     }
     if (!live && chainDraft.steps.length > 0) return chainDraft.steps
     // A single live goal has no chain file. Render the one running goal as a
@@ -3085,6 +3095,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return chainDraft.steps
   })
   const visibleStepCount = createMemo(() => visibleChainSteps().length)
+  const visibleChainStepSource = createMemo<ChainStepVisibleSource>(() =>
+    chainStepVisibleSourceForState({
+      hasLiveGoal: !!liveGoal(),
+      hasTerminalGoal: !!terminalGoal(),
+      hasChainSnapshot: chainSnapshotSteps().length > 0,
+    }),
+  )
   const runningStepIndex = createMemo(() => {
     if (!liveGoal()) return -1
     const runningChain = chain()
@@ -4447,8 +4464,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             "border-color": "rgba(148, 163, 184, 0.14)",
                           }}
                         >
-                          <div class="grid min-w-0 gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto]">
-                            <div data-component="goal-runtime-primary-actions" class="grid min-w-0 grid-cols-2 gap-1">
+                          <div class="grid min-w-0 gap-1.5">
+                            <div data-component="goal-runtime-primary-actions" class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1">
                               <Show when={pauseResume()}>
                                 {(action) => (
                                   <ActionButton
@@ -4460,7 +4477,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     variant="primary"
                                     busy={busy() === "pause" || busy() === "resume"}
                                     disabled={busy() !== null || !props.sessionID}
-                                    class="h-7 px-2 text-11-medium"
+                                    class="h-7 w-full min-w-0 px-2 text-11-medium"
                                     onClick={() => {
                                       closeRuntimePanel()
                                       const next = action()
@@ -4485,19 +4502,19 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   variant={confirmingClear() ? "primary" : "secondary"}
                                   tone="danger"
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 px-2 text-11-medium"
+                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
                                   onClick={() => openRuntimePanel("stop")}
                                 />
                               </Show>
                             </div>
-                            <div data-component="goal-runtime-support-actions" class="grid min-w-0 grid-cols-3 gap-1 sm:flex sm:justify-end">
+                            <div data-component="goal-runtime-support-actions" class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(88px,1fr))] gap-1">
                               <Show when={runtimeCanRestart()}>
                                 <ActionButton
                                   label={language.t("session.goal.action.restart")}
                                   variant="secondary"
                                   busy={busy() === "restart"}
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 px-2 text-11-medium"
+                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
                                   onClick={() => {
                                     closeRuntimePanel()
                                     void runAction("restart")
@@ -4509,7 +4526,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   label={language.t("session.goal.action.steer")}
                                   variant={steerOpen() ? "primary" : "secondary"}
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 px-2 text-11-medium"
+                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
                                   title={language.t("session.goal.steer.hint")}
                                   onClick={() => (steerOpen() ? closeRuntimePanel() : openRuntimePanel("steer"))}
                                 />
@@ -4520,7 +4537,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   variant={handoffOpen() ? "primary" : "secondary"}
                                   busy={busy() === "handoff"}
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 px-2 text-11-medium"
+                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
                                   title={language.t("session.goal.handoff.hint")}
                                   onClick={() => (handoffOpen() ? closeRuntimePanel() : openRuntimePanel("handoff"))}
                                 />
@@ -4541,27 +4558,27 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 <div
                                   data-component="goal-running-inline-panel"
                                   data-state="stop-confirm"
-                                  class="flex min-h-9 flex-wrap items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                                  class="grid min-h-9 min-w-0 gap-2 rounded-md border px-2 py-1.5"
                                   style={runningInlinePanelStyle("stop")}
                                 >
-                                  <div class="text-11-regular font-semibold text-orange-50/82">
+                                  <div class="min-w-0 text-11-regular font-semibold text-orange-50/82">
                                     {language.t("session.goal.action.confirmStop")}
                                   </div>
-                                  <div class="flex items-center gap-1">
+                                  <div class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(92px,1fr))] gap-1">
                                     <ActionButton
                                       label={language.t("session.goal.action.confirmStop")}
                                       variant="primary"
                                       tone="danger"
                                       busy={busy() === "clear"}
                                       disabled={busy() !== null || !props.sessionID}
-                                      class="h-7 shrink-0 px-2.5 text-11-medium"
+                                      class="h-7 w-full min-w-0 px-2 text-11-medium"
                                       onClick={() => void stopGoal()}
                                     />
                                     <ActionButton
                                       label={language.t("session.goal.action.cancel")}
                                       variant="ghost"
                                       disabled={busy() !== null}
-                                      class="h-7 shrink-0 px-2.5 text-11-medium"
+                                      class="h-7 w-full min-w-0 px-2 text-11-medium"
                                       onClick={closeRuntimePanel}
                                     />
                                   </div>
@@ -4571,7 +4588,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 <div
                                   data-component="goal-running-inline-panel"
                                   data-state="steer"
-                                  class="flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5"
+                                  class="grid min-h-9 min-w-0 grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 rounded-md border px-2 py-1.5"
                                   style={runningInlinePanelStyle("steer")}
                                 >
                                   <TextField
@@ -4582,21 +4599,21 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     hideLabel
                                     placeholder={language.t("session.goal.steer.placeholder")}
                                     disabled={busy() !== null}
-                                    class="min-w-44 flex-1"
+                                    class="min-w-0 [grid-column:1/-1]"
                                   />
                                   <ActionButton
                                     label={language.t("session.goal.steer.send")}
                                     variant="primary"
                                     busy={busy() === "steer"}
                                     disabled={busy() !== null || !props.sessionID || !steerText().trim()}
-                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
                                     onClick={() => void steerGoal()}
                                   />
                                   <ActionButton
                                     label={language.t("session.goal.action.cancel")}
                                     variant="ghost"
                                     disabled={busy() !== null}
-                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
                                     onClick={() => {
                                       closeRuntimePanel()
                                       setSteerText("")
@@ -4608,7 +4625,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 <div
                                   data-component="goal-running-inline-panel"
                                   data-state="handoff"
-                                  class="flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5"
+                                  class="grid min-h-9 min-w-0 grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 rounded-md border px-2 py-1.5"
                                   style={runningInlinePanelStyle("handoff")}
                                 >
                                   <TextField
@@ -4619,21 +4636,21 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     hideLabel
                                     placeholder={language.t("session.goal.handoff.placeholder")}
                                     disabled={busy() !== null}
-                                    class="min-w-44 flex-1"
+                                    class="min-w-0 [grid-column:1/-1]"
                                   />
                                   <ActionButton
                                     label={language.t("session.goal.handoff.send")}
                                     variant="primary"
                                     busy={busy() === "handoff"}
                                     disabled={busy() !== null || !props.sessionID}
-                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
                                     onClick={() => void handoffGoal()}
                                   />
                                   <ActionButton
                                     label={language.t("session.goal.action.cancel")}
                                     variant="ghost"
                                     disabled={busy() !== null}
-                                    class="h-8 shrink-0 px-2.5 text-11-medium"
+                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
                                     onClick={() => {
                                       closeRuntimePanel()
                                       setHandoffText("")
@@ -4642,11 +4659,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 </div>
                               </Match>
                               <Match when={true}>
-                                <div class="flex min-h-9 items-center justify-between gap-2 px-1">
-                                  <div class="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-100/78">
+                                <div class="grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-1">
+                                  <div class="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-100/78">
                                     {language.t("session.goal.runControls")}
                                   </div>
-                                  <div class="flex items-center gap-2">
+                                  <div class="flex min-w-0 items-center justify-end gap-2">
                                     <button
                                       type="button"
                                       class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200/60 transition hover:bg-cyan-500/12 hover:text-cyan-100"
@@ -4773,7 +4790,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-density="compact-chain-row"
                                 data-run-state={stepRunState(i())}
                                 data-editing={editingChainStepID() === step.id ? "true" : "false"}
-                                class={`group grid min-w-[640px] grid-cols-[30px_40px_minmax(180px,1fr)_96px_154px_auto] items-center gap-2 rounded-lg border px-2.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
+                                class={`group grid min-w-[540px] grid-cols-[28px_36px_minmax(132px,1fr)_72px_136px_104px] items-center gap-1.5 rounded-lg border px-2 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
                                 classList={{
                                   "ring-2 ring-sky-300/70 shadow-[0_0_24px_rgba(56,189,248,0.22)] brightness-110":
                                     editingChainStepID() === step.id,
@@ -4840,7 +4857,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 </span>
                                 <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-2 gap-1">
                                   <label
-                                    class="grid h-6 grid-cols-[42px_32px] items-center gap-1"
+                                    class="grid h-6 grid-cols-[34px_30px] items-center gap-1"
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
                                     <input
@@ -4856,7 +4873,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     />
                                   </label>
                                   <label
-                                    class="grid h-6 grid-cols-[30px_40px] items-center gap-1"
+                                    class="grid h-6 grid-cols-[24px_34px] items-center gap-1"
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
                                     <input
@@ -4877,7 +4894,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     type="button"
                                     aria-label={language.t("session.goal.chainBuilder.stepEditAria", { label: step.label })}
                                     title={language.t("session.goal.template.editRunStep")}
-                                    class={inlineCommandButtonClass("move")}
+                                    class={inlineCommandButtonClass("edit")}
                                     style={inlineCommandButtonStyle("edit")}
                                     disabled={busy() !== null || !!liveGoal()}
                                     onClick={() => editChainStepDraft(step)}
@@ -4921,7 +4938,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       removeVisibleStep(
                                         step,
                                         i(),
-                                        liveGoal() || (chain() && !chainDraft.steps.length) ? "live" : "draft",
+                                        visibleChainStepSource(),
                                       )
                                     }
                                   >

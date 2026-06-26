@@ -4,7 +4,7 @@
 // own tests (the GUI hit a 400 because `chain remove` and `fresh` regressed here).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -91,6 +91,27 @@ test("bridge: chain remove refuses the currently-running step", async () => {
     const payload = JSON.stringify({ steps: [{ condition: "Plan" }, { condition: "Build" }] });
     await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
     await assert.rejects(() => runGoalControlStateFile(dir, "chain remove 1", Date.now()), /currently running/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bridge: terminal chain remove deletes the final achieved step and chain file", async () => {
+  const dir = freshDir();
+  try {
+    const payload = JSON.stringify({ steps: [{ condition: "Plan" }] });
+    await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
+
+    const statePath = join(dir, ".opencode", ".goal-state.json");
+    const state = JSON.parse(readFileSync(statePath, "utf-8"));
+    state.status = "achieved";
+    state.completedAt = Date.now();
+    writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+
+    const removed = await runGoalControlStateFile(dir, "chain remove 1", Date.now());
+    assert.match(removed.output, /removed/i);
+    assert.equal(readGoalChain(dir), null, "terminal removal of the last row should remove the chain");
+    assert.equal(existsSync(join(dir, ".opencode", ".goal-chain.json")), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
