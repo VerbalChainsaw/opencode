@@ -17,17 +17,8 @@ on credentials.
 
 | Suite | Result | Source |
 |-------|--------|--------|
-| **autogoal** | **1338/1338** | `npm test` in `packages/autogoal/` |
-| **app** | **558 / 0 / 1430** | `bun test --preload ./happydom.ts` per `goal-panel-full-test.log` |
-
-The app test count comes from a logged bun run, not a fresh execution
-(bun is unavailable in this WSL session). To re-verify:
-
-```bash
-cd packages/app
-bun test --preload ./happydom.ts
-# Expected: ~558 pass, 0 fail, ~1430 expect() calls
-```
+| **autogoal** | **1338/1338** | `npm test` in `packages/autogoal/` (run from this session) |
+| **app** | **PENDING USER VERIFICATION** | The cross-validation audit flagged that the only available `bun test` log is 10 days stale; the user must run `bun test` on a machine with bun to confirm. See `.hermes/audit-reports/g1-app-test-failures-status-2026-06-25-revised.md` for the disposition. |
 
 The autogoal tests **were** run from this session via `node --test`
 which exercises the same node:test contract. Bun-specific tests in
@@ -35,6 +26,9 @@ the app suite (e.g. `goal-panel-pure.test.ts` with `bun:test` imports)
 **were not** re-run; their expected behavior is unchanged by the
 hardening commits (which only modified server.ts, file-lock.ts,
 goal-state.ts in autogoal).
+
+**Push to `origin/dev` is BLOCKED until the user runs `bun test`**
+in `packages/app/` and confirms the app test state.
 
 ## Test surface added in this session
 
