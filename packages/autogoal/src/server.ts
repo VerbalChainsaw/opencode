@@ -725,7 +725,8 @@ export function detectConstraintStop(state: GoalState): { exceeded: boolean; rea
   const elapsedMin = (Date.now() - state.startedAt) / 60_000;
   if (elapsedMin >= c.maxTimeMinutes)
     return { exceeded: true, reason: `Time limit reached: ${Math.round(elapsedMin)}/${c.maxTimeMinutes} minutes` };
-  // maxTokens is intentionally not enforced: the SDK exposes no per-session token count.
+  if (c.maxTokens > 0 && state.tokensUsed >= c.maxTokens)
+    return { exceeded: true, reason: `Token limit reached: ${state.tokensUsed}/${c.maxTokens} tokens` };
   return { exceeded: false, reason: "" };
 }
 
@@ -808,6 +809,19 @@ export function pickLatestAssistant(
   }
 
   return best;
+}
+
+export function sumSessionTokens(messages: unknown): number {
+  if (!Array.isArray(messages)) return 0;
+  let total = 0;
+  for (const m of messages) {
+    const tokens = (m as any)?.info?.metadata?.tokens;
+    if (!tokens || typeof tokens !== "object") continue;
+    const input = typeof tokens.input === "number" && Number.isFinite(tokens.input) ? tokens.input : 0;
+    const output = typeof tokens.output === "number" && Number.isFinite(tokens.output) ? tokens.output : 0;
+    total += input + output;
+  }
+  return total;
 }
 
 function currentChainStepPinnedModel(directory: string): GoalPinnedModel | null {
@@ -1007,10 +1021,12 @@ export const server: Plugin = async ({ client, directory }) => {
         const stateIsTerminal = !!bootTerminalState;
         const stateBelongsToChain =
           !!bootTerminalState && bootTerminalState.metadata?.chainId === c.value.id;
+        const stateIsOrphaned =
+          !!bootTerminalState && !bootTerminalState.metadata?.chainId;
         if (
-          c.value.current >= c.value.steps.length - 1 &&
           stateIsTerminal &&
-          stateBelongsToChain
+          (stateBelongsToChain || stateIsOrphaned) &&
+          c.value.current >= c.value.steps.length - 1
         ) {
           try {
             unlinkSync(chainPath);
@@ -1106,16 +1122,13 @@ export const server: Plugin = async ({ client, directory }) => {
   // content (the caller decides what to do with it).
   async function getLatestAssistantMeta(
     sessionId: string,
-  ): Promise<{ text: string; createdAt: number; messageId: string } | null> {
+  ): Promise<{ text: string; createdAt: number; messageId: string; sessionTokens: number } | null> {
     try {
       const res = await client.session.messages({ path: { id: sessionId } });
-      // AG-P0-02 — delegate to the pure `pickLatestAssistant` helper so
-      // the v2 timestamp contract (`info.time.created`) is enforced in
-      // one place. The legacy `info.metadata.time.created` is the
-      // fallback inside the helper. This wrapper still owns the
-      // try/catch + log path because errors here mean "could not
-      // reach the session", not "malformed message".
-      return pickLatestAssistant(res.data ?? []);
+      const data = res.data ?? [];
+      const latest = pickLatestAssistant(data);
+      if (!latest) return null;
+      return { ...latest, sessionTokens: sumSessionTokens(data) };
     } catch (err) {
       log("debug", "Could not read messages", { error: String(err) });
       return null;
@@ -1292,7 +1305,14 @@ export const server: Plugin = async ({ client, directory }) => {
   // service. sanitizeForPrompt strips those without altering the
   // visible text. (Regression test: server-webhook.test.mjs
   // "fireWebhook sanitizes lastReason".)
-  function fireWebhook(state: GoalState, previousStatus: GoalStatus | null) {
+  // v0.7.3 / scan 2026-06-25 (D-NEW-7) — `fireWebhook` returns void by
+  // design: the HTTP POST is fire-and-forget. The function does async
+  // I/O via `fetch()` internally but does not expose the Promise to
+  // callers. Callers must NOT attempt to `await fireWebhook(...)` —
+  // the result is `undefined` and the I/O is racing independently.
+  // Use `fireWebhookAsync(...)` (which awaits the fetch) if you need
+  // C4-style sequential ordering on the webhook fire.
+  function fireWebhook(state: GoalState, previousStatus: GoalStatus | null): void {
     const wh = state.metadata.webhook;
     if (!wh || !wh.on.includes(state.status)) return;
     if (!wh.allowLocal && isLocalUrl(wh.url)) {
@@ -1462,6 +1482,7 @@ export const server: Plugin = async ({ client, directory }) => {
       const snapshot = await withStateLock(directory, () => {
         const f = readGoalState(directory);
         if (!f || f.status !== "active" || f.id !== state.id) return null;
+        if (latestMeta && latestMeta.sessionTokens > 0) f.tokensUsed = latestMeta.sessionTokens;
         recordEvaluation(f, evaluation);
 
         if (evaluation.met) {
