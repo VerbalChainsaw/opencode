@@ -2488,6 +2488,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     // session, etc.), the snapshot is stale and must not leak into the runtime
     // chain or the chain builder display.
     if (!chainMatchesGoal(runningChain, s)) return []
+    // A cleared goal's chain is dead — the user explicitly killed the run.
+    // Don't render the abandoned chain as if it's still executing; let the
+    // chain pane fall through to the draft/empty state so the user can
+    // start fresh. (`achieved` is intentionally allowed so the user briefly
+    // sees the completion checkmarks before chain auto-advance replaces
+    // the state.)
+    if (s && s.status === "cleared") return []
     return runningChain.steps.map((step, index) => {
       const agent = agentNameForRuntime(step.agent)
       const skills = Array.isArray(step.skills)
@@ -2806,7 +2813,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         setReportCopied(true)
         setTimeout(() => setReportCopied(false), 2000)
       })
-      .catch(() => {})
+      .catch(ignoreRefreshError("clipboard.writeText (report)"))
   }
 
   const isCritical = (used: number, max: number): boolean => max > 0 && used / max >= 0.9
@@ -3227,7 +3234,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       setOptimisticStatus(action === "pause" ? "paused" : "active")
       void (action === "pause" ? pauseGoal() : runAction("resume"))
         .then((ok) => { if (!ok) setOptimisticStatus(null) })
-        .catch(() => setOptimisticStatus(null))
+        .catch((err) => {
+          setOptimisticStatus(null)
+          ignoreRefreshError(`pauseResume shortcut (${action})`)(err)
+        })
     }
   }
   onMount(() => document.addEventListener("keydown", handleGlobalKeyDown))
@@ -4441,7 +4451,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                         .then((ok) => {
                                           if (!ok) setOptimisticStatus(null)
                                         })
-                                        .catch(() => setOptimisticStatus(null))
+                                        .catch((err) => {
+                                          setOptimisticStatus(null)
+                                          ignoreRefreshError(`pauseResume button (${next})`)(err)
+                                        })
                                     }}
                                   />
                                 )}
@@ -4811,7 +4824,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
                                     <input
-                                      aria-label={`Turns for ${step.label}`}
+                                      aria-label={language.t("session.goal.chainBuilder.stepTurnsAria", { label: step.label })}
                                       type="number"
                                       min="1"
                                       value={String(step.maxTurns)}
@@ -4827,7 +4840,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
                                     <input
-                                      aria-label={`Minutes for ${step.label}`}
+                                      aria-label={language.t("session.goal.chainBuilder.stepMinutesAria", { label: step.label })}
                                       type="number"
                                       min="1"
                                       value={String(step.maxTimeMinutes)}
@@ -4842,7 +4855,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 <span data-component="goal-chain-step-actions" class="flex shrink-0 items-center justify-end gap-1">
                                   <button
                                     type="button"
-                                    aria-label={`Edit ${step.label}`}
+                                    aria-label={language.t("session.goal.chainBuilder.stepEditAria", { label: step.label })}
                                     title={language.t("session.goal.template.editRunStep")}
                                     class={inlineCommandButtonClass("move")}
                                     style={inlineCommandButtonStyle("edit")}
@@ -4853,7 +4866,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   </button>
                                   <button
                                     type="button"
-                                    aria-label="Move up"
+                                    aria-label={language.t("session.goal.chainBuilder.moveUp")}
+                                    title={language.t("session.goal.chainBuilder.moveUp")}
                                     class={inlineCommandButtonClass("move")}
                                     style={inlineCommandButtonStyle("move")}
                                     disabled={busy() !== null || !!liveGoal() || i() === 0}
@@ -4863,7 +4877,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   </button>
                                   <button
                                     type="button"
-                                    aria-label="Move down"
+                                    aria-label={language.t("session.goal.chainBuilder.moveDown")}
+                                    title={language.t("session.goal.chainBuilder.moveDown")}
                                     class={inlineCommandButtonClass("move")}
                                     style={inlineCommandButtonStyle("move")}
                                     disabled={busy() !== null || !!liveGoal() || i() === visibleStepCount() - 1}
@@ -4873,7 +4888,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   </button>
                                   <button
                                     type="button"
-                                    aria-label={liveGoal() ? "Remove pending step" : "Remove"}
+                                    aria-label={language.t(liveGoal() ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}
                                     class={inlineCommandButtonClass("remove")}
                                     style={inlineCommandButtonStyle("remove")}
                                     disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}
@@ -5289,9 +5304,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-component="goal-method-add"
                                 class={inlineCommandButtonClass("add")}
                                 style={inlineCommandButtonStyle("add")}
-                                disabled={busy() !== null || !t.condition}
+                                disabled={busy() !== null || !t.condition || !!liveGoal()}
                                 aria-label={language.t("session.goal.template.addToChain")}
-                                title={language.t("session.goal.template.addToChain")}
+                                title={liveGoal() ? language.t("session.goal.chainBuilder.addDisabledRunning") : language.t("session.goal.template.addToChain")}
                                 onClick={() => {
                                   selectActionForView(t)
                                   addActionToChain(t, varsForAction(t))

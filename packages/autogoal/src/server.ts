@@ -1072,30 +1072,33 @@ export const server: Plugin = async ({ client, directory }) => {
     }
   }
 
-  // Chain file: clear only if the chain is FULLY DONE (last step
-  // completed, the state is terminal, and the chain is no longer
-  // the engine's current focus). Uses `bootTerminalState` captured
-  // above (before the state file was unlinked).
+  // Chain file: clear if the chain is orphaned from any active goal.
+  // Three orphan cases all unlink:
+  //   - state belongs to this chain AND chain is at/past last step (completed)
+  //   - state belongs to this chain AND chain is mid-run (cleared mid-chain)
+  //   - state is terminal AND has no chainId (user set a single goal on top
+  //     of a previous-session chain — chain is dead, file lingers forever
+  //     otherwise)
+  // Only an active or paused goal preserves the chain across boots.
   try {
     const chainPath = goalChainPath(directory);
     if (existsSync(chainPath)) {
       const c = readGoalChainResult(directory);
-      if (c.kind === "ok" && c.value.steps.length > 0) {
-        const stateIsTerminal = !!bootTerminalState;
+      if (c.kind === "ok" && c.value.steps.length > 0 && bootTerminalState) {
         const stateBelongsToChain =
-          !!bootTerminalState && bootTerminalState.metadata?.chainId === c.value.id;
-        const stateIsOrphaned =
-          !!bootTerminalState && !bootTerminalState.metadata?.chainId;
-        if (
-          stateIsTerminal &&
-          (stateBelongsToChain || stateIsOrphaned) &&
-          c.value.current >= c.value.steps.length - 1
-        ) {
+          bootTerminalState.metadata?.chainId === c.value.id;
+        const stateIsOrphaned = !bootTerminalState.metadata?.chainId;
+        if (stateBelongsToChain || stateIsOrphaned) {
           try {
             unlinkSync(chainPath);
-            log("info", "boot clear: removed completed chain file", {
+            log("info", "boot clear: removed orphaned chain file", {
               current: c.value.current,
               total: c.value.steps.length,
+              reason: stateBelongsToChain
+                ? c.value.current >= c.value.steps.length - 1
+                  ? "completed"
+                  : "abandoned-mid-chain"
+                : "orphan-from-previous-session",
             });
           } catch (err) {
             log("debug", "boot clear: chain unlink failed (non-fatal)", { error: String(err) });
