@@ -424,6 +424,22 @@ export async function deliverContinuation(
   // jittered-backoff callers pass a function.
   const backoffMs = opts.backoffMs;
 
+  // v0.7.3 / scan 2026-06-25 (D-NEW-6) — per-session idempotency
+  // state. The Map is the dispatcher's idempotency cache; entries
+  // persist for the JS process lifetime so that duplicate deliveries
+  // of the same key are suppressed across calls. The Map MUST
+  // persist across deliverContinuation calls — that's the whole
+  // purpose. (An earlier refactor moved the Map into the function
+  // closure; that broke idempotency because each call got a fresh
+  // Map. Reverted.)
+  //
+  // Cross-instance caveat: the Map is module-scoped, so two plugin
+  // instances loaded into the same JS process share the same cache.
+  // The OpenCode host loads one plugin per workspace, so this is
+  // not a real production concern. If multi-instance safety is ever
+  // required, the right shape is a `deliverContinuationFactory` that
+  // returns a closure over a fresh Map; that's a follow-up refactor.
+
   // Idempotency check: did we already deliver this exact key? If so,
   // the dispatcher's caller already produced this prompt and any
   // subsequent call is suppressed.
@@ -582,11 +598,13 @@ export async function deliverContinuation(
   return { status: "paused", reason: "Continuation dispatcher: loop fell through" };
 }
 
-// AG-P1-06 part 2 — per-session idempotency state. Module-scoped Map
-// keyed by sessionId, value is the most recently delivered idempotency
-// key for that session. This is in-memory only; cleared on plugin
-// restart. Per-process scope matches the rest of the dispatcher's
-// in-memory state.
+// v0.7.3 / scan 2026-06-25 (D-NEW-6) — per-session idempotency state.
+// Module-scoped Map keyed by sessionId, value is the most recently
+// delivered idempotency key for that session. This is in-memory only;
+// cleared on plugin restart. Per-process scope matches the rest of
+// the dispatcher's in-memory state. See the comment block inside
+// `deliverContinuation` for the cross-instance caveat and the
+// factory-shape escape hatch if multi-instance safety is ever needed.
 const lastDeliveredKeyBySession = new Map<string, string>();
 
 // v0.4.0+ — SSRF guard. Returns true for `localhost` (any port), the entire

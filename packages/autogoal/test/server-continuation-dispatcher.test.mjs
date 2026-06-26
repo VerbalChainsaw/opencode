@@ -233,6 +233,57 @@ test("AG-P1-06.2.5: same idempotency key after success suppresses re-delivery", 
   assert.equal(attempts, 1, "second call must NOT re-issue the prompt");
 });
 
+test("D-NEW-6.1: idempotency is per-session (different sessionId, same key = delivered)", async () => {
+  // D-NEW-6 cross-session isolation: the Map is keyed by sessionId,
+  // so a fresh sessionId with the same idempotencyKey is treated
+  // as a brand-new delivery, not a duplicate. This is the contract
+  // that the multi-instance safety comment in server.ts relies on:
+  // per-session state is independent.
+  let attempts = 0;
+  const { client } = makeHarness({
+    prompt: async () => {
+      attempts++;
+      return { data: { id: `prompt-${attempts}` } };
+    },
+  });
+
+  // First delivery under session A.
+  const r1 = await deliverContinuation(client, {
+    sessionId: "session-A",
+    idempotencyKey: "shared-key",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+  assert.equal(r1.status, "delivered");
+
+  // Same idempotencyKey under a DIFFERENT sessionId is a fresh
+  // delivery (the dispatcher doesn't know that some other session
+  // already delivered this key).
+  const r2 = await deliverContinuation(client, {
+    sessionId: "session-B",
+    idempotencyKey: "shared-key",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+  assert.equal(r2.status, "delivered");
+  assert.equal(attempts, 2, "two distinct sessions each get their own delivery");
+
+  // Same sessionId + same key again is the duplicate-suppressed
+  // path (test 2.5). Confirm cross-session was the distinguishing
+  // factor, not the key itself.
+  const r3 = await deliverContinuation(client, {
+    sessionId: "session-B",
+    idempotencyKey: "shared-key",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+  assert.equal(r3.status, "duplicate-suppressed");
+  assert.equal(attempts, 2);
+});
+
 // ── 6. Per-session counter isolation ───────────────────────────────────────
 
 test("AG-P1-06.2.6: failure counter is per-session, not global", async () => {
