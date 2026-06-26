@@ -101,11 +101,24 @@ describe("goal panel mission-control contracts", () => {
   })
 
   test("command controls contain refresh failures after command execution", async () => {
+    // D-NEW-5 follow-up — updated the contract assertion to match
+    // the new ignoreRefreshError shape (the hardening pass changed
+    // it to take a context label for observability). The CONTRACT
+    // (refresh failures are surfaced, not silently dropped) is
+    // preserved — what changed is the OBSERVABILITY mechanism
+    // (now logged with context label via console.warn wrapped in
+    // try/catch).
     const src = await goalPanelSource()
-    expect(src).toContain("const ignoreRefreshError = (_error?: unknown) => undefined")
+    // The helper is defined somewhere in the file (shape flexible).
+    expect(src).toMatch(/ignoreRefreshError\s*[=:]/)
+    // The helper takes a context string (D-NEW-5 contract).
+    expect(src).toMatch(/ignoreRefreshError\(\"[a-zA-Z][^\"]+\"\)/)
+    // Every call site passes a context (no bare .catch(ignoreRefreshError)
+    // which would mean missing context).
+    expect(src).not.toMatch(/\.catch\(ignoreRefreshError\)/)
     expect(src).toContain("const refreshGoalSurfaces = async")
-    expect(src).toContain("await props.goal.refresh().catch(ignoreRefreshError)")
-    expect(src).toContain("void props.goal.refresh().catch(ignoreRefreshError)")
+    expect(src).toContain("await props.goal.refresh().catch(ignoreRefreshError(")
+    expect(src).toContain("void props.goal.refresh().catch(ignoreRefreshError(")
     // AG-P1-07 — refreshChain is now backed by createOrderedChainRefresh
     // (gen-counter discard pattern) and returns a Promise so callers can
     // await it. The old `() => void readChain(sdk).then(setChain).catch(...)`
@@ -113,7 +126,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("createOrderedChainRefresh")
     expect(src).not.toContain("const refreshChain = () => void readChain(sdk).then(setChain)")
     expect(src).toMatch(/const refreshChain = \(\): Promise<void>/)
-    expect(src).toContain("void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)")
+    expect(src).toContain("void readActivity(sdk).then(setActivity).catch(ignoreRefreshError(")
     expect(src).toContain(".catch(() => setOptimisticStatus(null))")
 
     const sendGoalStart = src.indexOf("const sendGoalCommand = async")
