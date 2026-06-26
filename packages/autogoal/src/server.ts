@@ -951,7 +951,21 @@ export const server: Plugin = async ({ client, directory }) => {
 
   function log(level: "debug" | "info" | "warn" | "error", message: string, extra?: any) {
     if (!CONFIG.debug && level === "debug") return;
-    client.app.log({ body: { service: "opencode-autogoal", level, message: `[goal] ${message}`, extra } }).catch(() => {});
+    // v0.7.3 / scan 2026-06-25 (D-NEW-5) — silent-catch cleanup.
+    // Pre-fix: silent .catch(() => {}); post-fix: log the error so
+    // plugin log failures are visible. Plugin log is fire-and-forget
+    // by design (don't block on the logging channel) but the
+    // swallow is no longer silent. The console.warn is wrapped in
+    // try/catch so a broken console doesn't escape as an unhandled
+    // rejection.
+    client.app.log({ body: { service: "opencode-autogoal", level, message: `[goal] ${message}`, extra } }).catch((err) => {
+      try {
+        // eslint-disable-next-line no-console
+        console.warn("[autogoal] plugin log failed:", err);
+      } catch {
+        // Console is broken; give up.
+      }
+    });
   }
 
   // v0.7.3 / audit June 2026 — clear terminal goal state on plugin boot.
@@ -1049,7 +1063,19 @@ export const server: Plugin = async ({ client, directory }) => {
   // (Electron) app it is a no-op. The conversation is the one shared surface, so
   // we ALSO write a `noReply` status line into the session.
   async function notify(sessionId: string, title: string, message: string, variant: "info" | "success" | "warning" | "error") {
-    await client.tui.showToast({ body: { title, message, variant } }).catch(() => {});
+    // v0.7.3 / scan 2026-06-25 (D-NEW-5) — silent-catch cleanup.
+    // Toast failures were previously swallowed; now logged so a
+    // broken toast UI is visible in dev tools. Console.warn is
+    // wrapped in try/catch to prevent a broken console from
+    // surfacing as an unhandled rejection.
+    await client.tui.showToast({ body: { title, message, variant } }).catch((err) => {
+      try {
+        // eslint-disable-next-line no-console
+        console.warn("[autogoal] tui.showToast failed:", err);
+      } catch {
+        // Console is broken; give up.
+      }
+    });
     await client.session
       .prompt({ path: { id: sessionId }, body: { noReply: true, parts: [{ type: "text", text: `🎯 [${title}] ${message}` }] } })
       .catch((err) => log("error", "notify (session message) failed", { error: String(err) }));
@@ -1331,12 +1357,19 @@ export const server: Plugin = async ({ client, directory }) => {
         : null,
       timestamp: Date.now(),
     };
+    // v0.7.3 / scan 2026-06-25 (D-NEW-5) — silent-catch cleanup.
+    // The webhook is fire-and-forget by design (don't block state
+    // writes on a 3rd-party HTTP POST), but failures should be
+    // visible. Log them at error level so production telemetry
+    // sees webhook misconfiguration.
     fetch(wh.url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(5000),
-    }).catch(() => { /* fire-and-forget */ });
+    }).catch((err) => {
+      log("error", "webhook delivery failed", { url: wh.url, error: String(err) });
+    });
   }
 
   function recordEvaluation(state: GoalState, evaluation: GoalEvaluation): void {

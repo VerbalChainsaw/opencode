@@ -1628,7 +1628,29 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   onCleanup(() => clearTimeout(errorDismissTimer))
 
-  const ignoreRefreshError = (_error?: unknown) => undefined
+  // v0.7.3 / scan 2026-06-25 (D-NEW-5) — silent-catch cleanup.
+  // Pre-fix the helper swallowed refresh errors with no telemetry,
+  // so SDK-unreachable errors would leave the UI showing stale
+  // chain/archive/handoff/activity data forever with no signal.
+  // Post-fix the helper logs at the console level so production
+  // debugging has a trail. The catch is still silent to the user
+  // (UI shows stale data rather than an error toast for transient
+  // SDK hiccups) but a log entry is emitted with context.
+  //
+  // The console.warn call is wrapped in try/catch so a broken
+  // logger (overridden in tests, or a browser with no console)
+  // doesn't surface as an unhandled rejection from the .catch()
+  // call site — which would defeat the fire-and-forget contract.
+  const ignoreRefreshError = (context) => (error) => {
+    try {
+      // eslint-disable-next-line no-console
+      console.warn(`[goal-panel] ${context} failed:`, error)
+    } catch {
+      // Logger is broken; the error is lost. Nothing more we can
+      // do without a working telemetry channel.
+    }
+    return undefined
+  }
 
   const refreshArchive = () =>
     void readArchive(sdk)
@@ -1637,7 +1659,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         setArchive(next.runs)
         setSelectedHistoryGoalID(next.selectedGoalID)
       })
-      .catch(ignoreRefreshError)
+      .catch(ignoreRefreshError("refreshArchive"))
   const mergeTemplates = (
     base: GoalTemplateButton[],
     overrides = localTemplateOverrides(),
@@ -1668,14 +1690,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           setSelectedTemplateID(merged[0]?.id ?? null)
         }
       })
-      .catch(ignoreRefreshError)
+      .catch(ignoreRefreshError("mergeTemplates"))
   const refreshSkills = () =>
     void readAvailableSkills(sdk)
       .then((next) => {
         setAvailableSkills(next)
       })
-      .catch(ignoreRefreshError)
-  const refreshHandoff = () => void readHandoffFromSdk(sdk as unknown as GoalSdkClient).then(setHandoff).catch(ignoreRefreshError)
+      .catch(ignoreRefreshError("refreshSkills"))
+  const refreshHandoff = () => void readHandoffFromSdk(sdk as unknown as GoalSdkClient).then(setHandoff).catch(ignoreRefreshError("refreshHandoff"))
 
   // AG-P1-07 — single shared ordering guard for the polling tick AND
   // command-triggered refreshes. Both paths funnel through the same
@@ -1690,13 +1712,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     refreshSkills()
     const tick = () => {
       setNow(Date.now())
-      void readActivity(sdk).then(setActivity).catch(ignoreRefreshError)
+      void readActivity(sdk).then(setActivity).catch(ignoreRefreshError("readActivity"))
       // AG-P1-07 — shared guard (not a bare `void readChain...then(setChain)`).
       void chainRefresh.request()
       refreshHandoff()
       void refreshTemplates()
       refreshArchive()
-      void props.goal.refresh().catch(ignoreRefreshError)
+      void props.goal.refresh().catch(ignoreRefreshError("goal.refresh (tick)"))
     }
     tick()
     const timer = setInterval(tick, 2000)
@@ -1714,7 +1736,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const refreshChain = (): Promise<void> => chainRefresh.request()
 
   const refreshGoalSurfaces = async (options: { templates?: boolean } = {}) => {
-    await props.goal.refresh().catch(ignoreRefreshError)
+    await props.goal.refresh().catch(ignoreRefreshError("goal.refresh (surfaces)"))
     await refreshChain()
     refreshHandoff()
     refreshArchive()
@@ -3584,7 +3606,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               setChainErrors(errors)
                               if (errors.length === 0) {
                                 refreshChain()
-                                void props.goal.refresh().catch(ignoreRefreshError)
+                                void props.goal.refresh().catch(ignoreRefreshError("goal.refresh (chain-apply)"))
                               }
                             }}
                           />
