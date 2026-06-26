@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Match, Show, Switch, batch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
@@ -136,6 +136,7 @@ function goalStateForSession(state: GoalState | null, sessionID?: string) {
   if (!state || !sessionID) return state
   const metadata = (state as GoalState & { metadata?: { sessionId?: unknown } }).metadata
   const owner = typeof metadata?.sessionId === "string" ? cleanText(metadata.sessionId).trim() : ""
+  if (!owner) return state
   return owner === sessionID ? state : null
 }
 
@@ -1522,6 +1523,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [handoffText, setHandoffText] = createSignal("")
   const [activity, setActivity] = createSignal<ActivityEvent[]>([])
   const [chain, setChain] = createSignal<ChainData | null>(null)
+  const [chainDismissed, setChainDismissed] = createSignal(false)
   const [templates, setTemplates] = createSignal(DEFAULT_TEMPLATE_BUTTONS)
   const [localTemplateOverrides, setLocalTemplateOverrides] = createSignal<Record<string, GoalTemplateButton>>({})
   const [deletedTemplateIDs, setDeletedTemplateIDs] = createSignal<Record<string, true>>({})
@@ -1583,13 +1585,21 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     // "explicit empty" state survives session switches (this is what
     // prevents the "last X revives the whole list" sequence when the
     // user cleared the draft in another session).
-    setChainDraft("source", next.source)
-    setChainDraft("steps", next.steps)
-    setChainDraft("master", "maxTurns", next.master.maxTurns)
-    setChainDraft("master", "maxTimeMinutes", next.master.maxTimeMinutes)
-    setChainDraft("objective", next.objective)
-    setChainErrors([])
-    setNewCommand("")
+    // v0.7.3 / scan 2026-06-25 (D-NEW-4) — wrap the multi-field draft
+    // restore in batch() so the autosave `effect()` that persists
+    // the draft fires once with the final state, not once per
+    // intermediate write. Without batch(), if the user closes the
+    // tab between writes 1 and 5, the persisted draft ends up with
+    // new `source` but old `steps` — silently inconsistent on reload.
+    batch(() => {
+      setChainDraft("source", next.source)
+      setChainDraft("steps", next.steps)
+      setChainDraft("master", "maxTurns", next.master.maxTurns)
+      setChainDraft("master", "maxTimeMinutes", next.master.maxTimeMinutes)
+      setChainDraft("objective", next.objective)
+      setChainErrors([])
+      setNewCommand("")
+    })
   })
 
   createEffect(() => {
@@ -1673,7 +1683,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   // resurrect older state by overwriting a newer commit from the other.
   const chainRefresh = createOrderedChainRefresh<ChainData | null>(
     () => readChain(sdk),
-    (data) => setChain(data),
+    (data) => { if (!chainDismissed()) setChain(data) },
   );
 
   onMount(() => {
@@ -1723,6 +1733,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const result = await executeGoalCommand(sdk.client, { sessionID, arguments: args, directory: sdk.directory })
     if (result.ok) {
       setControlError(null)
+      setChainDismissed(false)
     } else {
       setControlError(result.error)
     }
@@ -1815,6 +1826,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       setOptimisticStatus(null)
       setConfirmingClear(false)
       setChain(null)
+      setChainDismissed(false)
       setActivity([])
       // AG-P0-04 — explicit reset clears the draft intentionally; mark
       // `source: "draft"` so the empty state survives any later recovery
@@ -2861,6 +2873,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return best >= 0 ? Math.round(best * 100) : null
   })
 
+  const liveRunStatus = createMemo<GoalState["status"] | null>(() => optimisticStatus() ?? liveGoal()?.status ?? null)
+  const latestActivityAt = createMemo(() => activity()[0]?.at ?? null)
+  const liveRunStalled = createMemo(() => isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), now()))
+  const liveRunIdleMinutes = createMemo(() => goalIdleMinutes(latestActivityAt(), now()))
+
   const smartStatus = createMemo<string | null>(() => {
     const s = state()
     if (!s || !hasLiveGoal()) return null
@@ -3018,10 +3035,6 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (runningChain) return Math.max(0, Math.min(runningChain.current, Math.max(0, runningChain.steps.length - 1)))
     return visibleStepCount() > 0 ? 0 : -1
   })
-  const liveRunStatus = createMemo<GoalState["status"] | null>(() => optimisticStatus() ?? liveGoal()?.status ?? null)
-  const latestActivityAt = createMemo(() => activity()[0]?.at ?? null)
-  const liveRunStalled = createMemo(() => isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), now()))
-  const liveRunIdleMinutes = createMemo(() => goalIdleMinutes(latestActivityAt(), now()))
   const stepRunState = (index: number): ChainStepRunState => {
     if (!liveGoal()) return "draft"
     const current = runningStepIndex()
@@ -3076,12 +3089,20 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         removeDraftStep(step.id);
         return;
       case "remove-live-pending":
+        if (!liveGoal()) {
+          // v0.7.3 / scan 2026-06-25 (D-NEW-3) — no live chain means
+          // there's nothing to remove. Pre-fix the handler did
+          // `setChainDismissed(true); setChain(null)` here, which
+          // silently dismissed the entire chain panel — a UX
+          // regression masquerading as a noop. Correct behavior:
+          // silent noop. The user will see the row disappear on the
+          // next polling tick when the chain panel re-renders.
+          return
+        }
         return void removeLiveChainStep(action.index);
       case "dismiss-terminal":
-        // Distinct terminal command — not yet wired (per ticket: requires
-        // a Dismiss/Archive/New-draft-from-run affordance). Surfaced as
-        // a no-op for now so the routing layer is correct end-to-end;
-        // adding the UI is a follow-up packet.
+        setChainDismissed(true)
+        setChain(null)
         return;
       case "noop":
         return;
@@ -3763,7 +3784,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         {liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton") : statusMeta(running.status).label}
                       </span>
                     </div>
-                    <div class="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_216px] xl:items-start">
+                    <div class="flex min-w-0 flex-col gap-2">
                       <div class="min-w-0">
                         <div
                           data-component="goal-running-execution-contract"
@@ -3789,9 +3810,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         >
                           <div
                             data-component="goal-running-clock"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
                             style={isCritical(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)
-                              ? { "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25), inset 0 0 0 1px rgba(248, 113, 113, 0.3)" } : {}}
+                              ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(96, 165, 250, 0.2)" }}
                           >
                             <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)}%`, "background-color": burndownColor(elapsedMs() / 60_000, running.constraints.maxTimeMinutes) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-200/70">
@@ -3804,9 +3825,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                           <div
                             data-component="goal-running-turns"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
                             style={isCritical(running.turnsEvaluated, running.constraints.maxTurns)
-                              ? { "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25), inset 0 0 0 1px rgba(248, 113, 113, 0.3)" } : {}}
+                              ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(167, 139, 250, 0.2)" }}
                           >
                             <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(running.turnsEvaluated, running.constraints.maxTurns)}%`, "background-color": burndownColor(running.turnsEvaluated, running.constraints.maxTurns) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-200/70">
@@ -3819,7 +3840,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                           <div
                             data-component="goal-running-step"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
+                            style={{ "border-color": "rgba(134, 239, 172, 0.2)" }}
                           >
                             <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(runningStepIndex() + 1, Math.max(visibleStepCount(), 1))}%`, "background-color": "rgb(134, 239, 172)" }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
@@ -3832,9 +3854,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                           <div
                             data-component="goal-running-tokens"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
                             style={isCritical(running.tokensUsed, running.constraints.maxTokens)
-                              ? { "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25), inset 0 0 0 1px rgba(248, 113, 113, 0.3)" } : {}}
+                              ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(251, 191, 36, 0.2)" }}
                           >
                             <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(running.tokensUsed, running.constraints.maxTokens)}%`, "background-color": burndownColor(running.tokensUsed, running.constraints.maxTokens) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-amber-200/70">
@@ -3851,8 +3873,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <Show when={visibleStepCount() > 1}>
                           <div
                             data-component="goal-chain-minimap"
-                            class="mb-1.5 flex items-center gap-1 rounded px-2.5 py-1.5"
-                            style={{ "background-color": "rgba(16, 185, 129, 0.05)" }}
+                            class="mb-1.5 flex items-center gap-1 rounded border px-2.5 py-1.5"
+                            style={{ "background-color": "rgba(16, 185, 129, 0.05)", "border-color": "rgba(110, 231, 183, 0.1)" }}
                           >
                             <span class="mr-1 text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/55">
                               {language.t("session.goal.metric.chain")}
@@ -3882,7 +3904,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </Show>
                         <div
                           data-component="goal-running-progress-hero"
-                          class="rounded px-2.5 py-2 text-right"
+                          class="rounded border px-2.5 py-2 text-right"
+                          style={{ "border-color": "rgba(110, 231, 183, 0.12)", "background-color": "rgba(16, 185, 129, 0.04)" }}
                         >
                           <div class="flex items-center justify-between gap-2">
                             <div class="flex items-baseline gap-1.5">
@@ -3972,8 +3995,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               }
                               return (
                                 <div
-                                  class="mt-1 truncate text-[9px] font-semibold italic"
-                                  style={{ color: smartColor() }}
+                                  class="mt-1.5 truncate rounded-md border px-2 py-0.5 text-[10px] font-semibold"
+                                  style={{ color: smartColor(), "border-color": smartColor().replace("rgb", "rgba").replace(")", ", 0.25)"), "background-color": smartColor().replace("rgb", "rgba").replace(")", ", 0.08)") }}
                                 >
                                   {status()}
                                 </div>
@@ -3981,7 +4004,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             }}
                           </Show>
                           <Show when={tokenEfficiency() !== null || tokenBurnRate() !== null || elapsedSinceLastEval() !== null || bestConfidence() !== null || confidenceDelta() !== null || evalSuccessRate() !== null || evalStreak() !== null || confidenceVolatility() !== null || avgCycleTime() !== null || tokenExhaustForecast() !== null}>
-                            <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                            <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-2 py-1" style={{ "border-color": "rgba(148, 163, 184, 0.1)", "background-color": "rgba(148, 163, 184, 0.03)" }}>
                               <Show when={tokenEfficiency() !== null}>
                                 {(() => {
                                   const eff = () => tokenEfficiency() ?? 0
@@ -4083,7 +4106,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </Show>
                           <Show when={constraintHeadroom()}>
                             {(headroom) => (
-                              <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                              <div class="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1" style={{ "border-color": "rgba(148, 163, 184, 0.12)", "background-color": "rgba(148, 163, 184, 0.04)" }}>
                                 <Show when={headroom().turns !== null}>
                                   {(() => {
                                     const t = () => headroom().turns ?? 0
@@ -4540,7 +4563,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     >
                                       {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
                                     </button>
-                                    <div class="min-w-0 truncate text-right text-11-regular text-cyan-100/52">
+                                    <div class="hidden min-w-0 truncate text-right text-11-regular text-cyan-100/52 xl:block">
                                       {language.t("session.goal.commandStrip.hint")}
                                     </div>
                                   </div>
@@ -4804,7 +4827,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       removeVisibleStep(
                                         step,
                                         i(),
-                                        liveGoal() ? "live" : "draft",
+                                        liveGoal() || (chain() && !chainDraft.steps.length) ? "live" : "draft",
                                       )
                                     }
                                   >

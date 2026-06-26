@@ -352,10 +352,20 @@ export interface ContinuationDeliveryDeps {
   onPause(reason: string): Promise<void> | void;
   /** Send a visible user notification. Called on every pause. */
   onNotify(title: string, message: string, level: "info" | "success" | "warning" | "error"): Promise<void> | void;
-  /** Fire the goal-state webhook (if any). Called on every pause. */
-  onWebhookFire(status: GoalStatus): void;
+  /**
+   * Fire the goal-state webhook (if any). Called on every pause.
+   *
+   * v0.7.3 / scan 2026-06-25 (D-NEW-2) — typed as `Promise<void> | void`
+   * and awaited by the dispatcher. The pre-fix type was `void` only,
+   * but the production `fireWebhook` does async I/O via `fetch()`;
+   * without awaiting, the documented C4 ordering
+   * (pause → notify → webhook) was not actually guaranteed.
+   * Callers MAY return a synchronous `void` for backward compatibility
+   * — the dispatcher awaits the result regardless.
+   */
+  onWebhookFire(status: GoalStatus): Promise<void> | void;
   /** Reset the per-session failure counter. Called on every successful delivery. */
-  onReset(): void;
+  onReset(): Promise<void> | void;
 }
 
 /**
@@ -474,8 +484,12 @@ export async function deliverContinuation(
         reason,
         level,
       );
-      opts.deps.onWebhookFire("paused");
-      opts.deps.onReset();
+      // v0.7.3 / scan 2026-06-25 (D-NEW-2) — await the webhook fire so
+      // the documented C4 ordering (pause → notify → webhook) is
+      // actually sequential. Pre-fix this was fire-and-forget even
+      // though `fireWebhook` does async I/O.
+      await opts.deps.onWebhookFire("paused");
+      await opts.deps.onReset();
     };
 
     // AG-P1-06 part 3 — handle the real OpenCode SDK return shape.
@@ -525,14 +539,15 @@ export async function deliverContinuation(
 
   // Should be unreachable (the loop returns on the final attempt via
   // the exhausted decision). Defensive fallback.
+  // v0.7.3 / scan 2026-06-25 (D-NEW-2) — await both for C4 ordering.
   await opts.deps.onPause("Continuation dispatcher: loop fell through");
   await opts.deps.onNotify(
     "Goal paused — continuation delivery failed",
     "Continuation dispatcher: loop fell through",
     "error",
   );
-  opts.deps.onWebhookFire("paused");
-  opts.deps.onReset();
+  await opts.deps.onWebhookFire("paused");
+  await opts.deps.onReset();
   return { status: "paused", reason: "Continuation dispatcher: loop fell through" };
 }
 
@@ -1583,7 +1598,14 @@ export const server: Plugin = async ({ client, directory }) => {
                   });
                 },
                 onNotify: async (title: string, message: string, level: "info" | "success" | "warning" | "error") => {
-                  await notify(sessionId, title, message, level).catch(() => {});
+                  // v0.7.3 / scan 2026-06-25 (D-NEW-1) — no `.catch(() => {})`
+                  // here. The dispatcher already awaits this callback;
+                  // if `notify()` throws, the rejection propagates
+                  // through the dispatcher's await chain into the
+                  // surrounding evaluate() try/catch where the error
+                  // is logged. Pre-fix the swallow hid notify failures
+                  // (e.g. SDK unreachable) from production logs.
+                  await notify(sessionId, title, message, level);
                 },
                 onWebhookFire: (status: GoalStatus) => {
                   // Resolve fresh state post-pause so the webhook fires
@@ -1751,7 +1773,10 @@ export const server: Plugin = async ({ client, directory }) => {
             });
           },
           onNotify: async (title: string, message: string, level: "info" | "success" | "warning" | "error") => {
-            await notify(sessionId, title, message, level).catch(() => {});
+            // v0.7.3 / scan 2026-06-25 (D-NEW-1) — see chain-advance
+            // counterpart. No `.catch(() => {})`; the dispatcher's
+            // error path observes the rejection and logs it.
+            await notify(sessionId, title, message, level);
           },
           onWebhookFire: (status: GoalStatus) => {
             const fresh = readGoalState(directory);
