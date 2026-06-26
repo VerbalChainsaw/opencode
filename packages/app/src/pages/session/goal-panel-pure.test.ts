@@ -252,6 +252,7 @@ interface OrderedChainRefresh {
 let createOrderedChainRefresh: (
   readFn: () => Promise<ChainData | null>,
   onCommit: (data: ChainData | null) => void,
+  opts?: { backpressure?: boolean },
 ) => OrderedChainRefresh;
 
 test("AG-P1-07: goal-panel-pure exports createOrderedChainRefresh", async () => {
@@ -446,6 +447,107 @@ describe("AG-P1-07: createOrderedChainRefresh ordering guard", () => {
     // No commit with current < 5 should appear (those were stale).
     const stale = commits.find((c) => c?.current !== undefined && c.current < 5);
     expect(stale).toBeUndefined();
+
+    refresh.dispose();
+  });
+});
+
+// ── C3: backpressure option ────────────────────────────────────────────────
+
+describe("C3: createOrderedChainRefresh backpressure option", () => {
+  test("C3.1: backpressure=false (default): concurrent requests each start a new read", async () => {
+    let calls = 0;
+    const readFn = () => {
+      calls++;
+      return new Promise<ChainData | null>((resolve) =>
+        setTimeout(() => resolve({ id: "c", current: calls, steps: [] }), 20),
+      );
+    };
+    const refresh = createOrderedChainRefresh(readFn, () => {});
+
+    // Fire two concurrent requests.
+    const promises = [refresh.request(), refresh.request()];
+    await Promise.all(promises);
+
+    // Without backpressure, both calls went through (the second's
+    // result wins via the generation counter, the first's is
+    // discarded).
+    expect(calls).toBe(2);
+    refresh.dispose();
+  });
+
+  test("C3.2: backpressure=true: concurrent requests share the in-flight read", async () => {
+    let calls = 0;
+    const readFn = () => {
+      calls++;
+      return new Promise<ChainData | null>((resolve) =>
+        setTimeout(() => resolve({ id: "c", current: calls, steps: [] }), 30),
+      );
+    };
+    const refresh = createOrderedChainRefresh(readFn, () => {}, { backpressure: true });
+
+    // Fire two concurrent requests.
+    const promises = [refresh.request(), refresh.request()];
+    await Promise.all(promises);
+
+    // With backpressure, only ONE call was made. The second
+    // request returned the same promise as the first.
+    expect(calls).toBe(1);
+    refresh.dispose();
+  });
+
+  test("C3.3: backpressure: sequential requests after settle start fresh reads", async () => {
+    let calls = 0;
+    const readFn = () => {
+      calls++;
+      return new Promise<ChainData | null>((resolve) =>
+        setTimeout(() => resolve({ id: "c", current: calls, steps: [] }), 10),
+      );
+    };
+    const refresh = createOrderedChainRefresh(readFn, () => {}, { backpressure: true });
+
+    // Sequential (not concurrent): each request should start a fresh read.
+    await refresh.request();
+    await refresh.request();
+    await refresh.request();
+
+    expect(calls).toBe(3);
+    refresh.dispose();
+  });
+
+  test("C3.4: backpressure: returns the same promise for concurrent calls", async () => {
+    const readFn = () =>
+      new Promise<ChainData | null>((resolve) =>
+        setTimeout(() => resolve({ id: "c", current: 1, steps: [] }), 20),
+      );
+    const refresh = createOrderedChainRefresh(readFn, () => {}, { backpressure: true });
+
+    const p1 = refresh.request();
+    const p2 = refresh.request();
+    expect(p1).toBe(p2);
+
+    await Promise.all([p1, p2]);
+    refresh.dispose();
+  });
+
+  test("C3.5: backpressure: error in read does not lock out future requests", async () => {
+    let calls = 0;
+    const readFn = () => {
+      calls++;
+      if (calls === 1) {
+        return Promise.reject(new Error("transient SDK failure"));
+      }
+      return Promise.resolve({ id: "c", current: calls, steps: [] });
+    };
+    const refresh = createOrderedChainRefresh(readFn, () => {}, { backpressure: true });
+
+    // First request fails.
+    await refresh.request();
+    // Second request should start a fresh read (the slot must have
+    // been cleared by the rejected promise's .finally).
+    const p2 = refresh.request();
+    expect(calls).toBe(2);
+    await p2;
 
     refresh.dispose();
   });

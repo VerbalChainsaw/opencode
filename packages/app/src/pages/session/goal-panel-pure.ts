@@ -1255,34 +1255,77 @@ export interface OrderedChainRefresh {
   dispose(): void;
 }
 
+export interface OrderedChainRefreshOptions {
+  /**
+   * v0.7.3 / scan 2026-06-25 (C3) — when true, concurrent calls to
+   * `request()` while a previous request is still in flight return
+   * the in-flight promise without starting a new read. The default
+   * (false) preserves the pre-existing behavior of allowing
+   * concurrent reads; the newer read wins via the generation
+   * counter, the older read's result is discarded. Backpressure
+   * trades potential stale-read-rejection for actual network
+   * bandwidth savings under slow conditions.
+   */
+  backpressure?: boolean;
+}
+
 export function createOrderedChainRefresh<T>(
   readFn: () => Promise<T | null>,
   onCommit: (data: T | null) => void,
+  opts: OrderedChainRefreshOptions = {},
 ): OrderedChainRefresh {
+  const backpressure = opts.backpressure === true;
   // The current generation. Every request bumps it. Only the request
   // whose generation matches `current` at the moment its result resolves
   // gets to commit. After dispose(), the flag flips and all pending
   // resolves see it and skip the commit.
   let current = 0;
   let disposed = false;
+  // v0.7.3 / scan 2026-06-25 (C3) — the in-flight promise when
+  // backpressure is enabled. Concurrent request() calls return this
+  // promise rather than starting a new read. Cleared on settle
+  // (resolve OR reject — the next request starts a fresh read).
+  let inFlight: Promise<void> | null = null;
 
   function request(): Promise<void> {
     if (disposed) return Promise.resolve();
+    // v0.7.3 / scan 2026-06-25 (C3) — backpressure: if a request is
+    // already in flight, return its promise. The caller can chain
+    // off it; the underlying read will not be duplicated.
+    if (backpressure && inFlight) return inFlight;
     const myGeneration = ++current;
-    return readFn().then(
+    // Build the read promise. In backpressure mode, we wrap the
+    // read's own onCommit callback to also clear inFlight when it
+    // runs. Doing this synchronously inside the read's `.then`
+    // (rather than via `.finally` on a returned promise) avoids a
+    // microtask race where a sequential request() sees a stale
+    // inFlight before the .finally microtask runs.
+    const readPromise = readFn().then(
       (data) => {
+        if (backpressure && inFlight && (inFlight as unknown) === (readPromise as unknown)) {
+          inFlight = null;
+        }
         if (disposed) return;
         // Discard stale results: if a newer request bumped the counter
         // beyond myGeneration, my result is no longer the latest. Drop it.
         if (myGeneration !== current) return;
         onCommit(data);
       },
-      // Errors are also discarded if stale; the caller is responsible
-      // for any logging (the tsx layer uses an `ignoreRefreshError` helper).
-      () => {
-        /* no-op: errors don't poison the ordering guard */
+      (err) => {
+        if (backpressure && inFlight && (inFlight as unknown) === (readPromise as unknown)) {
+          inFlight = null;
+        }
+        // Errors are also discarded if stale; the caller is responsible
+        // for any logging (the tsx layer uses an `ignoreRefreshError` helper).
+        // The throw is swallowed because the dispatch contract is
+        // fire-and-forget — errors don't poison the ordering guard.
+        void err;
       },
     );
+    if (backpressure) {
+      inFlight = readPromise;
+    }
+    return readPromise;
   }
 
   function dispose(): void {
