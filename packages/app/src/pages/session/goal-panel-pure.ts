@@ -126,8 +126,10 @@ export function isGoalStateShape(v: unknown): v is GoalState {
  *  stale `.opencode/.goal-chain.json` from a previous session/goal as the
  *  current runtime chain for a new session. */
 export function chainMatchesGoal(chain: { id: string }, state: GoalState | null | undefined): boolean {
-  const chainId = state?.metadata?.chainId
-  return typeof chainId === "string" && chainId === chain.id
+  if (!state) return true
+  const chainId = state.metadata?.chainId
+  if (typeof chainId !== "string") return true
+  return chainId === chain.id
 }
 
 /** Strip C0/C1 control chars and Unicode bidi/format chars before

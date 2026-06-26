@@ -2598,16 +2598,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const timePct = s.constraints.maxTimeMinutes > 0
       ? Math.round((progressElapsed() / (s.constraints.maxTimeMinutes * 60_000)) * 100)
       : 0
-    return Math.min(100, Math.max(turnsPct, timePct))
+    const tokenPct = s.constraints.maxTokens > 0
+      ? Math.round((s.tokensUsed / s.constraints.maxTokens) * 100)
+      : 0
+    return Math.min(100, Math.max(turnsPct, timePct, tokenPct))
   })
 
-  const progressDriver = createMemo<"turns" | "time" | null>(() => {
+  const progressDriver = createMemo<"turns" | "time" | "tokens" | null>(() => {
     const s = state()
     if (!s) return null
     const turnsPct = s.constraints.maxTurns > 0
       ? (s.turnsEvaluated / s.constraints.maxTurns) * 100 : 0
     const timePct = s.constraints.maxTimeMinutes > 0
       ? (progressElapsed() / (s.constraints.maxTimeMinutes * 60_000)) * 100 : 0
+    const tokenPct = s.constraints.maxTokens > 0
+      ? (s.tokensUsed / s.constraints.maxTokens) * 100 : 0
+    if (tokenPct > timePct && tokenPct > turnsPct) return "tokens"
     return timePct > turnsPct ? "time" : "turns"
   })
 
@@ -2997,9 +3003,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
   const visibleChainSteps = createMemo<GoalChainDraftStep[]>(() => {
     const live = liveGoal()
-    if (!live && chainDraft.steps.length > 0) return chainDraft.steps
     const runningChain = chain()
-    if (runningChain) return chainSnapshotSteps()
+    if (runningChain) {
+      const snapshot = chainSnapshotSteps()
+      if (snapshot.length > 0) return snapshot
+    }
+    if (!live && chainDraft.steps.length > 0) return chainDraft.steps
     // A single live goal has no chain file. Render the one running goal as a
     // single step rather than the leftover sessionStorage chain draft — which
     // would otherwise show up as a fake "1/N" executing chain on the running
@@ -3032,7 +3041,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const runningStepIndex = createMemo(() => {
     if (!liveGoal()) return -1
     const runningChain = chain()
-    if (runningChain) return Math.max(0, Math.min(runningChain.current, Math.max(0, runningChain.steps.length - 1)))
+    if (runningChain && chainSnapshotSteps().length > 0)
+      return Math.max(0, Math.min(runningChain.current, Math.max(0, runningChain.steps.length - 1)))
     return visibleStepCount() > 0 ? 0 : -1
   })
   const stepRunState = (index: number): ChainStepRunState => {
@@ -3915,7 +3925,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               <Show when={progressDriver()}>
                                 {(driver) => (
                                   <span class="text-[8px] font-semibold uppercase tracking-[0.06em] text-emerald-200/42">
-                                    {language.t(driver() === "time" ? "session.goal.metric.time" : "session.goal.metric.turns")}
+                                    {language.t(driver() === "tokens" ? "session.goal.metric.tokens" : driver() === "time" ? "session.goal.metric.time" : "session.goal.metric.turns")}
                                   </span>
                                 )}
                               </Show>
