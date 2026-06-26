@@ -1044,7 +1044,17 @@ export const server: Plugin = async ({ client, directory }) => {
   // Capture the terminal state BEFORE unlinking so the chain cleanup
   // below can use it (the previous code unlinked first, then re-read
   // the now-absent file — so the chain was never cleaned up).
+  // Boot state classification:
+  //   - bootTerminalState: state was readable AND in achieved/cleared
+  //   - bootStateUnrecoverable: state was absent (deleted/never-created/zero-byte)
+  //     or corrupt (parse/validate/io/oversize). In either case the engine
+  //     has no anchor — any chain pointing at it is the most-orphaned a
+  //     chain can be, since there is no goal to drive its steps.
+  // We classify ONCE here so the chain cleanup below doesn't re-read the
+  // file (and so the absent/corrupt signal isn't lost when the state file
+  // is unlinked for terminal cases).
   let bootTerminalState: GoalState | null = null;
+  let bootStateUnrecoverable = false;
   {
     const r = readGoalStateResult(directory);
     if (r.kind === "ok" && (r.value.status === "achieved" || r.value.status === "cleared")) {
@@ -1069,36 +1079,45 @@ export const server: Plugin = async ({ client, directory }) => {
       } catch (err) {
         log("debug", "boot clear: state unlink failed (non-fatal)", { error: String(err) });
       }
+    } else if (r.kind === "absent" || r.kind === "corrupt") {
+      bootStateUnrecoverable = true;
     }
   }
 
   // Chain file: clear if the chain is orphaned from any active goal.
-  // Three orphan cases all unlink:
+  // Four orphan cases all unlink:
   //   - state belongs to this chain AND chain is at/past last step (completed)
   //   - state belongs to this chain AND chain is mid-run (cleared mid-chain)
   //   - state is terminal AND has no chainId (user set a single goal on top
   //     of a previous-session chain — chain is dead, file lingers forever
   //     otherwise)
+  // - state is absent or corrupt (no anchor exists; the chain has nothing
+  //     to drive its steps and would persist forever as dead disk weight).
+  //     This catches the crashed-mid-createGoalChain window (chain written,
+  //     state not), manual state-file deletion, and disk-corruption recovery.
   // Only an active or paused goal preserves the chain across boots.
   try {
     const chainPath = goalChainPath(directory);
     if (existsSync(chainPath)) {
       const c = readGoalChainResult(directory);
-      if (c.kind === "ok" && c.value.steps.length > 0 && bootTerminalState) {
+      if (c.kind === "ok" && c.value.steps.length > 0) {
         const stateBelongsToChain =
-          bootTerminalState.metadata?.chainId === c.value.id;
-        const stateIsOrphaned = !bootTerminalState.metadata?.chainId;
-        if (stateBelongsToChain || stateIsOrphaned) {
+          !!bootTerminalState && bootTerminalState.metadata?.chainId === c.value.id;
+        const stateIsOrphanedTerminal =
+          !!bootTerminalState && !bootTerminalState.metadata?.chainId;
+        if (stateBelongsToChain || stateIsOrphanedTerminal || bootStateUnrecoverable) {
           try {
             unlinkSync(chainPath);
             log("info", "boot clear: removed orphaned chain file", {
               current: c.value.current,
               total: c.value.steps.length,
-              reason: stateBelongsToChain
-                ? c.value.current >= c.value.steps.length - 1
-                  ? "completed"
-                  : "abandoned-mid-chain"
-                : "orphan-from-previous-session",
+              reason: bootStateUnrecoverable
+                ? "state-absent-or-corrupt"
+                : stateBelongsToChain
+                  ? c.value.current >= c.value.steps.length - 1
+                    ? "completed"
+                    : "abandoned-mid-chain"
+                  : "orphan-from-previous-session",
             });
           } catch (err) {
             log("debug", "boot clear: chain unlink failed (non-fatal)", { error: String(err) });

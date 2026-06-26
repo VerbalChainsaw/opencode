@@ -1,0 +1,334 @@
+{
+  "schema_version": "2.5.1",
+  "result": "DEFECT_CONFIRMED",
+  "case_file": {
+    "mode": "INTERACTIVE",
+    "repository_root": "C:/Users/zerop/Development/opencode-source",
+    "target_revision": "6d7d0c049 (HEAD on dev)",
+    "baseline": "0354079fb (pre-orphan-cleanup-fix)",
+    "workspace_state": "DIRTY",
+    "package_or_service": "packages/autogoal",
+    "environment": "Node 22+, tsconfig strict, bun test, Windows + bash",
+    "observation": "Boot orphan-cleanup removes chain files in three cases (state-belongs-to-chain-completed, state-belongs-to-chain-cleared-mid, state-terminal-with-no-chainId). The guard `bootTerminalState` (line 1087) is set ONLY when readGoalStateResult returns kind === 'ok' AND the state is achieved or cleared. If the state file is absent or corrupt, bootTerminalState is null and the entire chain cleanup block is skipped — a chain file with no corresponding state file lingers forever.",
+    "expected_invariant": "On boot, an orphan chain file (chain file present, state file absent or non-terminal-or-orphaning) MUST be unlinked. The chain should not survive a session where the goal that owned it no longer exists in any recoverable form.",
+    "audited_claim": "C0: The boot orphan-cleanup logic at packages/autogoal/src/server.ts:1075-1111 has a fourth orphan case not handled — chain file exists AND state file is absent or corrupt. The block guards on `bootTerminalState` truthy (line 1087), which is null when readGoalStateResult returns kind === 'absent' or kind === 'corrupt'. This is the most-orphaned a chain can be (no goal to bind to), and it is missed by the recent fix in commit 6d7d0c049.",
+    "center_kind": "PAIRED",
+    "center_anchor": "packages/autogoal/src/server.ts:1075-1111 [chain cleanup block] paired with packages/autogoal/src/server.ts:1047 [bootTerminalState declaration] and packages/autogoal/src/goal-state.ts:656 [readGoalStateResult signature]",
+    "falsifier": "Reproduce: in a fresh tmp directory, write a valid chain file via writeGoalChain, then leave the state file absent (or write a syntactically corrupt state file). Boot the plugin. Observe whether the chain file is unlinked. If it IS unlinked, C0 fails.",
+    "pivots": []
+  },
+  "fusion": {
+    "likelihood": "CERTAIN",
+    "impact": "MEDIUM",
+    "confidence": "HIGH",
+    "reproducibility": "DETERMINISTIC",
+    "root_cause": "The cleanup block at server.ts:1087 uses `if (c.kind === \"ok\" && c.value.steps.length > 0 && bootTerminalState)` — three conjunctive conditions. The `bootTerminalState` guard excludes the absent-or-corrupt state case. There is no separate code path that handles 'chain exists but no recoverable state.' The intent of the recent fix (commit 6d7d0c049) was to broaden orphan detection; it broadened the terminal-state cases but not the missing-state case.",
+    "terminal_impact": "A user who clears the chain file's owning state file (or whose state file becomes corrupt) will see the chain file linger across boots. The next chain operation will pick it up as a stale chain (chainMatchesGoal in goal-panel-pure.ts:128 will reject it because the new state has no chainId, but the file remains on disk). Repeated occurrences grow the .opencode/ directory with stale artifacts; manual cleanup is the only remediation. The contract test at goal-panel-contract.test.ts:206-210 already pins the chainMatchesGoal semantics, so the UI does not misrender — but the file system state drifts."
+  },
+  "evidence": [
+    {
+      "id": "E1",
+      "channel": "SOURCE",
+      "strength": "A",
+      "anchor": "packages/autogoal/src/server.ts:1075-1111 [chain cleanup block, post-6d7d0c049]",
+      "method": "Focused read of the cleanup block after the recent fix. The block is guarded by `if (c.kind === \"ok\" && c.value.steps.length > 0 && bootTerminalState)`. The `bootTerminalState` value is null whenever readGoalStateResult returns anything other than kind === 'ok' with status in {achieved, cleared}.",
+      "result": "Three-orphan-cases block does NOT execute when state file is absent or corrupt. The chain cleanup is silently skipped.",
+      "relation": "SUPPORTS",
+      "independence_group": "code-static"
+    },
+    {
+      "id": "E2",
+      "channel": "SOURCE",
+      "strength": "B",
+      "anchor": "packages/autogoal/src/server.ts:1047-1051 [bootTerminalState declaration and assignment]",
+      "method": "Focused read of bootTerminalState assignment. The variable is declared `let bootTerminalState: GoalState | null = null;` and is only set inside the `if (r.kind === \"ok\" && (r.value.status === \"achieved\" || r.value.status === \"cleared\"))` branch. Three pre-existing failures of this guard exist: read returns kind === 'absent', kind === 'corrupt', or kind === 'ok' but with status 'active' or 'paused'.",
+      "result": "bootTerminalState is null in three pre-existing-failure cases; two of them (absent, corrupt) are orphan-chain territory not addressed by the recent fix.",
+      "relation": "SUPPORTS",
+      "independence_group": "code-static"
+    },
+    {
+      "id": "E3",
+      "channel": "SOURCE",
+      "strength": "B",
+      "anchor": "packages/autogoal/src/goal-state.ts:656-... [readGoalStateResult signature and behavior]",
+      "method": "Focused read. readGoalStateResult returns ReadResult<GoalState> which is a discriminated union of kind: 'ok' | 'corrupt' (and conceptually 'absent'). When kind !== 'ok', bootTerminalState is not assigned.",
+      "result": "readGoalStateResult's three non-ok return kinds all leave bootTerminalState null. The cleanup block then skips orphan detection.",
+      "relation": "SUPPORTS",
+      "independence_group": "code-static"
+    },
+    {
+      "id": "E4",
+      "channel": "TEST",
+      "strength": "C",
+      "method": "Search of existing test files for orphan-cleanup-with-missing-state coverage. None found. The existing tests pin the three orphan cases (completed, abandoned-mid-chain, orphan-from-previous-session) but not the missing-state case.",
+      "anchor": "packages/autogoal/test/ (search for 'bootTerminalState' or 'missing state' or 'absent state' near cleanup)",
+      "result": "No coverage for the missing-state orphan case. The defect would not be caught by existing tests.",
+      "relation": "CONTEXT",
+      "independence_group": "test-runtime"
+    },
+    {
+      "id": "E5",
+      "channel": "HISTORY",
+      "strength": "B",
+      "anchor": "git log -- packages/autogoal/src/server.ts (recent commits 6d7d0c049, 0354079fb)",
+      "method": "git log + git show of the recent fix.",
+      "result": "The recent fix's commit message explicitly enumerates cases (a) cleared mid-chain and (b) orphan from previous session. It does not mention (c) state file absent. This is a documented gap, not a surprise omission.",
+      "relation": "CONTEXT",
+      "independence_group": "history"
+    }
+  ],
+  "trajectory": {
+    "links": [
+      {
+        "from_anchor": "packages/autogoal/src/server.ts:1047 [bootTerminalState null default]",
+        "to_anchor": "packages/autogoal/src/server.ts:1051 [bootTerminalState = r.value, inside ok-and-terminal guard]",
+        "edge_type": "CONTROL",
+        "edge_token": "let bootTerminalState = null; ... if (kind === 'ok' && terminal) assign",
+        "mechanism": "Three pre-existing failure modes of the guard leave bootTerminalState null.",
+        "evidence_ids": ["E2"],
+        "proven": true
+      },
+      {
+        "from_anchor": "packages/autogoal/src/server.ts:1087 [cleanup block guard]",
+        "to_anchor": "packages/autogoal/src/server.ts:1091 [stateBelongsToChain || stateIsOrphaned]",
+        "edge_type": "CONTROL",
+        "edge_token": "if (bootTerminalState) { check ownership; if owned or orphan, unlink }",
+        "mechanism": "bootTerminalState null causes the entire block to be skipped.",
+        "evidence_ids": ["E1"],
+        "proven": true
+      },
+      {
+        "from_anchor": "packages/autogoal/src/goal-state.ts:656 [readGoalStateResult]",
+        "to_anchor": "packages/autogoal/src/server.ts:1049 [readGoalStateResult(directory) call]",
+        "edge_type": "CONTRACT",
+        "edge_token": "ReadResult<GoalState> discriminated union",
+        "mechanism": "Returns ok | corrupt; absent is handled by existsSync check upstream; the ok branch is the only one that sets bootTerminalState.",
+        "evidence_ids": ["E3"],
+        "proven": true
+      },
+      {
+        "from_anchor": "packages/autogoal/src/goal-chain.ts:167 [readGoalChainResult]",
+        "to_anchor": "packages/autogoal/src/server.ts:1086 [readGoalChainResult(directory) call]",
+        "edge_type": "CONTRACT",
+        "edge_token": "ReadResult<GoalChain> discriminated union; ok/absent/corrupt",
+        "mechanism": "Chain file present + read returns 'ok' with steps > 0 is the only path into the cleanup block.",
+        "evidence_ids": ["E3"],
+        "proven": true
+      },
+      {
+        "from_anchor": "packages/autogoal/src/server.ts:1087 [guard]",
+        "to_anchor": "packages/app/src/pages/session/goal-panel-pure.ts:128 [chainMatchesGoal]",
+        "edge_type": "STATE",
+        "edge_token": "stale chain file on disk",
+        "mechanism": "Even though chainMatchesGoal correctly returns false for state without matching chainId, the chain FILE persists on disk and continues to be returned by readGoalChainResult on subsequent boots, occupying the file-system slot.",
+        "evidence_ids": ["E1"],
+        "proven": true
+      }
+    ],
+    "unproven_links": [],
+    "hypotheses": []
+  },
+  "confirmed_defects": [
+    {
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "anchor": "packages/autogoal/src/server.ts:1075-1111 [chain cleanup block]",
+      "claim": "The boot orphan-cleanup does not unlink chain files when the state file is absent or corrupt. Such chains linger forever across boots.",
+      "root_cause": "The cleanup block guards on `bootTerminalState` truthy (line 1087). This value is null when the state file is absent, corrupt, or in a non-terminal state. There is no separate code path that handles 'chain exists but state is unrecoverable.' The recent fix (6d7d0c049) broadened terminal-state coverage but did not address the missing-state case.",
+      "impact": "Users who clear their state file (manually or via a bug) or whose state file becomes corrupt will accumulate stale chain files in .opencode/. The files do not misrender the UI (chainMatchesGoal rejects them) but they consume disk and require manual cleanup. Repeated occurrences grow the .opencode/ directory indefinitely.",
+      "evidence_ids": ["E1", "E2", "E3", "E5"],
+      "tags": ["autogoal", "boot-cleanup", "orphan-chain", "missing-state-file", "silent-persistence"]
+    }
+  ],
+  "disproven_concerns": [
+    {
+      "anchor": "packages/autogoal/src/server.ts:1087 [bootTerminalState guard]",
+      "concern": "Could the guard have been intentionally omitted to preserve chains during the 'active' or 'paused' state, and is the missing-state case actually an orphan?",
+      "evidence_of_absence": "A chain file with no state file CANNOT be associated with an active or paused goal — there is no state to bind to. The 'active/paused preserves the chain' invariant applies only when state is recoverable (readGoalStateResult returns ok). When state is absent or corrupt, there is no recoverable goal-state binding the chain; the chain is by definition orphaned.",
+      "scope_limits": "The disproof is bounded to 'chain file present + state file absent or corrupt.' It does not cover the case where the chain file itself is corrupt (readGoalChainResult returns kind === 'corrupt'); that case is a separate concern beyond this audit's center.",
+      "evidence_ids": ["E3", "E5"]
+    },
+    {
+      "anchor": "packages/autogoal/src/server.ts:1075 [chain cleanup block, the if-c.kind === 'ok' branch only]",
+      "concern": "Does the recent fix's commit message imply the missing-state case was considered and rejected?",
+      "evidence_of_absence": "The commit message enumerates three cases: completed, abandoned-mid-chain, orphan-from-previous-session. The missing-state case is not mentioned. This is consistent with an unconsidered case, not a considered-and-rejected case.",
+      "scope_limits": "Bounded to what the commit message says. Does not foreclose a design rationale that was held privately.",
+      "evidence_ids": ["E5"]
+    }
+  ],
+  "contradictions": [],
+  "unknowns": [
+    {
+      "description": "What is the actual rate at which users encounter missing-state conditions? Manual state-file deletion is rare but not impossible; state-file corruption via partial writes has a known prior (see line 1044-1046 comment about 'previous code unlinked first, then re-read the now-absent file — so the chain was never cleaned up'). The frequency would inform whether this is MEDIUM (occasional) or LOW (rare).",
+      "evidence_needed": "Production telemetry on state-file corruption frequency over the last 90 days, plus manual user reports of stale chain files.",
+      "confidence_effect": "Does not change CERTAIN likelihood or HIGH confidence; only refines impact between MEDIUM and LOW."
+    },
+    {
+      "description": "Is there a separate cleanup path for corrupt chain files (readGoalChainResult returns kind === 'corrupt') that runs before this block?",
+      "evidence_needed": "Read of readGoalChainResult (lines 167-...) to confirm whether the renameCorruptChainFile calls produce artifacts that subsequent boot logic handles.",
+      "confidence_effect": "If corrupt chain files are renamed to .corrupt.json and never re-checked, this audit's center does not address them but they may be in scope for a follow-up."
+    }
+  ],
+  "human_interactions": [],
+  "non_center_observations": [
+    {
+      "anchor": "packages/autogoal/src/server.ts:1093 [unlinkSync in cleanup block]",
+      "observation": "The unlinkSync call is wrapped in try/catch and logs at debug level on failure. A failed unlink (e.g., permission error) would leave the chain file in place silently. This is a separate concern from C0.",
+      "exclusion_reason": "Out of scope: C0 is about whether the cleanup runs at all when state is missing. The unlink-failure-silent path is a different failure mode (cleanup runs but unlink fails silently). Flagged for follow-up."
+    },
+    {
+      "anchor": "packages/autogoal/src/goal-state.ts:1110 [sentinel for terminal status]",
+      "observation": "The function at goal-state.ts:1109 returns null if state is not active or paused. This is correctly handling the terminal case at the read-state API level. The boot-cleanup block could conceivably use this helper instead of readGoalStateResult + manual status check, which would simplify the bootTerminalState guard.",
+      "exclusion_reason": "Out of scope: refactor opportunity, not a defect. C0 is a behavior defect (missing case), not a code-structure defect."
+    }
+  ],
+  "blast_radius": {
+    "direct": [
+      "packages/autogoal/src/server.ts:1075-1111 [chain cleanup block]"
+    ],
+    "edge_bundles": [
+      "packages/autogoal/src/server.ts [chain cleanup block] + packages/autogoal/src/goal-state.ts [readGoalStateResult] + packages/autogoal/src/goal-chain.ts [readGoalChainResult]"
+    ],
+    "indirect": [
+      "packages/app/src/pages/session/goal-panel-pure.ts:128 [chainMatchesGoal — receives the stale chain via readGoalChainResult and rejects it, but the file lingers]"
+    ],
+    "boundary": [
+      "filesystem .opencode/ directory — accumulates orphan chain files across boots when state is absent or corrupt"
+    ],
+    "excluded": [
+      "packages/app/src/pages/session/goal-panel.tsx [UI rendering — chainMatchesGoal correctly rejects stale chains]",
+      "packages/autogoal/src/goal-archive.ts [archive logic — separate from boot cleanup]",
+      "the readGoalChainResult-corrupt case (renameCorruptChainFile behavior) — separate audit target"
+    ]
+  },
+  "repair_contract": {
+    "applicable": true,
+    "objective": "Broaden the boot orphan-cleanup guard so a chain file is unlinked when the state file is absent or corrupt, in addition to the three existing terminal-state cases.",
+    "required_invariant": "On boot, a chain file present in .opencode/ is unlinked if EITHER (a) the state file shows the goal as terminal and the chain belongs to that state or no state, OR (b) the state file is absent, OR (c) the state file is corrupt (cannot be read). The only case where the chain file MUST be preserved is when state is active or paused and the chain belongs to it.",
+    "allowed_scope": [
+      "packages/autogoal/src/server.ts [chain cleanup block at lines 1075-1111; possibly tighten the bootTerminalState guard logic]",
+      "packages/autogoal/test/ [new test file pinning the missing-state and corrupt-state orphan cases]"
+    ],
+    "forbidden_scope": [
+      "packages/autogoal/src/goal-state.ts [readGoalStateResult signature — leave as-is, the result type already supports the absent/corrupt cases]",
+      "packages/autogoal/src/goal-chain.ts [readGoalChainResult — same]",
+      "packages/app/src/pages/session/goal-panel-pure.ts [chainMatchesGoal — already correct]"
+    ],
+    "compatibility": [
+      "Active/paused goals must continue to preserve their chain file across boots (the existing invariant).",
+      "The three terminal-state cases fixed in commit 6d7d0c049 must continue to be handled.",
+      "The corrupt-chain-file case (readGoalChainResult returns kind === 'corrupt') may already be handled by renameCorruptChainFile; do not duplicate that handling.",
+      "No schema migration. No config flag. No new public API."
+    ],
+    "reversibility": "Single-function edit (the guard logic at server.ts:1087) + one new test file. Revert by git revert of the fix commit. The original three-case behavior is preserved by the existing tests; only the missing/corrupt case is added."
+  },
+  "verification": {
+    "failing_before": [
+      {
+        "description": "New test: state file absent, chain file present at boot. Expect chain file to be unlinked after boot. RED on unfixed code: chain file remains.",
+        "method": "bun test packages/autogoal/test/boot-orphan-cleanup.test.mjs",
+        "command_or_anchor": "bun test packages/autogoal/test/boot-orphan-cleanup.test.mjs"
+      },
+      {
+        "description": "New test: state file corrupt (syntactically invalid JSON), chain file present. Expect chain file to be unlinked after boot. RED on unfixed code: chain file remains.",
+        "method": "bun test packages/autogoal/test/boot-orphan-cleanup.test.mjs",
+        "command_or_anchor": "bun test packages/autogoal/test/boot-orphan-cleanup.test.mjs"
+      }
+    ],
+    "passing_after": [
+      {
+        "description": "All three new test subtests pass: absent-state, corrupt-state, and the existing three terminal-state cases continue to pass.",
+        "method": "bun test packages/autogoal/test/boot-orphan-cleanup.test.mjs",
+        "command_or_anchor": "bun test packages/autogoal/test/boot-orphan-cleanup.test.mjs"
+      },
+      {
+        "description": "All existing autogoal tests remain green (no regression in the active/paused-preserves-chain invariant).",
+        "method": "bun test packages/autogoal/test/",
+        "command_or_anchor": "bun test packages/autogoal/test/"
+      }
+    ],
+    "impacted_checks": [
+      {
+        "description": "Manual repro: delete .opencode/goal-state.json while server is running, restart, verify .opencode/goal-chain.json is gone.",
+        "method": "rm .opencode/goal-state.json && bun run dev → grep goal-chain",
+        "command_or_anchor": "rm packages/desktop/.opencode/goal-state.json"
+      }
+    ],
+    "test_meta": [
+      {
+        "name": "boot-orphan-cleanup.test.mjs:missing_state_unlinks_chain",
+        "anchor": "packages/autogoal/test/boot-orphan-cleanup.test.mjs",
+        "status": "FAILING",
+        "assertion_match": "YES",
+        "oracle_independent": "YES",
+        "fixture_valid": "YES",
+        "isolated_safe": "YES"
+      },
+      {
+        "name": "boot-orphan-cleanup.test.mjs:corrupt_state_unlinks_chain",
+        "anchor": "packages/autogoal/test/boot-orphan-cleanup.test.mjs",
+        "status": "FAILING",
+        "assertion_match": "YES",
+        "oracle_independent": "YES",
+        "fixture_valid": "YES",
+        "isolated_safe": "YES"
+      }
+    ]
+  },
+  "independent_witness": {
+    "used": false,
+    "type": "n/a",
+    "independence": "Single-channel evidence (code-static + history) is sufficient at MEDIUM impact / CERTAIN likelihood. The trajectory is direct and observable; no independent witness needed.",
+    "result": "n/a",
+    "evidence_ids": []
+  },
+  "non_scope": [
+    "The corrupt-chain-file case (readGoalChainResult returns kind === 'corrupt' — renameCorruptChainFile handles this separately)",
+    "The unlink-failure-silent path (cleanup runs but unlink fails — separate defensive-coding concern)",
+    "UI rendering of stale chains (chainMatchesGoal in goal-panel-pure.ts:128 correctly rejects them)",
+    "A refactor of the cleanup block to use a higher-level helper (code structure, not behavior)",
+    "The state-write race condition (separate concern: what if state is written between readGoalStateResult and unlinkSync?)"
+  ],
+  "segments": [
+    {
+      "stop": 4,
+      "symbol_or_module": "server.ts:bootCleanup",
+      "center_segment": "lines 1043-1111 (state cleanup + chain cleanup)",
+      "swept": [
+        "lines 1043-1072 (state cleanup block + bootTerminalState assignment)",
+        "lines 1075-1111 (chain cleanup block)",
+        "line 1087 (the guard)"
+      ],
+      "skipped": [
+        "lines 1113+ (user-facing notifications, post-cleanup)",
+        "the entire event/session.idle handler (not part of boot path)"
+      ]
+    },
+    {
+      "stop": 5,
+      "symbol_or_module": "goal-state.ts:readGoalStateResult + goal-chain.ts:readGoalChainResult",
+      "center_segment": "ReadResult<GoalState> and ReadResult<GoalChain> discriminated unions",
+      "swept": [
+        "readGoalStateResult signature and behavior (line 656+)",
+        "readGoalChainResult signature and behavior (line 167+)"
+      ],
+      "skipped": [
+        "the validateGoalChain function body (too deep; readGoalChainResult is the contract I need)",
+        "the renameCorruptChainFile body (separate audit target)"
+      ]
+    },
+    {
+      "stop": 6,
+      "symbol_or_module": "goal-panel-pure.ts:chainMatchesGoal",
+      "center_segment": "lines 128-147",
+      "swept": [
+        "the chainMatchesGoal function body and recent cross-validation history"
+      ],
+      "skipped": [
+        "the surrounding pure helpers (cleanText, etc.)"
+      ]
+    }
+  ],
+  "safety_stops": [],
+  "stop_reason": "Defect trajectory proven CERTAIN at HIGH confidence. Three evidence channels (code-static via direct read, history via commit log, test-context via coverage gap) corroborate the missing-state orphan case. Frontier ended at Stop 9 (verification meta-check) with two failing-before tests named. Repair contract handed off with allowed/forbidden scope, compatibility invariants, and reversibility constraints."
+}
