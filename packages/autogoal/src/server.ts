@@ -405,10 +405,24 @@ export async function deliverContinuation(
     body: unknown;
     /** Maximum attempts before exhaustion pause. Defaults to 3. */
     maxAttempts?: number;
+    /**
+     * v0.7.3 / scan 2026-06-25 (C2) — optional backoff between retry
+     * attempts. If absent, no backoff (the SDK call is the rate-limit
+     * gate, not our loop). If a function, it is called with the
+     * 1-indexed attempt number about to be made and should return the
+     * number of milliseconds to wait. Production callers can use
+     * this for jittered backoff against flaky providers.
+     */
+    backoffMs?: (attempt: number) => number;
     deps: ContinuationDeliveryDeps;
   },
 ): Promise<ContinuationDeliveryOutcome> {
   const maxAttempts = opts.maxAttempts ?? 3;
+  // v0.7.3 / scan 2026-06-25 (C2) — backoff function is opt-in.
+  // Production callers leave it absent for the default zero-delay
+  // retry (the SDK call is the rate-limit gate). Tests and
+  // jittered-backoff callers pass a function.
+  const backoffMs = opts.backoffMs;
 
   // Idempotency check: did we already deliver this exact key? If so,
   // the dispatcher's caller already produced this prompt and any
@@ -515,6 +529,17 @@ export async function deliverContinuation(
         await finalizePause(reason, pause.level);
         return { status: "paused", reason };
       }
+      // v0.7.3 / scan 2026-06-25 (C2) — opt-in backoff between
+      // attempts. Skipped when the backoff function is absent (the
+      // default). The attempt parameter is the NEXT attempt index
+      // (so attempt=1 means "we just finished attempt 0 and about
+      // to start attempt 1").
+      if (backoffMs && attempt < maxAttempts) {
+        const ms = backoffMs(attempt + 1);
+        if (ms > 0) {
+          await new Promise((resolve) => setTimeout(resolve, ms));
+        }
+      }
       continue;
     }
     // Result-object SDK (ThrowOnError = false, the default).
@@ -528,6 +553,12 @@ export async function deliverContinuation(
         const reason = pause.reason;
         await finalizePause(reason, pause.level);
         return { status: "paused", reason };
+      }
+      if (backoffMs && attempt < maxAttempts) {
+        const ms = backoffMs(attempt + 1);
+        if (ms > 0) {
+          await new Promise((resolve) => setTimeout(resolve, ms));
+        }
       }
       continue;
     }

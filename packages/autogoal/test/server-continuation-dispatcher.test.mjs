@@ -332,3 +332,169 @@ test("AG-P1-06.2.8: abort failure retries (treats as transient)", async () => {
   assert.equal(result.status, "delivered");
   assert.equal(attempts, 2);
 });
+
+// ── 9. Backoff option (C2) ──────────────────────────────────────────────────
+
+test("C2.1: backoffMs absent → no delay between attempts", async () => {
+  let attempts = 0;
+  const { client } = makeHarness({
+    prompt: async () => {
+      attempts++;
+      if (attempts < 3) {
+        throw Object.assign(new Error("fetch failed ECONNRESET"), { code: "ECONNRESET" });
+      }
+      return { data: { id: "ok" } };
+    },
+    onPause: () => {},
+    onNotify: () => {},
+    onWebhookFire: () => {},
+  });
+
+  const t0 = Date.now();
+  const result = await deliverContinuation(client, {
+    sessionId: "s-c2-1",
+    idempotencyKey: "s-c2-1/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    // backoffMs is absent — no delay expected
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+  const elapsed = Date.now() - t0;
+
+  assert.equal(result.status, "delivered");
+  assert.equal(attempts, 3);
+  // Should complete in <100ms (no artificial delay).
+  assert.ok(elapsed < 100, `expected <100ms without backoff; took ${elapsed}ms`);
+});
+
+test("C2.2: backoffMs function is called between retries", async () => {
+  let attempts = 0;
+  const backoffCalls = [];
+  const { client } = makeHarness({
+    prompt: async () => {
+      attempts++;
+      if (attempts < 3) {
+        throw Object.assign(new Error("fetch failed ECONNRESET"), { code: "ECONNRESET" });
+      }
+      return { data: { id: "ok" } };
+    },
+    onPause: () => {},
+    onNotify: () => {},
+    onWebhookFire: () => {},
+  });
+
+  const result = await deliverContinuation(client, {
+    sessionId: "s-c2-2",
+    idempotencyKey: "s-c2-2/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    backoffMs: (nextAttempt) => {
+      backoffCalls.push(nextAttempt);
+      return 0; // no real delay; we just want to observe the call
+    },
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+
+  assert.equal(result.status, "delivered");
+  assert.equal(attempts, 3);
+  // backoffMs is called BEFORE attempts 2 and 3 (so 2 calls total).
+  assert.deepEqual(backoffCalls, [2, 3]);
+});
+
+test("C2.3: backoffMs is awaited between attempts (delay is real)", async () => {
+  let attempts = 0;
+  const timestamps = [];
+  const { client } = makeHarness({
+    prompt: async () => {
+      timestamps.push(Date.now());
+      attempts++;
+      if (attempts < 3) {
+        throw Object.assign(new Error("fetch failed ECONNRESET"), { code: "ECONNRESET" });
+      }
+      return { data: { id: "ok" } };
+    },
+    onPause: () => {},
+    onNotify: () => {},
+    onWebhookFire: () => {},
+  });
+
+  const result = await deliverContinuation(client, {
+    sessionId: "s-c2-3",
+    idempotencyKey: "s-c2-3/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    backoffMs: () => 30, // 30ms between each attempt
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+
+  assert.equal(result.status, "delivered");
+  assert.equal(attempts, 3);
+  // attempts 2 and 3 should each be ~30ms after the previous.
+  const gap1 = timestamps[1] - timestamps[0];
+  const gap2 = timestamps[2] - timestamps[1];
+  assert.ok(gap1 >= 25, `gap1 should be >=25ms; was ${gap1}ms`);
+  assert.ok(gap2 >= 25, `gap2 should be >=25ms; was ${gap2}ms`);
+});
+
+test("C2.4: backoffMs not called after final attempt", async () => {
+  let attempts = 0;
+  const backoffCalls = [];
+  const { client } = makeHarness({
+    prompt: async () => {
+      attempts++;
+      throw Object.assign(new Error("fetch failed ECONNRESET"), { code: "ECONNRESET" });
+    },
+    onPause: () => {},
+    onNotify: () => {},
+    onWebhookFire: () => {},
+  });
+
+  const result = await deliverContinuation(client, {
+    sessionId: "s-c2-4",
+    idempotencyKey: "s-c2-4/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    backoffMs: (nextAttempt) => {
+      backoffCalls.push(nextAttempt);
+      return 0;
+    },
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+
+  assert.equal(result.status, "paused");
+  assert.equal(attempts, 3);
+  // Backoff is called before attempts 2 and 3, but NOT after
+  // attempt 3 (which is the final one that exhausts retries).
+  assert.deepEqual(backoffCalls, [2, 3]);
+});
+
+test("C2.5: backoffMs returning 0 skips the delay", async () => {
+  let attempts = 0;
+  const { client } = makeHarness({
+    prompt: async () => {
+      attempts++;
+      if (attempts < 2) {
+        throw Object.assign(new Error("fetch failed ECONNRESET"), { code: "ECONNRESET" });
+      }
+      return { data: { id: "ok" } };
+    },
+    onPause: () => {},
+    onNotify: () => {},
+    onWebhookFire: () => {},
+  });
+
+  const t0 = Date.now();
+  const result = await deliverContinuation(client, {
+    sessionId: "s-c2-5",
+    idempotencyKey: "s-c2-5/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    backoffMs: () => 0,
+    deps: { onReset: () => {}, onPause: () => {}, onNotify: () => {}, onWebhookFire: () => {} },
+  });
+  const elapsed = Date.now() - t0;
+
+  assert.equal(result.status, "delivered");
+  assert.equal(attempts, 2);
+  assert.ok(elapsed < 50, `backoffMs returning 0 should not delay; took ${elapsed}ms`);
+});
