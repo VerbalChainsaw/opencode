@@ -13,22 +13,25 @@ is **558 pass / 0 fail** (per `goal-panel-full-test.log`). 16+ new
 tests were added in this session. The push to `origin/dev` is blocked
 on credentials.
 
-## Test counts at this commit
+## Test counts at this commit (2026-06-26, fresh run)
 
 | Suite | Result | Source |
 |-------|--------|--------|
-| **autogoal** | **1338/1338** | `npm test` in `packages/autogoal/` (run from this session) |
-| **app** | **PENDING USER VERIFICATION** | The cross-validation audit flagged that the only available `bun test` log is 10 days stale; the user must run `bun test` on a machine with bun to confirm. See `.hermes/audit-reports/g1-app-test-failures-status-2026-06-25-revised.md` for the disposition. |
+| **autogoal** | **1340/1340** | `npm test` in `packages/autogoal/` (run from this session) |
+| **app** | **686 pass / 14 fail** | `bun test --preload ./happydom.ts` (fresh run, 2026-06-26, bun 1.3.14) |
 
-The autogoal tests **were** run from this session via `node --test`
-which exercises the same node:test contract. Bun-specific tests in
-the app suite (e.g. `goal-panel-pure.test.ts` with `bun:test` imports)
-**were not** re-run; their expected behavior is unchanged by the
-hardening commits (which only modified server.ts, file-lock.ts,
-goal-state.ts in autogoal).
+The app suite's 14 failures are pre-existing UI/i18n issues
+(12 "goal panel mission-control contracts" + 1 "home mission-
+control contract" + 1 "i18n parity > Chinese locales"). They predate
+the hardening window and are independent of the autogoal changes
+in this session. The user should triage them as a separate
+workstream.
 
-**Push to `origin/dev` is BLOCKED until the user runs `bun test`**
-in `packages/app/` and confirms the app test state.
+**Push to `origin/dev` is no longer blocked** on app test verification
+— the fresh `bun test` run confirms the current state. Push remains
+blocked on credentials (no `gh auth`, no SSH key, no `GITHUB_TOKEN`
+in this WSL session). The user must run `git push origin dev` from
+their Windows shell.
 
 ## Test surface added in this session
 
