@@ -500,15 +500,28 @@ export function parseGoalInput(
 }
 
 export function createGoalState(parsed: ParsedGoal, setBy: "user" | "template" | "chain", now: number): GoalState {
+  // v0.7.3 / scan 2026-06-25 (G-5) — sanitize the condition at the
+  // trust boundary. Previously the on-disk condition was unsanitized;
+  // sanitization happened at display time only. This made the
+  // sanitization a single point of failure — any new code path
+  // that read state.condition directly could bypass it. Sanitizing
+  // here makes the on-disk condition safe-by-default. The
+  // sanitizeForPrompt pass at display time (line ~1102) remains
+  // as defense-in-depth.
+  const condition = sanitizeForPrompt(parsed.condition);
+  const command =
+    typeof parsed.command === "string"
+      ? sanitizeForPrompt(parsed.command)
+      : parsed.command;
   const metadata: GoalState["metadata"] = { setBy };
-  if (parsed.agentName) metadata.agentName = parsed.agentName;
+  if (parsed.agentName) metadata.agentName = sanitizeForPrompt(parsed.agentName).trim() || undefined;
   const sessionId = sanitizeSessionId(parsed.sessionId);
   if (sessionId) metadata.sessionId = sessionId;
   return {
     version: 1,
     id: randomUUID(),
-    condition: parsed.condition,
-    command: parsed.command,
+    condition,
+    command,
     verification: parsed.verification ?? null,
     status: "active",
     createdAt: now,
