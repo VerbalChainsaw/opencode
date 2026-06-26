@@ -1524,6 +1524,20 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [activity, setActivity] = createSignal<ActivityEvent[]>([])
   const [chain, setChain] = createSignal<ChainData | null>(null)
   const [chainDismissed, setChainDismissed] = createSignal(false)
+  // v0.7.3 / G-2 — set of dismissed terminal-goal IDs. When the user
+  // clicks the dismiss-terminal X button on a terminal-history
+  // row, the goal's ID is added here so the unarchivedTerminalGoal
+  // filter hides it. The set is in-memory only — dismissing a
+  // goal does NOT remove it from the on-disk archive, it just
+  // hides it from the panel. A server-side poll will re-add it to
+  // the archive (the goal is already there from the achievement
+  // transition). The distinction:
+  //   chainDismissed = "user dismissed the chain entirely" (suppresses
+  //                    all chain polling until reset)
+  //   dismissedTerminalGoalIDs = "user acknowledged this specific
+  //                                terminal goal; hide it from the
+  //                                unarchived view"
+  const [dismissedTerminalGoalIDs, setDismissedTerminalGoalIDs] = createStore<{ ids: string[] }>({ ids: [] })
   const [templates, setTemplates] = createSignal(DEFAULT_TEMPLATE_BUTTONS)
   const [localTemplateOverrides, setLocalTemplateOverrides] = createSignal<Record<string, GoalTemplateButton>>({})
   const [deletedTemplateIDs, setDeletedTemplateIDs] = createSignal<Record<string, true>>({})
@@ -1641,7 +1655,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   // logger (overridden in tests, or a browser with no console)
   // doesn't surface as an unhandled rejection from the .catch()
   // call site — which would defeat the fire-and-forget contract.
-  const ignoreRefreshError = (context) => (error) => {
+  const ignoreRefreshError = (context: string) => (error: unknown) => {
     try {
       // eslint-disable-next-line no-console
       console.warn(`[goal-panel] ${context} failed:`, error)
@@ -3133,8 +3147,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         }
         return void removeLiveChainStep(action.index);
       case "dismiss-terminal":
-        setChainDismissed(true)
-        setChain(null)
+        // v0.7.3 / G-2 — record the dismissed terminal goal's id
+        // so unarchivedTerminalGoal hides it. Do NOT null the
+        // chain — the terminal goal is still meaningful for the
+        // archive polling and history panel; the user is just
+        // acknowledging the "still needs archiving" prompt.
+        const tGoal = terminalGoal();
+        if (tGoal) {
+          setDismissedTerminalGoalIDs("ids", (prev) =>
+            prev.includes(tGoal.id) ? prev : [...prev, tGoal.id],
+          );
+        }
         return;
       case "noop":
         return;
@@ -3144,6 +3167,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const goal = terminalGoal()
     if (!goal) return null
     if (archive().some((run) => run.summary.goalID === goal.id)) return null
+    // v0.7.3 / G-2 — hide terminal goals the user has dismissed.
+    // The goal remains in the on-disk archive; this just hides it
+    // from the in-panel "still needs archiving" view.
+    if (dismissedTerminalGoalIDs.ids.includes(goal.id)) return null
     return goal
   })
 
