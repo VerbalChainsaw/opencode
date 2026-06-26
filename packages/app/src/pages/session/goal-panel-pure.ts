@@ -126,10 +126,24 @@ export function isGoalStateShape(v: unknown): v is GoalState {
  *  stale `.opencode/.goal-chain.json` from a previous session/goal as the
  *  current runtime chain for a new session. */
 export function chainMatchesGoal(chain: { id: string }, state: GoalState | null | undefined): boolean {
-  if (!state) return true
-  const chainId = state.metadata?.chainId
-  if (typeof chainId !== "string") return true
-  return chainId === chain.id
+  // Cross-validation 2026-06-26 — REVERTED the 7684bb013 sibling
+  // change. The sibling's "return true for null/undefined/no
+  // chainId" was correct for session-binding (handled by
+  // goalBelongsToSession at server.ts:91) but WRONG for chain-
+  // snapshot scoping. The contract test at goal-panel-contract
+  // .test.ts:206-210 pins "state without chainId does NOT match
+  // any chain" — which is the correct semantic for this function.
+  //
+  // The original (pre-sibling, pre-7684bb013) implementation was:
+  //   const chainId = state?.metadata?.chainId
+  //   return typeof chainId === "string" && chainId === chain.id
+  // This returned false for null/undefined/missing-chainId — which
+  // is what the test pins. The sibling's "return true" for the
+  // null case was a regression that broke 1 contract test.
+  //
+  // Restored to the original 99243e2d0 contract.
+  const chainId = state?.metadata?.chainId
+  return typeof chainId === "string" && chainId === chain.id
 }
 
 /** Strip C0/C1 control chars and Unicode bidi/format chars before
