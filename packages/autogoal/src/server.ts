@@ -2346,6 +2346,10 @@ export const server: Plugin = async ({ client, directory }) => {
         description: "Claim a pending handoff and resume the goal. The handoff file is deleted after claiming.",
         args: {},
         async execute(_args, ctx) {
+          const stateResult = readGoalStateResult(ctx.directory);
+          if (stateResult.kind === "corrupt") {
+            return `Cannot claim the handoff because the ${corruptStateNotice(stateResult.reason, ctx.directory)}`;
+          }
           const res = claimHandoff(ctx.directory);
           if (res.ok) return res.message;
           if (res.reason === "no-handoff") return "No handoff to claim.";
