@@ -2,10 +2,10 @@
 
 This document is the contract for any GUI that wants to render the
 AutoGoal plugin's state. The canonical consumer is the OpenCode
-Desktop "Goals" tab (`packages/app/src/components/session/goal-tab.tsx`
-in the `VerbalChainsaw/opencode` fork), but the contract is host-agnostic
-— any web component, native widget, or CLI dashboard can implement
-against it.
+Desktop Goal panel (`packages/app/src/pages/session/goal-panel.tsx`)
+and its control bridge (`packages/app/src/pages/session/goal-panel-actions.ts`)
+in this monorepo, but the contract is host-agnostic — any web component,
+native widget, or CLI dashboard can implement against it.
 
 ## The data contract
 

@@ -59,8 +59,10 @@ In `packages/autogoal/specs/` (canonical, this repo only):
 - `README.md` — directory purpose and retirement notice
 
 In `packages/autogoal/docs/` (design notes, secondary):
-- `MISSION_CONTROL_UI_DESIGN.md` — visual spec: steel-and-signal dark aesthetic, Global Ops Board, Dual-Band Dock
-- `MISSION_CONTROL_UI_IMPLEMENTATION_PLAN.md` — implementation sequence
+- `SPEC.md` — reconstructed product requirements and acceptance matrix
+- `TRACEABILITY.md` — requirement-to-test/source traceability
+- `gui-integration.md` — Desktop GUI integration contract for AutoGoal state and controls
+- `FEATURE-BACKLOG.md` — secondary backlog and deferred work notes
 
 Other `specs/` directories in this monorepo (e.g. `specs/`, `packages/opencode/specs/`) are unrelated to AutoGoal. Cite the AutoGoal-specific spec by its relative path from the package root (e.g. `specs/v0.5.0-feature-work-orders.md §F-1`).
 
@@ -148,16 +150,16 @@ Docs: https://opencode.ai/docs/sdk/ | npm: https://www.npmjs.com/package/@openco
 | i18n strings (English source) | `packages/app/src/i18n/en.ts` |
 | i18n (zh / zht) | `packages/app/src/i18n/zh.ts`, `zht.ts` |
 
-### Key files (OpenGoal sibling)
+### Key files (AutoGoal package)
 
 | Concern | File |
 |---------|------|
-| Goal state + budget enforcement | `src/goal-state.ts` |
-| Server plugin (auto-loop) | `src/server.ts` |
-| RenderBlock types + factories | `src/blocks/goal-blocks.ts` |
-| Goal chain (sub-goals) | `src/goal-chain.ts` |
-| Goal templates | `src/goal-templates.ts` |
-| Design spec | `MISSION_CONTROL_UI_DESIGN.md` |
+| Goal state + budget enforcement | `packages/autogoal/src/goal-state.ts` |
+| Server plugin (auto-loop) | `packages/autogoal/src/server.ts` |
+| RenderBlock types + factories | `packages/autogoal/src/blocks/goal-blocks.ts` |
+| Goal chain (sub-goals) | `packages/autogoal/src/goal-chain.ts` |
+| Goal templates | `packages/autogoal/src/templates.ts` |
+| GUI integration contract | `packages/autogoal/docs/gui-integration.md` |
 
 ---
 

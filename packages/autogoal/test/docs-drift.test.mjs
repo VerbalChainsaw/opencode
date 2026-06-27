@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
+const workspaceRoot = join(repoRoot, "..", "..");
 
 /**
  * Recursively walk `dir` collecting file paths. Skips common
@@ -132,4 +133,70 @@ test("docs-drift: CHANGELOG.md has a ## 0.3.0 section", () => {
     "Insert a `## 0.3.0` section between `## 0.4.0` and `## 0.2.1` " +
     "documenting the withStateLock removal and the replacement pattern.",
   );
+});
+
+// ── Test 3: root AGENTS.md routes AutoGoal work to this monorepo ──────────
+
+test("docs-drift: root AGENTS.md does not route key files to retired sibling paths", () => {
+  const agents = readFileSync(join(workspaceRoot, "AGENTS.md"), "utf-8");
+  const staleNeedles = [
+    "### Key files (OpenGoal sibling)",
+    "`src/goal-state.ts`",
+    "`src/server.ts`",
+    "`src/goal-chain.ts`",
+    "`src/goal-templates.ts`",
+    "`MISSION_CONTROL_UI_DESIGN.md`",
+    "`MISSION_CONTROL_UI_IMPLEMENTATION_PLAN.md`",
+  ];
+
+  for (const needle of staleNeedles) {
+    assert.ok(
+      !agents.includes(needle),
+      `root AGENTS.md still contains stale AutoGoal routing: ${needle}`,
+    );
+  }
+
+  const requiredNeedles = [
+    "`packages/autogoal/src/goal-state.ts`",
+    "`packages/autogoal/src/server.ts`",
+    "`packages/autogoal/src/goal-chain.ts`",
+    "`packages/autogoal/src/templates.ts`",
+    "`packages/autogoal/docs/gui-integration.md`",
+  ];
+
+  for (const needle of requiredNeedles) {
+    assert.ok(
+      agents.includes(needle),
+      `root AGENTS.md is missing current AutoGoal routing: ${needle}`,
+    );
+  }
+});
+
+// ── Test 4: GUI integration doc points at current Desktop files ───────────
+
+test("docs-drift: GUI integration doc points at the current Desktop Goal panel", () => {
+  const guiDoc = readFileSync(join(repoRoot, "docs", "gui-integration.md"), "utf-8");
+  const staleNeedles = [
+    "packages/app/src/components/session/goal-tab.tsx",
+    "VerbalChainsaw/opencode",
+  ];
+
+  for (const needle of staleNeedles) {
+    assert.ok(
+      !guiDoc.includes(needle),
+      `gui-integration.md still points at stale Desktop consumer: ${needle}`,
+    );
+  }
+
+  const requiredNeedles = [
+    "packages/app/src/pages/session/goal-panel.tsx",
+    "packages/app/src/pages/session/goal-panel-actions.ts",
+  ];
+
+  for (const needle of requiredNeedles) {
+    assert.ok(
+      guiDoc.includes(needle),
+      `gui-integration.md is missing current Desktop consumer: ${needle}`,
+    );
+  }
 });
