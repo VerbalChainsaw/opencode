@@ -114,6 +114,33 @@ describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
     })).toBe("draft");
   });
 
+  test("2e. explicit draft provenance wins over terminal snapshots", () => {
+    expect(chainStepVisibleSourceForState({
+      hasLiveGoal: false,
+      hasTerminalGoal: true,
+      hasChainSnapshot: true,
+      draftSource: "draft",
+      hasDraftSteps: false,
+    })).toBe("draft");
+    expect(chainStepVisibleSourceForState({
+      hasLiveGoal: false,
+      hasTerminalGoal: true,
+      hasChainSnapshot: true,
+      draftSource: "draft",
+      hasDraftSteps: true,
+    })).toBe("draft");
+  });
+
+  test("2f. active live goals still own runtime rows", () => {
+    expect(chainStepVisibleSourceForState({
+      hasLiveGoal: true,
+      hasTerminalGoal: false,
+      hasChainSnapshot: true,
+      draftSource: "draft",
+      hasDraftSteps: true,
+    })).toBe("live");
+  });
+
   test("3. terminal-history row never touches the live chain file", () => {
     const action = chainStepVisibleAction({
       source: "terminal-history",

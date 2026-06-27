@@ -1295,8 +1295,11 @@ export function chainStepVisibleSourceForState(args: {
   hasLiveGoal: boolean;
   hasTerminalGoal: boolean;
   hasChainSnapshot: boolean;
+  draftSource?: "uninitialized" | "draft";
+  hasDraftSteps?: boolean;
 }): ChainStepVisibleSource {
   if (args.hasLiveGoal) return "live"
+  if (args.hasDraftSteps || args.draftSource === "draft") return "draft"
   if (args.hasTerminalGoal && args.hasChainSnapshot) return "live"
   return "draft"
 }

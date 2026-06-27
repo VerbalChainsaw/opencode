@@ -1821,7 +1821,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const result = await pauseGoalRun(sdk.client, {
       sessionID,
       directory: sdk.directory,
-      abortActiveTurn: sync.data.session_working(sessionID),
+      abortActiveTurn: true,
     })
     if (result.ok) {
       setControlError("warning" in result && typeof result.warning === "string" ? result.warning : null)
@@ -1843,7 +1843,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const result = await stopGoalRun(sdk.client, {
       sessionID,
       directory: sdk.directory,
-      abortActiveTurn: sync.data.session_working(sessionID),
+      abortActiveTurn: true,
     })
     if (result.ok) {
       setControlError("warning" in result && typeof result.warning === "string" ? result.warning : null)
@@ -3069,9 +3069,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const runningChain = chain()
     if (runningChain) {
       const snapshot = chainSnapshotSteps()
+      if (!live) {
+        const selected = selectRunnableChainSteps(chainDraft.steps, snapshot, chainDraft.source)
+        if (selected.length > 0 || chainDraft.source === "draft") return selected
+      }
       if (live && snapshot.length > 0) return snapshot
-      const selected = selectRunnableChainSteps(chainDraft.steps, snapshot, chainDraft.source)
-      if (selected.length > 0 || chainDraft.source === "draft") return selected
     }
     if (!live && chainDraft.steps.length > 0) return chainDraft.steps
     // A single live goal has no chain file. Render the one running goal as a
@@ -3108,8 +3110,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       hasLiveGoal: !!liveGoal(),
       hasTerminalGoal: !!terminalGoal(),
       hasChainSnapshot: chainSnapshotSteps().length > 0,
+      draftSource: chainDraft.source,
+      hasDraftSteps: chainDraft.steps.length > 0,
     }),
   )
+  const visibleChainRowsAreDraft = createMemo(() => visibleChainStepSource() === "draft")
   const runningStepIndex = createMemo(() => {
     if (!liveGoal()) return -1
     const runningChain = chain()
@@ -3978,7 +3983,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                         </div>
                       </div>
-                      <div class="min-w-0">
+                      <div class="flex min-w-0 flex-col">
                         <Show when={visibleStepCount() > 1}>
                           <div
                             data-component="goal-chain-minimap"
@@ -4461,7 +4466,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <div
                           data-component="goal-runtime-command-tray"
                           data-state={runtimeDetailState()}
-                          class="mt-1.5 rounded-md border p-1.5"
+                          class="order-first mb-1.5 rounded-md border p-1.5"
                           style={{
                             "background-color": "rgba(2, 6, 23, 0.30)",
                             "border-color": "rgba(148, 163, 184, 0.14)",
@@ -4868,7 +4873,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       type="number"
                                       min="1"
                                       value={String(step.maxTurns)}
-                                      disabled={busy() !== null || !!liveGoal()}
+                                      disabled={busy() !== null || !visibleChainRowsAreDraft()}
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
                                       }
@@ -4884,7 +4889,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       type="number"
                                       min="1"
                                       value={String(step.maxTimeMinutes)}
-                                      disabled={busy() !== null || !!liveGoal()}
+                                      disabled={busy() !== null || !visibleChainRowsAreDraft()}
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
                                       }
@@ -4899,7 +4904,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     title={language.t("session.goal.template.editRunStep")}
                                     class={inlineCommandButtonClass("edit")}
                                     style={inlineCommandButtonStyle("edit")}
-                                    disabled={busy() !== null || !!liveGoal()}
+                                    disabled={busy() !== null || !visibleChainRowsAreDraft()}
                                     onClick={() => editChainStepDraft(step)}
                                   >
                                     <IconV2 name="edit" size="small" />
@@ -4910,7 +4915,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     title={language.t("session.goal.chainBuilder.moveUp")}
                                     class={inlineCommandButtonClass("move")}
                                     style={inlineCommandButtonStyle("move")}
-                                    disabled={busy() !== null || !!liveGoal() || i() === 0}
+                                    disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === 0}
                                     onClick={() => moveDraftStep(i(), i() - 1)}
                                   >
                                     ↑
@@ -4921,17 +4926,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     title={language.t("session.goal.chainBuilder.moveDown")}
                                     class={inlineCommandButtonClass("move")}
                                     style={inlineCommandButtonStyle("move")}
-                                    disabled={busy() !== null || !!liveGoal() || i() === visibleStepCount() - 1}
+                                    disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === visibleStepCount() - 1}
                                     onClick={() => moveDraftStep(i(), i() + 1)}
                                   >
                                     ↓
                                   </button>
                                   <button
                                     type="button"
-                                    aria-label={language.t(liveGoal() ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}
+                                    aria-label={language.t(visibleChainStepSource() === "live" ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}
                                     class={inlineCommandButtonClass("remove")}
                                     style={inlineCommandButtonStyle("remove")}
-                                    disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}
+                                    disabled={busy() !== null || (visibleChainStepSource() === "live" && i() <= runningStepIndex())}
                                     // AG-P1-05 — pass the visible source
                                     // explicitly so the pure selector
                                     // decides the action kind instead

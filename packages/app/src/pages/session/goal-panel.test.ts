@@ -229,6 +229,8 @@ describe("goal panel mission-control contracts", () => {
   test("runtime detail actions share one stable tray slot instead of mounting page sections", async () => {
     const src = await goalPanelSource()
     expect(src).toContain('data-component="goal-runtime-command-tray"')
+    expect(src).toContain('class="order-first mb-1.5 rounded-md border p-1.5"')
+    expect(src).toMatch(/<div class="flex min-w-0 flex-col">\s*<Show when=\{visibleStepCount\(\) > 1\}>[\s\S]*data-component="goal-runtime-command-tray"/)
     expect(src).toContain('data-component="goal-runtime-detail-slot"')
     expect(src).toContain('data-component="goal-runtime-primary-actions"')
     expect(src).toContain('data-component="goal-runtime-support-actions"')
@@ -279,14 +281,23 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("setControlError(null)")
   })
 
-  test("confirmed stop clears goal state and aborts the active session turn", async () => {
+  test("confirmed stop clears goal state and always aborts the session tree", async () => {
     const src = await goalPanelSource()
     const stopGoal = src.match(/const stopGoal = async \(\) => \{[\s\S]*?\n  \}/)
     expect(stopGoal).toBeTruthy()
     expect(stopGoal![0]).toContain("stopGoalRun")
-    expect(stopGoal![0]).toContain("abortActiveTurn: sync.data.session_working(sessionID)")
+    expect(stopGoal![0]).toContain("abortActiveTurn: true")
     expect(src).toMatch(/onClick=\{\(\) => void stopGoal\(\)\}/)
     expect(src).not.toContain('onClick={() => void runAction("clear")}')
+  })
+
+  test("pause is also a hard session-tree abort so subagents cannot keep driving the run", async () => {
+    const src = await goalPanelSource()
+    const pauseGoal = src.match(/const pauseGoal = async \(\) => \{[\s\S]*?\n  \}/)
+    expect(pauseGoal).toBeTruthy()
+    expect(pauseGoal![0]).toContain("pauseGoalRun")
+    expect(pauseGoal![0]).toContain("abortActiveTurn: true")
+    expect(pauseGoal![0]).not.toContain("abortActiveTurn: sync.data.session_working(sessionID)")
   })
 
   test("run controls expose restart as a first-class lifecycle action", async () => {
@@ -1060,6 +1071,7 @@ describe("goal panel mission-control contracts", () => {
     const visible = src.slice(visibleStart, visibleEnd)
 
     expect(visible).toContain("selectRunnableChainSteps(chainDraft.steps, snapshot, chainDraft.source)")
+    expect(visible).toContain("if (!live)")
     expect(visible).not.toContain("if (snapshot.length > 0) return snapshot")
   })
 
@@ -1229,12 +1241,24 @@ describe("goal panel mission-control contracts", () => {
     //  source so we look for the key fragments rather than the whole expression.)
     expect(src).toMatch(/removeVisibleStep\(\s*step\s*,\s*i\(\)\s*,\s*visibleChainStepSource\(\)/)
     expect(src).toContain("chainStepVisibleSourceForState")
+    expect(src).toContain("draftSource: chainDraft.source")
+    expect(src).toContain("hasDraftSteps: chainDraft.steps.length > 0")
+    expect(src).toContain('const visibleChainRowsAreDraft = createMemo(() => visibleChainStepSource() === "draft")')
     expect(src).not.toContain('chain() && !chainDraft.steps.length) ? "live" : "draft"')
     // The old proxy-style guard should NOT be the primary dispatch.
     expect(src).not.toContain("if (liveGoal()) return void removeLiveChainStep(index)")
-    // aria-label and disabled remain in place for accessibility.
-    expect(src).toContain('aria-label={language.t(liveGoal() ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}')
-    expect(src).toContain("disabled={busy() !== null || (!!liveGoal() && i() <= runningStepIndex())}")
+    // aria-label and disabled remain in place for accessibility, but route by visible source.
+    const rowStart = src.indexOf('data-component="goal-chain-step-row"')
+    const rowEnd = src.indexOf("</For>", rowStart)
+    expect(rowStart).toBeGreaterThan(-1)
+    expect(rowEnd).toBeGreaterThan(rowStart)
+    const rowSrc = src.slice(rowStart, rowEnd)
+    expect(rowSrc).toContain('aria-label={language.t(visibleChainStepSource() === "live" ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}')
+    expect(rowSrc).toContain("disabled={busy() !== null || !visibleChainRowsAreDraft()}")
+    expect(rowSrc).toContain("disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === 0}")
+    expect(rowSrc).toContain("disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === visibleStepCount() - 1}")
+    expect(rowSrc).toContain('disabled={busy() !== null || (visibleChainStepSource() === "live" && i() <= runningStepIndex())}')
+    expect(rowSrc).not.toContain("disabled={busy() !== null || !!liveGoal()}")
   })
 
   test("live run-order delete permits deleting a done step when the run is terminal (v0.7.3)", async () => {
