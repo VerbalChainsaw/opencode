@@ -1913,7 +1913,7 @@ ToolRegistry.register({
             >
               <IconButton
                 icon={copied() ? "check" : "copy"}
-                size="small"
+                size="normal"
                 variant="secondary"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={handleCopy}
