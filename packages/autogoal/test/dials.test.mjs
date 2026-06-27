@@ -39,6 +39,7 @@ import {
   claimHandoff,
   setGoal,
   transitionGoal,
+  atomicToggle,
   readGoalState,
   validateGoalState,
   sanitizeForPrompt,
@@ -74,6 +75,24 @@ function plantState(dir, overrides = {}) {
     ...overrides,
   };
   writeFileSync(join(dir, ".opencode", ".goal-state.json"), JSON.stringify(state));
+}
+
+function plantCorruptState(dir) {
+  mkdirSync(join(dir, ".opencode"), { recursive: true });
+  const statePath = join(dir, ".opencode", ".goal-state.json");
+  writeFileSync(statePath, "{this state is not json!");
+  return statePath;
+}
+
+function assertCorruptGoalResult(dir, statePath, res, label) {
+  assert.equal(res.ok, false, label);
+  if (!res.ok) {
+    assert.equal(res.reason, "corrupt-goal", label);
+    assert.match(res.error ?? "", /Goal state file was corrupt/, label);
+  }
+  assert.equal(existsSync(statePath), false, `${label}: corrupt source should be removed`);
+  const artifacts = readdirSync(join(dir, ".opencode")).filter((name) => name.includes(".goal-state.json.corrupt."));
+  assert.ok(artifacts.length > 0, `${label}: corrupt source should be quarantined`);
 }
 
 // ── editMaxTurns ───────────────────────────────────────────────────────────
@@ -590,6 +609,30 @@ test("clearSteering: no goal → no-goal error", () => {
     assert.equal(res.ok, false);
     if (!res.ok) assert.equal(res.reason, "no-goal");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("mutation primitives: corrupt current state is surfaced and quarantined", () => {
+  const cases = [
+    ["transitionGoal(clear)", (dir) => transitionGoal(dir, "clear")],
+    ["transitionGoal(pause)", (dir) => transitionGoal(dir, "pause")],
+    ["transitionGoal(resume)", (dir) => transitionGoal(dir, "resume")],
+    ["atomicToggle", (dir) => atomicToggle(dir)],
+    ["editMaxTurns", (dir) => editMaxTurns(dir, 50)],
+    ["editMaxTime", (dir) => editMaxTime(dir, 60)],
+    ["editMaxTokens", (dir) => editMaxTokens(dir, 200000)],
+    ["editCondition", (dir) => editCondition(dir, "new condition")],
+    ["restartGoal", (dir) => restartGoal(dir)],
+    ["appendSteering", (dir) => appendSteering(dir, "try this")],
+    ["clearSteering", (dir) => clearSteering(dir)],
+  ];
+
+  for (const [label, run] of cases) {
+    const dir = freshDir();
+    try {
+      const statePath = plantCorruptState(dir);
+      assertCorruptGoalResult(dir, statePath, run(dir), label);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });
 
 // ── createHandoff / readHandoff / claimHandoff ────────────────────────────

@@ -12,7 +12,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -47,6 +47,24 @@ import {
 
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "opengoal-dialsh-"));
+}
+
+function plantCorruptState(dir) {
+  mkdirSync(join(dir, ".opencode"), { recursive: true });
+  const statePath = join(dir, ".opencode", ".goal-state.json");
+  writeFileSync(statePath, "{this state is not json!");
+  return statePath;
+}
+
+function assertCorruptStateMapped(dir, statePath, res, label) {
+  assert.equal(res.ok, false, label);
+  if (!res.ok) {
+    assert.equal(res.reason, "corrupt-state", label);
+    assert.match(res.message, /Goal state file was corrupt/, label);
+  }
+  assert.equal(existsSync(statePath), false, `${label}: corrupt source should be removed`);
+  const artifacts = readdirSync(join(dir, ".opencode")).filter((name) => name.includes(".goal-state.json.corrupt."));
+  assert.ok(artifacts.length > 0, `${label}: corrupt source should be quarantined`);
 }
 
 // ── parsePositiveInt ──────────────────────────────────────────────────────
@@ -163,6 +181,22 @@ test("handleTurnsSubmit: terminal-state → ok:false terminal-state", () => {
     assert.equal(res.ok, false);
     if (!res.ok) assert.equal(res.reason, "terminal-state");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("handlers map corrupt current state to corrupt-state", () => {
+  const cases = [
+    ["handleTurnsSubmit", (dir) => handleTurnsSubmit(dir, "50")],
+    ["handleClearSteeringSubmit", (dir) => handleClearSteeringSubmit(dir)],
+    ["handleRestartSubmit", (dir) => handleRestartSubmit(dir)],
+  ];
+
+  for (const [label, run] of cases) {
+    const dir = freshDir();
+    try {
+      const statePath = plantCorruptState(dir);
+      assertCorruptStateMapped(dir, statePath, run(dir), label);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });
 
 // ── handleTimeSubmit ──────────────────────────────────────────────────────

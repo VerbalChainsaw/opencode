@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,6 +21,21 @@ function freshDir() {
 
 function setupGoal(dir) {
   dispatchGoalCommand(dir, 'set "do the thing"');
+}
+
+function plantCorruptState(dir) {
+  mkdirSync(join(dir, ".opencode"), { recursive: true });
+  const statePath = join(dir, ".opencode", ".goal-state.json");
+  writeFileSync(statePath, "{this state is not json!");
+  return statePath;
+}
+
+function assertCorruptEnvelope(dir, statePath, res, label) {
+  assert.equal(res.kind, "corrupt-state", label);
+  assert.match(res.message, /Goal state file was corrupt/, label);
+  assert.equal(existsSync(statePath), false, `${label}: corrupt source should be removed`);
+  const artifacts = readdirSync(join(dir, ".opencode")).filter((name) => name.includes(".goal-state.json.corrupt."));
+  assert.ok(artifacts.length > 0, `${label}: corrupt source should be quarantined`);
 }
 
 // ── /goal turns ────────────────────────────────────────────────────────────
@@ -61,6 +76,23 @@ test("/goal turns 0: clamped-rejection error relayed to user", () => {
     // The primitive's error message is specific: "maxTurns must be in [1, 10000]."
     assert.match(out, /maxTurns must be in/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("/goal mutation commands on corrupt state return corrupt-state", () => {
+  const cases = [
+    ["clear", "clear"],
+    ["turns", "turns 50"],
+    ["restart", "restart"],
+  ];
+
+  for (const [label, command] of cases) {
+    const dir = freshDir();
+    try {
+      const statePath = plantCorruptState(dir);
+      const res = dispatchGoalCommandStructured(dir, command);
+      assertCorruptEnvelope(dir, statePath, res, label);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });
 
 // ── /goal time ─────────────────────────────────────────────────────────────

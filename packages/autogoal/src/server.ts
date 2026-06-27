@@ -2218,6 +2218,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const res = editMaxTurns(ctx.directory, args.n);
           if (res.ok) return res.message;
           if (res.reason === "no-goal") return "No active goal.";
+          if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
           if (res.reason === "terminal-state") return res.error ?? "Goal is in a terminal state.";
           return res.error ?? "Failed to update max turns.";
         },
@@ -2232,6 +2233,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const res = editMaxTime(ctx.directory, args.n);
           if (res.ok) return res.message;
           if (res.reason === "no-goal") return "No active goal.";
+          if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
           if (res.reason === "terminal-state") return res.error ?? "Goal is in a terminal state.";
           return res.error ?? "Failed to update max time.";
         },
@@ -2246,6 +2248,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const res = editMaxTokens(ctx.directory, args.n);
           if (res.ok) return res.message;
           if (res.reason === "no-goal") return "No active goal.";
+          if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
           if (res.reason === "terminal-state") return res.error ?? "Goal is in a terminal state.";
           return res.error ?? "Failed to update max tokens.";
         },
@@ -2260,6 +2263,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const res = editCondition(ctx.directory, args.text);
           if (res.ok) return res.message;
           if (res.reason === "no-goal") return "No active goal.";
+          if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
           if (res.reason === "terminal-state") return res.error ?? "Goal is in a terminal state.";
           return res.error ?? "Failed to update condition.";
         },
@@ -2274,6 +2278,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const res = appendSteering(ctx.directory, args.text);
           if (res.ok) return res.message;
           if (res.reason === "no-goal") return "No active goal.";
+          if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
           if (res.reason === "terminal-state") return res.error ?? "Goal is in a terminal state.";
           return res.error ?? "Failed to add steering note.";
         },
@@ -2286,6 +2291,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const res = clearSteering(ctx.directory);
           if (res.ok) return res.message;
           if (res.reason === "no-goal") return "No active goal.";
+          if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
           return res.error ?? "Failed to clear steering notes.";
         },
       }),
@@ -2303,6 +2309,7 @@ export const server: Plugin = async ({ client, directory }) => {
           const res = restartGoal(ctx.directory);
           if (!res.ok) {
             if (res.reason === "no-goal") return "No active goal to restart.";
+            if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
             if (res.reason === "terminal-state") return res.error ?? "Goal is in a terminal state.";
             if (res.reason === "handoff-pending") return res.error ?? "A handoff is pending. Claim it first or delete the handoff file.";
             return res.error ?? "Failed to restart goal.";
@@ -2338,6 +2345,7 @@ export const server: Plugin = async ({ client, directory }) => {
           if (res.reason === "no-goal") return "No active goal to handoff.";
           if (res.reason === "terminal-state") return res.error ?? "Goal is in a terminal state.";
           if (res.reason === "handoff-exists") return res.error ?? "A handoff is already pending. Claim it first or delete the file.";
+          if (res.reason === "corrupt-goal") return res.error ?? "Goal state file was corrupt.";
           return res.error ?? "Failed to create handoff.";
         },
       }),
@@ -2354,6 +2362,7 @@ export const server: Plugin = async ({ client, directory }) => {
           if (res.ok) return res.message;
           if (res.reason === "no-handoff") return "No handoff to claim.";
           if (res.reason === "current-goal") return res.error ?? "A goal is already active. Clear it before claiming the handoff.";
+          if (res.reason === "corrupt-goal" || res.reason === "corrupt-handoff") return res.error ?? "A state file was corrupt.";
           return res.error ?? "Failed to claim handoff.";
         },
       }),

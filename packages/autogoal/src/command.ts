@@ -522,6 +522,7 @@ export function dispatchGoalCommandStructured(
     }
     // R2-1: switch on typed `reason` instead of regex-greping `error`.
     if (res.reason === "no-goal") return { kind: "no-goal", message: res.error! };
+    if (res.reason === "corrupt-goal") return { kind: "corrupt-state", message: res.error ?? "Cannot clear because the goal state file was corrupt." };
     return { kind: "write-failed", message: res.error ?? "Failed to clear." };
   }
 
@@ -531,6 +532,7 @@ export function dispatchGoalCommandStructured(
     // R2-1: switch on typed `reason` (was regex on `error` prose).
     switch (res.reason) {
       case "no-goal": return { kind: "no-goal", message: res.error! };
+      case "corrupt-goal": return { kind: "corrupt-state", message: res.error ?? "Cannot pause because the goal state file was corrupt." };
       case "already-in-state": return { kind: "already-in-state", message: res.error! };
       default: return { kind: "write-failed", message: res.error ?? "Failed to pause." };
     }
@@ -546,6 +548,7 @@ export function dispatchGoalCommandStructured(
       // the two distinct messages; the CLI/structured surface
       // collapses them to one kind.
       if (res.reason === "no-goal") return { kind: "no-goal", message: res.error! };
+      if (res.reason === "corrupt-goal") return { kind: "corrupt-state", message: res.error ?? "Cannot resume because the goal state file was corrupt." };
       if (res.reason === "terminal-state") return { kind: "terminal-state", message: res.error! };
       if (res.reason === "already-in-state") return { kind: "already-in-state", message: res.error! };
       return { kind: "write-failed", message: res.error ?? "Failed to resume." };
@@ -612,6 +615,7 @@ export function dispatchGoalCommandStructured(
     const res = clearSteering(directory);
     if (!res.ok) {
       if (res.reason === "no-goal") return { kind: "no-goal", message: "No active goal." };
+      if (res.reason === "corrupt-goal") return { kind: "corrupt-state", message: res.error ?? "Cannot clear steering because the goal state file was corrupt." };
       return { kind: "write-failed", message: res.error ?? "Failed to clear steering notes." };
     }
     return { kind: "success", message: res.message };
@@ -623,6 +627,7 @@ export function dispatchGoalCommandStructured(
       // A1: terminal-state case was missing — fall-through mapped to
       // write-failed (exit 3) when it should be terminal-state (exit 2).
       if (res.reason === "no-goal") return { kind: "no-goal", message: "No active goal to restart." };
+      if (res.reason === "corrupt-goal") return { kind: "corrupt-state", message: res.error ?? "Cannot restart because the goal state file was corrupt." };
       if (res.reason === "terminal-state") return { kind: "terminal-state", message: res.error! };
       if (res.reason === "handoff-pending") return { kind: "handoff-exists", message: res.error ?? "A handoff is pending." };
       return { kind: "write-failed", message: res.error ?? "Failed to restart." };
@@ -815,13 +820,14 @@ export function dispatchGoalCommandStructured(
 /** Convert an EditResult into a GoalCommandResult envelope. */
 function dialResultToEnvelope(
   res: { ok: true; field?: string; value?: unknown; message: string }
-    | { ok: false; reason: "no-goal" | "terminal-state" | "invalid-value" | "write-failed"; error?: string },
+    | { ok: false; reason: "no-goal" | "corrupt-goal" | "terminal-state" | "invalid-value" | "write-failed"; error?: string },
   defaultMsg: string,
 ): GoalCommandResult {
   if (res.ok) return { kind: "success", message: res.message };
   // Map the no-goal / terminal-state / invalid-value / write-failed
   // reasons to their corresponding kinds.
   if (res.reason === "no-goal") return { kind: "no-goal", message: "No active goal." };
+  if (res.reason === "corrupt-goal") return { kind: "corrupt-state", message: res.error ?? "Cannot update goal because the goal state file was corrupt." };
   if (res.reason === "terminal-state") return { kind: "terminal-state", message: res.error ?? "Cannot edit a goal in a terminal state." };
   if (res.reason === "invalid-value") return { kind: "invalid-value", message: res.error ?? "Invalid value." };
   return { kind: "write-failed", message: res.error ?? `${defaultMsg} failed.` };

@@ -132,7 +132,7 @@ export function computeProgress(state: GoalState, now: number = Date.now()): Pro
 
 export type ToggleResult =
   | { ok: true; newStatus: "active" | "paused"; message: string }
-  | { ok: false; reason: "no-goal" | "terminal-state"; error?: string }
+  | { ok: false; reason: "no-goal" | "corrupt-state" | "terminal-state"; error?: string }
   | { ok: false; reason: "write-failed"; error: string };
 
 export function toggleGoal(directory: string, now: number = Date.now()): ToggleResult {
@@ -145,6 +145,9 @@ export function toggleGoal(directory: string, now: number = Date.now()): ToggleR
   // distinction in the result type. The `error` field is omitted on
   // no-goal/terminal-state (no upstream message to relay) and required on
   // write-failed (the caller wants the underlying error string).
+  if (res.reason === "corrupt-goal") {
+    return { ok: false, reason: "corrupt-state", error: res.error };
+  }
   if (res.reason === "terminal-state") {
     return { ok: false, reason: "terminal-state", error: res.error };
   }
@@ -156,7 +159,7 @@ export function toggleGoal(directory: string, now: number = Date.now()): ToggleR
 
 export type ClearResult =
   | { ok: true }
-  | { ok: false; reason: "no-goal" | "write-failed"; error?: string };
+  | { ok: false; reason: "no-goal" | "corrupt-state" | "write-failed"; error?: string };
 
 export function clearGoal(directory: string, now: number = Date.now()): ClearResult {
   // Delegate to transitionGoal which reads and writes in a single atomic
@@ -165,6 +168,9 @@ export function clearGoal(directory: string, now: number = Date.now()): ClearRes
   // adversarial audit.
   const res = transitionGoal(directory, "clear", now);
   if (res.ok) return { ok: true };
+  if (res.reason === "corrupt-goal") {
+    return { ok: false, reason: "corrupt-state", error: res.error };
+  }
   if (res.reason === "no-goal" || res.reason === "terminal-state") {
     return { ok: false, reason: "no-goal" };
   }

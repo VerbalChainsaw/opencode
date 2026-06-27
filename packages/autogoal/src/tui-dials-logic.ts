@@ -47,6 +47,7 @@ function fromEditResult(res: EditResult): DialResult {
   // Map reasons
   switch (res.reason) {
     case "no-goal": return { ok: false, reason: "no-goal", message: "No active goal." };
+    case "corrupt-goal": return { ok: false, reason: "corrupt-state", message: res.error ?? "Cannot update goal because the goal state file was corrupt." };
     case "terminal-state": return { ok: false, reason: "terminal-state", message: res.error ?? "Goal is in a terminal state." };
     case "invalid-value": return { ok: false, reason: "invalid-input", message: res.error ?? "Invalid value." };
     case "write-failed": return { ok: false, reason: "write-failed", message: res.error ?? "Failed to write state." };
@@ -161,6 +162,7 @@ export function handleClearSteeringSubmit(directory: string): DialResult {
   if (!res.ok) {
     switch (res.reason) {
       case "no-goal": return { ok: false, reason: "no-goal", message: "No active goal." };
+      case "corrupt-goal": return { ok: false, reason: "corrupt-state", message: res.error ?? "Cannot clear steering because the goal state file was corrupt." };
       case "write-failed": return { ok: false, reason: "write-failed", message: res.error ?? "Failed to write state." };
     }
   }
@@ -173,6 +175,7 @@ export function handleRestartSubmit(directory: string): DialResult {
   if (!res.ok) {
     switch (res.reason) {
       case "no-goal": return { ok: false, reason: "no-goal", message: "No active goal to restart." };
+      case "corrupt-goal": return { ok: false, reason: "corrupt-state", message: res.error ?? "Cannot restart because the goal state file was corrupt." };
       case "terminal-state": return { ok: false, reason: "terminal-state", message: res.error ?? "Goal is in a terminal state." };
       case "handoff-pending": return { ok: false, reason: "handoff-pending", message: res.error ?? "A handoff is pending." };
       case "write-failed": return { ok: false, reason: "write-failed", message: res.error ?? "Failed to write state." };

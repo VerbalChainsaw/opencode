@@ -966,6 +966,7 @@ export type TransitionAction = "clear" | "pause" | "resume";
  *  human-readable string for backward compat with the OpenCode agent. */
 export type TransitionReason =
   | "no-goal"
+  | "corrupt-goal"
   | "terminal-state"
   | "already-in-state"
   | "write-failed";
@@ -984,10 +985,12 @@ export interface TransitionResult {
 /** Atomically clear / pause / resume the current goal. */
 export function transitionGoal(directory: string, action: TransitionAction, now: number = Date.now()): TransitionResult {
   {
-    const state = readGoalState(directory);
-    if (!state) {
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) {
+      if (current.reason === "corrupt-goal") return { ok: false, error: current.error, reason: "corrupt-goal" };
       return { ok: false, error: `No active goal to ${action}.`, reason: "no-goal" };
     }
+    const state = current.state;
 
     if (action === "clear") {
       if (state.status === "cleared" || (state.status === "achieved" && !state.metadata.chainId)) {
@@ -1064,10 +1067,11 @@ export function transitionGoal(directory: string, action: TransitionAction, now:
  *
  * Returns ok:true with the new status, or ok:false with a typed reason.
  */
-export function atomicToggle(directory: string, now: number = Date.now()): { ok: true; newStatus: "active" | "paused"; message: string } | { ok: false; reason: "no-goal" | "terminal-state" | "write-failed"; error?: string } {
+export function atomicToggle(directory: string, now: number = Date.now()): { ok: true; newStatus: "active" | "paused"; message: string } | { ok: false; reason: "no-goal" | "corrupt-goal" | "terminal-state" | "write-failed"; error?: string } {
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     if (state.status !== "active" && state.status !== "paused") {
       return { ok: false, reason: "terminal-state", error: `Cannot toggle a ${state.status} goal.` };
     }
@@ -1128,7 +1132,7 @@ export function formatStatus(state: GoalState | null, now: number = Date.now()):
 // DIALS: live edit primitives for the sidebar.
 //
 // All five primitives below follow the same shape:
-//   1. Read the current state via readGoalState (the validated one).
+//   1. Read the current state via readGoalStateResult (the tri-state one).
 //   2. Mutate the in-memory copy.
 //   3. writeGoalStateAtomic — atomic + validated by the validator on next read.
 //   4. Return a result object the JSX layer can surface in a toast.
@@ -1145,7 +1149,7 @@ export function formatStatus(state: GoalState | null, now: number = Date.now()):
 /** Result shape for the live-edit primitives. */
 export type EditResult =
   | { ok: true; field: "turns" | "time" | "tokens" | "condition"; value: number | string; message: string }
-  | { ok: false; reason: "no-goal" | "terminal-state" | "invalid-value" | "write-failed"; error?: string };
+  | { ok: false; reason: "no-goal" | "corrupt-goal" | "terminal-state" | "invalid-value" | "write-failed"; error?: string };
 
 /** True if the state is mutable (active or paused). */
 function isMutable(state: GoalState): boolean {
@@ -1155,6 +1159,25 @@ function isMutable(state: GoalState): boolean {
 /** True if the state is terminal (cleared or achieved) — by definition immutable. */
 function isTerminal(state: GoalState): boolean {
   return state.status === "cleared" || state.status === "achieved";
+}
+
+function corruptGoalStateError(directory: string, reason: CorruptReason): string {
+  return corruptFileError(
+    directory,
+    "Goal state file",
+    ".goal-state.json.corrupt.",
+    reason,
+    "Review the quarantined artifact before changing the goal.",
+  );
+}
+
+function readGoalStateForMutation(directory: string): { ok: true; state: GoalState } | { ok: false; reason: "no-goal" | "corrupt-goal"; error?: string } {
+  const result = readGoalStateResult(directory);
+  if (result.kind === "corrupt") {
+    return { ok: false, reason: "corrupt-goal", error: corruptGoalStateError(directory, result.reason) };
+  }
+  if (result.kind === "absent") return { ok: false, reason: "no-goal" };
+  return { ok: true, state: result.value };
 }
 
 /**
@@ -1167,8 +1190,9 @@ export function editMaxTurns(directory: string, newMax: number, now: number = Da
     return { ok: false, reason: "invalid-value", error: `maxTurns must be in [${CONSTRAINT_BOUNDS.minTurns}, ${CONSTRAINT_BOUNDS.maxTurns}].` };
   }
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     if (isTerminal(state)) return { ok: false, reason: "terminal-state", error: `Cannot edit a ${state.status} goal.` };
     // If the user lowers maxTurns BELOW the already-evaluated count, the
     // constraint is now satisfied (the loop would immediately trip on next
@@ -1198,8 +1222,9 @@ export function editMaxTime(directory: string, newMax: number, now: number = Dat
     return { ok: false, reason: "invalid-value", error: `maxTimeMinutes must be in [${CONSTRAINT_BOUNDS.minMinutes}, ${CONSTRAINT_BOUNDS.maxMinutes}].` };
   }
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     if (isTerminal(state)) return { ok: false, reason: "terminal-state", error: `Cannot edit a ${state.status} goal.` };
     const oldValue = state.constraints.maxTimeMinutes;
     state.constraints.maxTimeMinutes = newMax;
@@ -1223,8 +1248,9 @@ export function editMaxTokens(directory: string, newMax: number, now: number = D
     return { ok: false, reason: "invalid-value", error: `maxTokens must be in [${CONSTRAINT_BOUNDS.minTokens}, ${CONSTRAINT_BOUNDS.maxTokens}].` };
   }
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     if (isTerminal(state)) return { ok: false, reason: "terminal-state", error: `Cannot edit a ${state.status} goal.` };
     const oldValue = state.constraints.maxTokens;
     state.constraints.maxTokens = newMax;
@@ -1274,8 +1300,9 @@ export function editCondition(directory: string, newCondition: string, now: numb
   if (cleaned.length > MAX_CONDITION_LEN) cleaned = cleaned.slice(0, MAX_CONDITION_LEN);
 
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     if (isTerminal(state)) return { ok: false, reason: "terminal-state", error: `Cannot edit a ${state.status} goal.` };
 
     // Optimistic concurrency guard (FIX-10): if the caller captured a
@@ -1423,10 +1450,11 @@ export function sanitizeMetadata(meta: unknown): GoalState["metadata"] {
  * this is a no-op (the restart would clobber the handoff). The user must
  * claim the handoff first or delete it.
  */
-export function restartGoal(directory: string, now: number = Date.now()): { ok: true; newId: string; message: string } | { ok: false; reason: "no-goal" | "terminal-state" | "handoff-pending" | "write-failed"; error?: string } {
+export function restartGoal(directory: string, now: number = Date.now()): { ok: true; newId: string; message: string } | { ok: false; reason: "no-goal" | "corrupt-goal" | "terminal-state" | "handoff-pending" | "write-failed"; error?: string } {
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     if (isTerminal(state)) return { ok: false, reason: "terminal-state", error: `Cannot restart a ${state.status} goal. Set a new one instead.` };
 
     // Refuse if a handoff is pending — the user almost certainly wants the
@@ -1502,8 +1530,9 @@ export function appendSteering(directory: string, note: string, now: number = Da
   if (cleaned.length > MAX_STEERING_LEN) cleaned = cleaned.slice(0, MAX_STEERING_LEN);
 
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     if (isTerminal(state)) return { ok: false, reason: "terminal-state", error: `Cannot steer a ${state.status} goal.` };
 
     const existing = Array.isArray(state.metadata.steering) ? state.metadata.steering : [];
@@ -1530,10 +1559,11 @@ export function appendSteering(directory: string, note: string, now: number = Da
 }
 
 /** Drop all steering notes. Returns the count cleared. */
-export function clearSteering(directory: string, now: number = Date.now()): { ok: true; cleared: number; message: string } | { ok: false; reason: "no-goal" | "write-failed"; error?: string } {
+export function clearSteering(directory: string, now: number = Date.now()): { ok: true; cleared: number; message: string } | { ok: false; reason: "no-goal" | "corrupt-goal" | "write-failed"; error?: string } {
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const current = readGoalStateForMutation(directory);
+    if (!current.ok) return current;
+    const state = current.state;
     const existing = Array.isArray(state.metadata.steering) ? state.metadata.steering : [];
     const cleared = existing.length;
     if (cleared > 0) {
