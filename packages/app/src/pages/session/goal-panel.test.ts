@@ -1073,6 +1073,9 @@ describe("goal panel mission-control contracts", () => {
     expect(visible).toContain("selectRunnableChainSteps(chainDraft.steps, snapshot, chainDraft.source)")
     expect(visible).toContain("if (!live)")
     expect(visible).not.toContain("if (snapshot.length > 0) return snapshot")
+    expect(src).toContain("removeVisibleDraftStep")
+    expect(src).toContain("visibleSteps,")
+    expect(src).toContain("removeDraftStep(step.id, visibleChainSteps())")
   })
 
   test("start chain admits exactly one run after deterministic chain state write", async () => {

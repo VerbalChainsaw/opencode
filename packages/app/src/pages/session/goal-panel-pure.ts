@@ -771,6 +771,21 @@ export function selectRunnableChainSteps<T>(
   return visibleSteps;
 }
 
+export function removeVisibleDraftStep<T extends { id: string }>(args: {
+  draftSteps: T[]
+  visibleSteps: T[]
+  source: "uninitialized" | "draft"
+  stepID: string
+}): T[] {
+  const base =
+    args.draftSteps.length > 0
+      ? args.draftSteps
+      : args.source === "uninitialized"
+        ? args.visibleSteps
+        : args.draftSteps
+  return base.filter((step) => step.id !== args.stepID)
+}
+
 export function chainStepFromTemplate(
   template: GoalTemplateButton,
   vars: Record<string, string> = {},

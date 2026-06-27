@@ -193,7 +193,7 @@ describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
 // AG-P1-05 tests above pin the row-level X-button routing. Both live
 // in the same pure module so the contract is centralized.
 
-import { selectRunnableChainSteps } from "./goal-panel-pure";
+import { removeVisibleDraftStep, selectRunnableChainSteps } from "./goal-panel-pure";
 
 type Step = { id: string };
 
@@ -254,6 +254,39 @@ describe("AG-P0-04: selectRunnableChainSteps with explicit draft provenance", ()
         runtimeSteps,
         reloaded.source,
       ),
+    ).toEqual([]);
+  });
+
+  test("7. deleting a populated draft row edits the draft", () => {
+    expect(
+      removeVisibleDraftStep({
+        draftSteps,
+        visibleSteps: runtimeSteps,
+        source: "draft",
+        stepID: "d-1",
+      }),
+    ).toEqual([]);
+  });
+
+  test("8. deleting a recovered runtime row materializes the remaining rows as draft", () => {
+    expect(
+      removeVisibleDraftStep({
+        draftSteps: [],
+        visibleSteps: runtimeSteps,
+        source: "uninitialized",
+        stepID: "rt-1",
+      }),
+    ).toEqual([{ id: "rt-2" }]);
+  });
+
+  test("9. deleting the final recovered runtime row leaves an explicit empty draft", () => {
+    expect(
+      removeVisibleDraftStep({
+        draftSteps: [],
+        visibleSteps: [{ id: "rt-1" }],
+        source: "uninitialized",
+        stepID: "rt-1",
+      }),
     ).toEqual([]);
   });
 });

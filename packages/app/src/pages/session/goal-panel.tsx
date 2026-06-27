@@ -67,6 +67,7 @@ import {
   completionRuleTranslationKey,
   readHandoffFromSdk,
   readGoalFromSdk,
+  removeVisibleDraftStep,
   selectRunnableChainSteps,
   skillPickerControlState,
   templateButtonsFromSnapshot,
@@ -2094,11 +2095,16 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     markDraftTouched();
     setChainDraft("steps", next)
   }
-  const removeDraftStep = (id: string) => {
+  const removeDraftStep = (id: string, visibleSteps: GoalChainDraftStep[] = []) => {
     markDraftTouched();
     setChainDraft(
       "steps",
-      chainDraft.steps.filter((step) => step.id !== id),
+      removeVisibleDraftStep({
+        draftSteps: chainDraft.steps,
+        visibleSteps,
+        source: chainDraft.source,
+        stepID: id,
+      }),
     )
   }
   const updateDraftStepBudget = (id: string, field: "maxTurns" | "maxTimeMinutes", raw: string) => {
@@ -3173,7 +3179,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     });
     switch (action.kind) {
       case "edit-draft":
-        removeDraftStep(step.id);
+        removeDraftStep(step.id, visibleChainSteps());
         return;
       case "remove-live-pending":
         if (!liveGoal()) {
