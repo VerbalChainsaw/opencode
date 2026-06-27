@@ -1160,12 +1160,15 @@ export const server: Plugin = async ({ client, directory }) => {
     );
   }
 
-  function readStateForTransitionTool(action: "clear" | "pause" | "resume" | "restart"): { state: GoalState | null; corruptMessage: string | null } {
-    const result = readGoalStateResult(directory);
+  function readStateForTransitionTool(
+    targetDirectory: string,
+    action: "clear" | "pause" | "resume" | "restart",
+  ): { state: GoalState | null; corruptMessage: string | null } {
+    const result = readGoalStateResult(targetDirectory);
     if (result.kind === "corrupt") {
       return {
         state: null,
-        corruptMessage: `Cannot ${action} the goal because the ${corruptStateNotice(result.reason)}`,
+        corruptMessage: `Cannot ${action} the goal because the ${corruptStateNotice(result.reason, targetDirectory)}`,
       };
     }
     return { state: result.kind === "ok" ? result.value : null, corruptMessage: null };
@@ -2050,7 +2053,7 @@ export const server: Plugin = async ({ client, directory }) => {
             // can carry the correct `previousStatus` (spec: "active/paused
             // → cleared"). After the transition the state file already
             // shows status="cleared" and we'd lose the source state.
-            const beforeRead = readStateForTransitionTool("clear");
+            const beforeRead = readStateForTransitionTool(ctx.directory, "clear");
             if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
             const before = beforeRead.state;
             const previousStatus = before ? before.status : null;
@@ -2084,7 +2087,7 @@ export const server: Plugin = async ({ client, directory }) => {
             // can carry the correct `previousStatus`. transitionGoal
             // only fires for the active → paused transition; for the
             // no-op "already paused" case we never reach the webhook.
-            const beforeRead = readStateForTransitionTool("pause");
+            const beforeRead = readStateForTransitionTool(ctx.directory, "pause");
             if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
             const before = beforeRead.state;
             const previousStatus = before ? before.status : null;
@@ -2111,7 +2114,7 @@ export const server: Plugin = async ({ client, directory }) => {
           return await withStateLock(ctx.directory, () => {
             // Capture the pre-transition status so the webhook payload
             // can carry the correct `previousStatus` (paused → active).
-            const beforeRead = readStateForTransitionTool("resume");
+            const beforeRead = readStateForTransitionTool(ctx.directory, "resume");
             if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
             const before = beforeRead.state;
             const previousStatus = before ? before.status : null;
@@ -2302,7 +2305,7 @@ export const server: Plugin = async ({ client, directory }) => {
         async execute(_args, ctx) {
           // Capture the pre-transition status so the webhook payload
           // can carry the correct `previousStatus` (any → active).
-          const beforeRead = readStateForTransitionTool("restart");
+          const beforeRead = readStateForTransitionTool(ctx.directory, "restart");
           if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
           const before = beforeRead.state;
           const previousStatus = before ? before.status : null;

@@ -19,6 +19,7 @@ const distDir = join(here, "..", "dist");
 const distServerPath = pathToFileURL(join(distDir, "server.js")).href;
 
 const { server } = await import(distServerPath);
+const { readGoalState, transitionGoal } = await import(pathToFileURL(join(distDir, "goal-state.js")).href);
 
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "autogoal-transition-corrupt-"));
@@ -77,6 +78,98 @@ test("transition tools surface corrupt goal state instead of reporting no active
       assert.ok(corruptArtifacts.length > 0, `${toolName} should leave a forensic corrupt artifact`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("transition tools use ctx.directory instead of stale server factory state", async () => {
+  const cases = [
+    {
+      toolName: "clear_goal",
+      setup: async (plugin, dir) => {
+        await plugin.tool.set_goal.execute(
+          { condition: "clear the live workspace", verification: { type: "marker" } },
+          { directory: dir, sessionID: "ses_clear_ctx", agent: "build" },
+        );
+      },
+      assertState: (dir) => {
+        const state = readGoalState(dir);
+        assert.equal(state?.status, "cleared", "clear_goal should clear ctx.directory state");
+      },
+    },
+    {
+      toolName: "pause_goal",
+      setup: async (plugin, dir) => {
+        await plugin.tool.set_goal.execute(
+          { condition: "pause the live workspace", verification: { type: "marker" } },
+          { directory: dir, sessionID: "ses_pause_ctx", agent: "build" },
+        );
+      },
+      assertState: (dir) => {
+        const state = readGoalState(dir);
+        assert.equal(state?.status, "paused", "pause_goal should pause ctx.directory state");
+      },
+    },
+    {
+      toolName: "resume_goal",
+      setup: async (plugin, dir) => {
+        await plugin.tool.set_goal.execute(
+          { condition: "resume the live workspace", verification: { type: "marker" } },
+          { directory: dir, sessionID: "ses_resume_ctx", agent: "build" },
+        );
+        const pause = transitionGoal(dir, "pause");
+        assert.equal(pause.ok, true, "test setup should pause ctx.directory state");
+      },
+      assertState: (dir) => {
+        const state = readGoalState(dir);
+        assert.equal(state?.status, "active", "resume_goal should resume ctx.directory state");
+      },
+    },
+    {
+      toolName: "goal_restart",
+      setup: async (plugin, dir) => {
+        await plugin.tool.set_goal.execute(
+          { condition: "restart the live workspace", verification: { type: "marker" } },
+          { directory: dir, sessionID: "ses_restart_ctx", agent: "build" },
+        );
+      },
+      assertState: (dir) => {
+        const state = readGoalState(dir);
+        assert.equal(state?.status, "active", "goal_restart should restart ctx.directory state");
+        assert.equal(state?.turnsEvaluated, 0, "goal_restart should leave a fresh ctx.directory run");
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const serverDir = freshDir();
+    const ctxDir = freshDir();
+    try {
+      const plugin = await server({ client: makeClient(), directory: serverDir });
+      await testCase.setup(plugin, ctxDir);
+      plantCorruptState(serverDir);
+
+      const result = await plugin.tool[testCase.toolName].execute(
+        {},
+        { directory: ctxDir, sessionID: `ses_${testCase.toolName}_ctx`, agent: "build" },
+      );
+
+      assert.doesNotMatch(
+        String(result),
+        /goal-state\.json\.corrupt|corrupt/i,
+        `${testCase.toolName} must not read stale factory-directory state, got: ${String(result)}`,
+      );
+      testCase.assertState(ctxDir);
+      assert.equal(
+        existsSync(join(serverDir, ".opencode", ".goal-state.json")),
+        true,
+        `${testCase.toolName} must not quarantine unrelated factory-directory state`,
+      );
+      const factoryArtifacts = readdirSync(join(serverDir, ".opencode")).filter((name) => name.includes(".goal-state.json.corrupt."));
+      assert.equal(factoryArtifacts.length, 0, `${testCase.toolName} must not leave factory-directory corrupt artifacts`);
+    } finally {
+      rmSync(serverDir, { recursive: true, force: true });
+      rmSync(ctxDir, { recursive: true, force: true });
     }
   }
 });
