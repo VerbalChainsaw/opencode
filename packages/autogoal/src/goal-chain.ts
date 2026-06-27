@@ -486,13 +486,31 @@ function newestCorruptArtifact(directory: string, prefix: string): string | null
   return listCorruptArtifacts(directory).find((name) => name.startsWith(prefix)) ?? null;
 }
 
-function corruptGoalStateForChainStartError(directory: string, reason: CorruptReason): string {
+function corruptGoalStateForChainOperationError(directory: string, reason: CorruptReason, operation: string): string {
   const newest = newestCorruptArtifact(directory, ".goal-state.json.corrupt.");
   return (
     `Goal state file was corrupt (${reason})` +
     `${newest ? ` and was quarantined as ${newest}` : ""}. ` +
-    "Review the quarantined artifact before starting a chain."
+    `Review the quarantined artifact before ${operation}.`
   );
+}
+
+function corruptGoalStateForChainStartError(directory: string, reason: CorruptReason): string {
+  return corruptGoalStateForChainOperationError(directory, reason, "starting a chain");
+}
+
+function readGoalStateForChainOperation(
+  directory: string,
+  operation: string,
+): { ok: true; state: GoalState | null } | { ok: false; error: string } {
+  const result = readGoalStateResult(directory);
+  if (result.kind === "corrupt") {
+    return {
+      ok: false,
+      error: corruptGoalStateForChainOperationError(directory, result.reason, operation),
+    };
+  }
+  return { ok: true, state: result.kind === "ok" ? result.value : null };
 }
 
 function constraintsForStep(step: GoalChainStep, chain: Pick<GoalChain, "master"> | null): GoalConstraints {
@@ -719,7 +737,9 @@ export function advanceGoalChain(
   const chain = readGoalChain(directory);
   if (!chain) return { ok: false, error: "No active chain." };
 
-  const state = readGoalState(directory);
+  const stateResult = readGoalStateForChainOperation(directory, "advancing a chain");
+  if (!stateResult.ok) return stateResult;
+  const state = stateResult.state;
   // Guard: the current goal must belong to this chain
   if (!state || state.metadata.chainId !== chain.id) {
     return { ok: false, error: "Chain interrupted — goal was manually overridden. Use 'chain reset' to restart." };
@@ -866,6 +886,9 @@ export function resetGoalChain(directory: string, now: number = Date.now()): Adv
   const chain = readGoalChain(directory);
   if (!chain) return { ok: false, error: "No active chain." };
 
+  const stateResult = readGoalStateForChainOperation(directory, "resetting a chain");
+  if (!stateResult.ok) return stateResult;
+
   chain.current = 0;
   chain.cycles = 0;
   if (chain.master) {
@@ -945,12 +968,20 @@ export function setChainWebhook(
   if (!chain) return { ok: false, error: "No active chain." };
 
   // Reject invalid input. `null` is the explicit "clear" signal.
+  let sanitizedWebhook: ChainWebhook | null = null;
   if (webhook !== null) {
     const sanitized = sanitizeChainWebhook(webhook);
     if (sanitized === null) {
       return { ok: false, error: "Invalid webhook shape: url must be http(s), 'on' must list at least one valid status." };
     }
-    chain.webhook = sanitized;
+    sanitizedWebhook = sanitized;
+  }
+
+  const stateResult = readGoalStateForChainOperation(directory, "changing chain webhook settings");
+  if (!stateResult.ok) return stateResult;
+
+  if (webhook !== null && sanitizedWebhook !== null) {
+    chain.webhook = sanitizedWebhook;
   } else {
     delete chain.webhook;
   }
@@ -959,7 +990,7 @@ export function setChainWebhook(
   // call sees the new value, AND so the on-disk state file is
   // self-consistent with the chain file (a debugger reading either
   // file alone gets the same answer).
-  const state = readGoalState(directory);
+  const state = stateResult.state;
   if (!state) {
     // No state — this is unusual (a chain should always have a
     // corresponding state), but the chain write is still meaningful.
@@ -1004,9 +1035,11 @@ export function addChainStep(
 
   const chain = readGoalChain(directory);
   if (chain) {
+    const stateResult = readGoalStateForChainOperation(directory, "adding a chain step");
+    if (!stateResult.ok) return stateResult;
+    const state = stateResult.state;
     if (chain.steps.length >= MAX_CHAIN_STEPS) return { ok: false, error: `Chain cannot exceed ${MAX_CHAIN_STEPS} steps.` };
     chain.steps.push({ condition: cond, command });
-    const state = readGoalState(directory);
     if (state?.metadata.chainId === chain.id) {
       state.metadata.chainTotal = chain.steps.length;
     }
@@ -1026,7 +1059,9 @@ export function addChainStep(
   }
 
   // No chain yet — promote the current goal into a 2-step chain.
-  const state = readGoalState(directory);
+  const stateResult = readGoalStateForChainOperation(directory, "adding a chain step");
+  if (!stateResult.ok) return stateResult;
+  const state = stateResult.state;
   if (!state) return { ok: false, error: "No goal to add a sub-goal to. Set a goal first." };
   const res = createGoalChain(
     directory,
@@ -1063,6 +1098,9 @@ export function reorderChainStep(
   }
   if (from === to) return { ok: true };
 
+  const stateResult = readGoalStateForChainOperation(directory, "reordering chain steps");
+  if (!stateResult.ok) return stateResult;
+
   const [moved] = chain.steps.splice(from, 1);
   chain.steps.splice(to, 0, moved!);
 
@@ -1071,7 +1109,7 @@ export function reorderChainStep(
   else if (from < chain.current && to >= chain.current) chain.current -= 1;
   else if (from > chain.current && to <= chain.current) chain.current += 1;
 
-  const state = readGoalState(directory);
+  const state = stateResult.state;
   if (state?.metadata.chainId === chain.id) {
     state.metadata.chainStep = chain.current;
     state.metadata.chainTotal = chain.steps.length;
@@ -1109,7 +1147,9 @@ export function removeChainStep(
   if (!Number.isInteger(index) || index < 0 || index >= n) {
     return { ok: false, error: "Step index out of range." };
   }
-  const state = readGoalState(directory);
+  const stateResult = readGoalStateForChainOperation(directory, "removing a chain step");
+  if (!stateResult.ok) return stateResult;
+  const state = stateResult.state;
   const terminalChainState =
     state?.metadata.chainId === chain.id &&
     (state.status === "achieved" || state.status === "cleared");

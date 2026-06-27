@@ -17,7 +17,7 @@ function plantCorruptGoalState(dir) {
   return statePath;
 }
 
-const { createGoalChain, readGoalChain, readGoalChainResult, advanceGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, validateGoalChain, CHAIN_FILE, MAX_CHAIN_SIZE } = await import("../dist/goal-chain.js");
+const { createGoalChain, readGoalChain, readGoalChainResult, advanceGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, setChainWebhook, validateGoalChain, CHAIN_FILE, MAX_CHAIN_SIZE } = await import("../dist/goal-chain.js");
 const { readGoalState, writeGoalStateAtomic, transitionGoal, setGoal, setGoalFields, createHandoff, claimHandoff } = await import("../dist/goal-state.js");
 const { dispatchGoalCommandStructured } = await import("../dist/command.js");
 
@@ -197,6 +197,23 @@ describe("advanceGoalChain", () => {
       assert.equal(res.ok, false);
     } finally { cleanDir(dir); }
   });
+
+  it("surfaces corrupt current state before advancing a live chain", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      assert.equal(create.ok, true);
+      const chainBefore = readGoalChain(dir);
+      const statePath = plantCorruptGoalState(dir);
+
+      const res = advanceGoalChain(dir);
+
+      assert.equal(res.ok, false);
+      assert.match(res.error, /Goal state file was corrupt/);
+      assert.equal(existsSync(statePath), false, "corrupt state should be quarantined");
+      assert.deepEqual(readGoalChain(dir), chainBefore, "chain should not advance when current state is corrupt");
+    } finally { cleanDir(dir); }
+  });
 });
 
 describe("skipGoalChainStep", () => {
@@ -255,6 +272,27 @@ describe("addChainStep", () => {
       assert.equal(state.metadata.chainTotal, 2);
     } finally { cleanDir(dir); }
   });
+
+  it("surfaces corrupt current state before appending to a live chain", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      assert.equal(create.ok, true);
+      const chainBefore = readGoalChain(dir);
+      const statePath = plantCorruptGoalState(dir);
+
+      const res = addChainStep(dir, "third");
+
+      assert.equal(res.ok, false);
+      assert.match(res.error, /Goal state file was corrupt/);
+      assert.equal(existsSync(statePath), false, "corrupt state should be quarantined");
+      assert.deepEqual(readGoalChain(dir), chainBefore, "chain should not be mutated when current state is corrupt");
+      assert.ok(
+        readdirSync(join(dir, ".opencode")).some((name) => name.startsWith(".goal-state.json.corrupt.")),
+        "quarantined state artifact should remain visible",
+      );
+    } finally { cleanDir(dir); }
+  });
 });
 
 describe("reorderChainStep", () => {
@@ -277,6 +315,23 @@ describe("reorderChainStep", () => {
       assert.equal(state.metadata.chainStep, 0);
       assert.equal(state.metadata.chainTotal, 3);
       assert.equal(state.condition, "second");
+    } finally { cleanDir(dir); }
+  });
+
+  it("surfaces corrupt current state before reordering a live chain", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }, { condition: "third" }]);
+      assert.equal(create.ok, true);
+      const chainBefore = readGoalChain(dir);
+      const statePath = plantCorruptGoalState(dir);
+
+      const res = reorderChainStep(dir, 0, 2);
+
+      assert.equal(res.ok, false);
+      assert.match(res.error, /Goal state file was corrupt/);
+      assert.equal(existsSync(statePath), false, "corrupt state should be quarantined");
+      assert.deepEqual(readGoalChain(dir), chainBefore, "chain should not be reordered when current state is corrupt");
     } finally { cleanDir(dir); }
   });
 });
@@ -351,6 +406,42 @@ describe("removeChainStep", () => {
       assert.equal(validateGoalChain(chain), true);
     } finally { cleanDir(dir); }
   });
+
+  it("surfaces corrupt current state before removing a pending chain step", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }, { condition: "third" }]);
+      assert.equal(create.ok, true);
+      const chainBefore = readGoalChain(dir);
+      const statePath = plantCorruptGoalState(dir);
+
+      const res = removeChainStep(dir, 2);
+
+      assert.equal(res.ok, false);
+      assert.match(res.error, /Goal state file was corrupt/);
+      assert.equal(existsSync(statePath), false, "corrupt state should be quarantined");
+      assert.deepEqual(readGoalChain(dir), chainBefore, "chain should not remove steps when current state is corrupt");
+    } finally { cleanDir(dir); }
+  });
+});
+
+describe("setChainWebhook", () => {
+  it("surfaces corrupt current state before changing chain webhook config", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      assert.equal(create.ok, true);
+      const chainBefore = readGoalChain(dir);
+      const statePath = plantCorruptGoalState(dir);
+
+      const res = setChainWebhook(dir, { url: "https://example.com/hook", on: ["achieved"], allowLocal: false });
+
+      assert.equal(res.ok, false);
+      assert.match(res.error, /Goal state file was corrupt/);
+      assert.equal(existsSync(statePath), false, "corrupt state should be quarantined");
+      assert.deepEqual(readGoalChain(dir), chainBefore, "chain webhook should not change when current state is corrupt");
+    } finally { cleanDir(dir); }
+  });
 });
 
 describe("resetGoalChain", () => {
@@ -368,6 +459,23 @@ describe("resetGoalChain", () => {
       assert.ok(chain);
       assert.equal(chain.current, 0);
       assert.equal(chain.cycles, 0);
+    } finally { cleanDir(dir); }
+  });
+
+  it("surfaces corrupt current state before resetting a live chain", () => {
+    const dir = freshDir();
+    try {
+      createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      advanceGoalChain(dir);
+      const chainBefore = readGoalChain(dir);
+      const statePath = plantCorruptGoalState(dir);
+
+      const res = resetGoalChain(dir);
+
+      assert.equal(res.ok, false);
+      assert.match(res.error, /Goal state file was corrupt/);
+      assert.equal(existsSync(statePath), false, "corrupt state should be quarantined");
+      assert.deepEqual(readGoalChain(dir), chainBefore, "chain should not reset when current state is corrupt");
     } finally { cleanDir(dir); }
   });
 });
