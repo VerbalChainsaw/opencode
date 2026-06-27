@@ -1048,6 +1048,10 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Projects and sessions",
   "sidebar.settings": "Settings",
   "sidebar.help": "Help",
+  "help.dev.title": "Mission Control help",
+  "help.dev.body":
+    "Goal shows the active objective, chain order, runtime controls, history, and reusable actions. Use Start Chain for ordered actions; use Stop or Pause to abort active child sessions before changing work.",
+  "help.dev.footer": "This help button is visible in dev builds only.",
   "sidebar.workspaces.enable": "Enable workspaces",
   "sidebar.workspaces.disable": "Disable workspaces",
   "sidebar.gettingStarted.title": "Getting started",

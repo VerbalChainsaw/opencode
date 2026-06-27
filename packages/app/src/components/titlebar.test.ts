@@ -46,4 +46,10 @@ describe("titlebar TSX wiring", () => {
     expect(src).toContain("width: electronWindows() ? electronTitlebarWidth() : undefined")
     expect(src).toContain('"max-width": electronWindows() ? electronTitlebarWidth() : undefined')
   })
+
+  test("draft tab close button uses the localized close-tab label", async () => {
+    const src = await titlebar()
+    expect(src).toContain('aria-label={language.t("common.closeTab")}')
+    expect(src).not.toContain('aria-label="Close tab"')
+  })
 })

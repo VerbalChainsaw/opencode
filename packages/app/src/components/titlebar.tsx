@@ -804,6 +804,7 @@ function DraftTabItem(props: {
   onNavigate: () => void
   onClose: () => void
 }) {
+  const language = useLanguage()
   const closeTab = (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
@@ -842,7 +843,7 @@ function DraftTabItem(props: {
           }}
           onClick={closeTab}
           icon={<IconV2 name="xmark-small" />}
-          aria-label="Close tab"
+          aria-label={language.t("common.closeTab")}
         />
       </div>
     </div>

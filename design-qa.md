@@ -30,9 +30,11 @@ final result: passed
 - Electron screenshot after rail fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-audit-rail-bounded.png`
 - Electron screenshot after radius consistency fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-radius-consistency.png`
 - Electron screenshot after category/text-fit fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-category-fit-20260627.png`
+- Electron screenshot after help-popover affordance fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-help-popover-20260627.png`
 - Root cause fixed in this pass: the right Actions rail was an unbounded grid. Electron measured `goal-method-library-rail` at 1151px tall in a 900px window, pushing the editor below the visible Goal workspace. The rail is now viewport-bounded at 756px in the same Electron window, with the library and editor scrolling internally.
 - Visual consistency defect fixed in this pass: live Electron computed `goal-method-row` at `0px` border radius while adjacent editor/status cells computed at `6px`. Bordered Goal controls now use explicit radius tokens (`rounded-sm`, `rounded-md`, or `rounded-lg`) instead of the generic `rounded` fallback.
 - Text-fit defect fixed in this pass: the Actions category strip forced eight cells in one row and clipped `Custom` to `Cust...` at 1440x900. The strip now uses auto-fit columns; Electron measured every category tab at 55px wide, 24px tall, `6px` radius, and `clipped: false`.
+- Missing-affordance defect fixed in this pass: the dev-only floating help button opened a placeholder Lorem Ipsum popover, making the control visibly unexplained. It now uses localized Mission Control help copy, a bounded 320px responsive panel, an 8px radius, a visible outline, stronger body-copy contrast, and localized close/help labels. Electron measured the panel at 307x185 inside a 1440x900 viewport with `overflowsViewport: false`.
 
 **Chain stop audit evidence**
 - Desktop Stop/Pause path: `packages/app/src/pages/session/goal-panel-actions.ts` collects `session.children`, aborts children before parent, executes `clear`/`pause`, then aborts the tree again so late child turns cannot keep driving the parent.

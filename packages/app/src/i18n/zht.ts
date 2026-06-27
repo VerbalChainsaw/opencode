@@ -905,6 +905,10 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "專案與工作階段",
   "sidebar.settings": "設定",
   "sidebar.help": "說明",
+  "help.dev.title": "Mission Control 說明",
+  "help.dev.body":
+    "Goal 面板會顯示目前目標、鏈執行順序、執行控制、歷史記錄和可重用動作。有順序動作時使用 Start Chain；切換工作前使用 Stop 或 Pause 終止活動子工作階段。",
+  "help.dev.footer": "此說明按鈕只會在開發版本中顯示。",
   "sidebar.workspaces.enable": "啟用工作區",
   "sidebar.workspaces.disable": "停用工作區",
   "sidebar.gettingStarted.title": "開始使用",

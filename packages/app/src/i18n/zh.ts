@@ -908,6 +908,10 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "项目和会话",
   "sidebar.settings": "设置",
   "sidebar.help": "帮助",
+  "help.dev.title": "Mission Control 帮助",
+  "help.dev.body":
+    "Goal 面板会显示当前目标、链执行顺序、运行控制、历史记录和可复用动作。有顺序动作时使用 Start Chain；切换工作前使用 Stop 或 Pause 终止活动子会话。",
+  "help.dev.footer": "此帮助按钮仅在开发版本中显示。",
   "sidebar.workspaces.enable": "启用工作区",
   "sidebar.workspaces.disable": "禁用工作区",
   "sidebar.gettingStarted.title": "入门",
