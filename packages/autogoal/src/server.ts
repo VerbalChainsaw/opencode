@@ -1152,6 +1152,20 @@ export const server: Plugin = async ({ client, directory }) => {
       .catch((err) => log("error", "notify (session message) failed", { error: String(err) }));
   }
 
+  function readStateForTransitionTool(action: "clear" | "pause" | "resume"): { state: GoalState | null; corruptMessage: string | null } {
+    const result = readGoalStateResult(directory);
+    if (result.kind === "corrupt") {
+      const newest = listCorruptArtifacts(directory)[0];
+      return {
+        state: null,
+        corruptMessage:
+          `Cannot ${action} the goal because the goal state file was corrupt (${result.reason})` +
+          `${newest ? ` and was quarantined as ${newest}` : ""}. Set a new goal after reviewing the quarantined artifact.`,
+      };
+    }
+    return { state: result.kind === "ok" ? result.value : null, corruptMessage: null };
+  }
+
   // Command handling lives in ./command.ts (pure + unit-tested).
 
   // Project the available templates (builtins + user `.opencode/goals/*.json`)
@@ -2029,7 +2043,9 @@ export const server: Plugin = async ({ client, directory }) => {
             // can carry the correct `previousStatus` (spec: "active/paused
             // → cleared"). After the transition the state file already
             // shows status="cleared" and we'd lose the source state.
-            const before = readGoalState(ctx.directory);
+            const beforeRead = readStateForTransitionTool("clear");
+            if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
+            const before = beforeRead.state;
             const previousStatus = before ? before.status : null;
             const res = transitionGoal(ctx.directory, "clear");
             if (!res.ok) return res.error!;
@@ -2061,7 +2077,9 @@ export const server: Plugin = async ({ client, directory }) => {
             // can carry the correct `previousStatus`. transitionGoal
             // only fires for the active → paused transition; for the
             // no-op "already paused" case we never reach the webhook.
-            const before = readGoalState(ctx.directory);
+            const beforeRead = readStateForTransitionTool("pause");
+            if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
+            const before = beforeRead.state;
             const previousStatus = before ? before.status : null;
             const res = transitionGoal(ctx.directory, "pause");
             if (!res.ok) return res.error!;
@@ -2086,7 +2104,9 @@ export const server: Plugin = async ({ client, directory }) => {
           return await withStateLock(ctx.directory, () => {
             // Capture the pre-transition status so the webhook payload
             // can carry the correct `previousStatus` (paused → active).
-            const before = readGoalState(ctx.directory);
+            const beforeRead = readStateForTransitionTool("resume");
+            if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
+            const before = beforeRead.state;
             const previousStatus = before ? before.status : null;
             const res = transitionGoal(ctx.directory, "resume");
             if (!res.ok) return res.error!;
