@@ -3480,7 +3480,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             <div
               data-testid="chain-workspace"
               data-component="goal-chain-builder-workspace"
-              class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-start gap-3 overflow-x-hidden"
+              class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"
             >
               <section
                 data-testid="goal-status-card"
@@ -5363,13 +5363,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                 <aside
                   data-component="goal-method-library-rail"
-                  class="grid min-w-0 grid-cols-1 gap-2"
+                  class="grid h-[min(100%,calc(100vh-9rem))] min-h-[520px] min-w-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-hidden"
                 >
                   <GoalConsoleSection
                     zone="action-library"
                     title={language.t("session.goal.template.libraryShortTitle")}
                     subtitle={language.t("session.goal.template.librarySubtitle")}
-                    class="min-h-[320px]"
+                    class="min-h-[240px]"
                   >
                   <section data-testid="action-library" data-component="goal-method-library" class="flex h-full min-h-0 min-w-0 flex-col p-2">
                     <div
@@ -5503,7 +5503,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     zone="action-editor"
                     title={language.t("session.goal.template.editorShortTitle")}
                     subtitle={language.t("session.goal.template.editorSubtitle")}
-                    class="min-h-[360px]"
+                    class="min-h-[280px]"
                   >
                     <section
                       data-testid="action-editor"

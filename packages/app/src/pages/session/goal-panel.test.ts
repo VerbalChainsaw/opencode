@@ -402,11 +402,15 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.template.searchPlaceholder")
     expect(src).toContain("session.goal.template.empty")
     expect(src).toContain("session.goal.chainBuilder.steps")
-    expect(src).toContain('class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-start gap-3 overflow-x-hidden"')
+    expect(src).toContain(
+      'class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"',
+    )
     expect(src).toContain('class="flex min-w-0 flex-col gap-3"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"')
-    expect(src).toContain('class="grid min-w-0 grid-cols-1 gap-2"')
-    expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-2"')
+    expect(src).toContain(
+      'class="grid h-[min(100%,calc(100vh-9rem))] min-h-[520px] min-w-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-hidden"',
+    )
+    expect(src).not.toContain('class="grid min-w-0 grid-cols-1 gap-2"')
     expect(src).not.toMatch(/xl:grid-cols-\[minmax\(620px,1fr\)_minmax\(360px,420px\)\]/)
     expect(src).not.toContain("xl:col-span-2")
     expect(src).toMatch(/data-component="goal-chain-builder"[\s\S]*data-component="goal-chain-builder-header-strip"[\s\S]*data-component="goal-global-budget"[\s\S]*data-component="goal-playbook-chain-pane"/)
@@ -544,11 +548,15 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-target-stat-strip"')
     expect(src).toContain('data-component="goal-status-card"')
     expect(src).toContain('class={unarchivedTerminalGoal() ? "col-span-full h-fit" : "hidden"}')
-    expect(src).toContain('class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-start gap-3 overflow-x-hidden"')
+    expect(src).toContain(
+      'class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"',
+    )
     expect(src).toContain('class="flex min-w-0 flex-col gap-3"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"')
-    expect(src).toContain('class="grid min-w-0 grid-cols-1 gap-2"')
-    expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-2"')
+    expect(src).toContain(
+      'class="grid h-[min(100%,calc(100vh-9rem))] min-h-[520px] min-w-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-hidden"',
+    )
+    expect(src).not.toContain('class="grid min-w-0 grid-cols-1 gap-2"')
     expect(src).toContain("grid-cols-[repeat(auto-fit,minmax(112px,1fr))]")
     expect(src).not.toContain("xl:col-span-2")
     expect(src).not.toContain("xl:h-[calc(100vh-8rem)]")
@@ -746,8 +754,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("flex min-h-0 min-w-0 flex-col")
     expect(src).toContain("min-h-0 flex-1 overflow-hidden")
     expect(src).toContain('class="min-h-[520px]"')
-    expect(src).toContain('class="min-h-[320px]"')
-    expect(src).toContain('class="min-h-[360px]"')
+    expect(src).toContain('class="min-h-[240px]"')
+    expect(src).toContain('class="min-h-[280px]"')
+    expect(src).toContain("grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)]")
+    expect(src).toContain("h-[min(100%,calc(100vh-9rem))]")
+    expect(src).toContain("overflow-y-auto overscroll-contain")
     expect(src).not.toContain("xl:h-[calc(100vh-8rem)]")
     expect(src).toContain("flex h-full min-h-0 min-w-0 flex-col p-2")
     expect(src).toContain("flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden")

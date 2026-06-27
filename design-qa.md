@@ -20,3 +20,28 @@
 - P3: Per-action OpenCode skill/agent selection is not exposed because the current chain engine schema does not accept a per-step skill/agent field; adding that requires a backend schema and runner change, not just UI.
 
 final result: passed
+
+---
+
+## Mission Control UX Audit Addendum — 2026-06-27
+
+**Current evidence**
+- Electron screenshot before rail fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-audit-live.png`
+- Electron screenshot after rail fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-audit-rail-bounded.png`
+- Root cause fixed in this pass: the right Actions rail was an unbounded grid. Electron measured `goal-method-library-rail` at 1151px tall in a 900px window, pushing the editor below the visible Goal workspace. The rail is now viewport-bounded at 756px in the same Electron window, with the library and editor scrolling internally.
+
+**Expanded UX punch list to keep auditing**
+- Missing affordances: every button/control needs an obvious purpose through label, icon, title, disabled reason, or nearby state.
+- Live orchestration visibility: the running view needs clear "current step / exact state right now" context for active, paused, stalled, terminal, and child-session states.
+- Feature completeness: test whether an operator reasonably expects a visible control/status/history surface and whether it is missing, hidden, or only implied by code.
+- Text fit: labels, button copy, row text, select values, and helper copy must fit or truncate cleanly without overlapping adjacent controls.
+- Visual consistency: normalize panel radii, outlines, row shading, warning fills, and action colors so the Goal surface reads as one system.
+- Interaction consistency: verify add/edit/delete/save/start/stop/pause/restart/steer/handoff controls do not silently no-op and expose the correct disabled/busy state.
+- Motion and status change communication: add restrained transitions where they make state changes easier to follow, with reduced-motion safety.
+- Accessibility checks: keyboard reachability, focus rings, target sizes, aria labels, progress/status regions, and non-color status cues.
+
+**Open UI follow-up candidates**
+- Audit small-height Electron geometry after the bounded rail fix to ensure the editor fields remain reachable through internal scrolling.
+- Inspect remaining rounded-xl and square internal surfaces for whether they should be normalized to the 8px Goal console radius.
+- Review action-library category tabs and dense rows for minimum target size and whether icon-only add/edit controls need stronger tooltips.
+- Run a live chain with an actual active step to visually confirm the Current Step strip, pause/stop/restart controls, and stalled-state copy under real runtime state.
