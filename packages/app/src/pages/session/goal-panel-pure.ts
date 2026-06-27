@@ -149,6 +149,7 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   const s = v as Record<string, unknown>
   if (typeof s.id !== "string" || !s.id.trim()) return false
   if (typeof s.condition !== "string" || !s.condition.trim()) return false
+  if (s.command !== undefined && s.command !== null && typeof s.command !== "string") return false
   if (typeof s.status !== "string" || !GOAL_STATUSES.has(s.status)) return false
   if (!isFiniteNumberInRange(s.turnsEvaluated, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.tokensUsed, 0, Number.MAX_SAFE_INTEGER)) return false

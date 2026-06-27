@@ -226,6 +226,19 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     expect(isGoalStateShape({ ...validMinimalState, evaluationHistory: Array.from({ length: 11 }, () => cycle) })).toBe(false)
   })
 
+  test("accepts null or string command and rejects malformed verification commands", async () => {
+    const { isGoalStateShape } = await load()
+
+    expect(isGoalStateShape({ ...validMinimalState, command: undefined })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, command: null })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, command: "" })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, command: "npm test" })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, command: { shell: "npm test" } })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, command: ["npm test"] })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, command: 42 })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, command: true })).toBe(false)
+  })
+
   test("rejects constraint values outside the documented renderer contract", async () => {
     const { isGoalStateShape } = await load()
     for (const constraints of [
