@@ -172,6 +172,27 @@ test("bridge: fresh removes live state files and reports success", async () => {
   }
 });
 
+test("bridge: chain start-json rejects negative lifecycle timestamps before mutating state", async () => {
+  for (const field of ["createdAt", "startedAt", "completedAt", "pausedAt", "resumedAt"]) {
+    const dir = freshDir();
+    try {
+      await runGoalControlStateFile(dir, 'set "do the thing"', 1000);
+      const statePath = join(dir, ".opencode", ".goal-state.json");
+      const state = JSON.parse(readFileSync(statePath, "utf-8"));
+      state[field] = -1;
+      writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+
+      const payload = JSON.stringify({ steps: [{ condition: "Plan" }, { condition: "Build" }] });
+      await assert.rejects(() => runGoalControlStateFile(dir, `chain start-json ${payload}`, 2000), /invalid|corrupt/i);
+      assert.equal(existsSync(join(dir, ".opencode", ".goal-chain.json")), false, `${field} invalid state must not start a chain`);
+      const after = JSON.parse(readFileSync(statePath, "utf-8"));
+      assert.equal(after[field], -1, `${field} invalid state must not be overwritten`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("bridge: set bounds an over-length condition to 4000 chars", async () => {
   const dir = freshDir();
   try {

@@ -1109,8 +1109,12 @@ function isGoalControlState(value: unknown): value is GoalControlState {
   if (typeof value.id !== "string" || value.id.length === 0) return false
   if (typeof value.condition !== "string") return false
   if (!isStatus(value.status)) return false
-  if (!isFiniteNumber(value.createdAt) || !isFiniteNumber(value.startedAt)) return false
-  if (!isNullableNumber(value.completedAt) || !isNullableNumber(value.pausedAt) || !isNullableNumber(value.resumedAt)) {
+  if (!isNonNegativeNumber(value.createdAt) || !isNonNegativeNumber(value.startedAt)) return false
+  if (
+    !isNullableNonNegativeNumber(value.completedAt) ||
+    !isNullableNonNegativeNumber(value.pausedAt) ||
+    !isNullableNonNegativeNumber(value.resumedAt)
+  ) {
     return false
   }
   if (!isFiniteNumber(value.turnsEvaluated) || !isFiniteNumber(value.tokensUsed)) return false
@@ -1125,8 +1129,12 @@ function isGoalControlState(value: unknown): value is GoalControlState {
   return value.verification === undefined || value.verification === null || sanitizeVerification(value.verification) !== undefined
 }
 
-function isNullableNumber(value: unknown): value is number | null {
-  return value === null || isFiniteNumber(value)
+function isNonNegativeNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0
+}
+
+function isNullableNonNegativeNumber(value: unknown): value is number | null {
+  return value === null || isNonNegativeNumber(value)
 }
 
 function isStatus(value: unknown): value is GoalControlStatus {
