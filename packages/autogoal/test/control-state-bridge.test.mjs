@@ -193,6 +193,65 @@ test("bridge: chain start-json rejects negative lifecycle timestamps before muta
   }
 });
 
+test("bridge: chain start-json rejects invalid state-contract fields before mutating state", async () => {
+  const cases = [
+    {
+      name: "negative turnsEvaluated",
+      mutate: (state) => {
+        state.turnsEvaluated = -1;
+      },
+    },
+    {
+      name: "negative tokensUsed",
+      mutate: (state) => {
+        state.tokensUsed = -1;
+      },
+    },
+    {
+      name: "zero maxTurns",
+      mutate: (state) => {
+        state.constraints.maxTurns = 0;
+      },
+    },
+    {
+      name: "oversized evaluationHistory",
+      mutate: (state) => {
+        state.evaluationHistory = Array.from({ length: 11 }, () => ({
+          met: false,
+          reason: "still working",
+          confidence: 0.2,
+          timestamp: 1000,
+          evaluatorType: "heuristic",
+        }));
+      },
+    },
+    {
+      name: "malformed lastEvaluation",
+      mutate: (state) => {
+        state.lastEvaluation = "not an evaluation";
+      },
+    },
+  ];
+
+  for (const entry of cases) {
+    const dir = freshDir();
+    try {
+      await runGoalControlStateFile(dir, 'set "do the thing"', 1000);
+      const statePath = join(dir, ".opencode", ".goal-state.json");
+      const original = JSON.parse(readFileSync(statePath, "utf-8"));
+      entry.mutate(original);
+      writeFileSync(statePath, JSON.stringify(original, null, 2) + "\n", "utf-8");
+
+      const payload = JSON.stringify({ steps: [{ condition: "Plan" }, { condition: "Build" }] });
+      await assert.rejects(() => runGoalControlStateFile(dir, `chain start-json ${payload}`, 2000), /invalid|corrupt/i);
+      assert.equal(existsSync(join(dir, ".opencode", ".goal-chain.json")), false, `${entry.name} must not start a chain`);
+      assert.deepEqual(JSON.parse(readFileSync(statePath, "utf-8")), original, `${entry.name} must not be overwritten`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("bridge: set bounds an over-length condition to 4000 chars", async () => {
   const dir = freshDir();
   try {

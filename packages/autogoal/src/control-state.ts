@@ -30,7 +30,7 @@ import { splitGoalCommand } from "./dispatcher.js"
 // Canonical types from the plugin's state layer — single source of truth.
 // control-state.ts is the EXPERIMENTAL API backend; it delegates type
 // authority to goal-state.ts so the two implementations cannot drift.
-import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, sanitizeForPrompt, DEFAULT_CONSTRAINTS, CONSTRAINT_BOUNDS, type GoalStatus, type Verification } from "./goal-state.js"
+import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, sanitizeForPrompt, validateGoalState, DEFAULT_CONSTRAINTS, CONSTRAINT_BOUNDS, type GoalStatus, type Verification } from "./goal-state.js"
 import type { ChainWebhook, GoalPinnedModel } from "./goal-chain.js";
 import { sanitizeChainWebhook } from "./goal-chain.js";
 import { isPlainObject, isFiniteNumber } from "./utils.js";
@@ -1105,6 +1105,7 @@ function sanitizeSessionID(value: unknown) {
 
 function isGoalControlState(value: unknown): value is GoalControlState {
   if (!isPlainObject(value)) return false
+  if (!validateGoalState(value)) return false
   if (typeof value.version !== "number") return false
   if (typeof value.id !== "string" || value.id.length === 0) return false
   if (typeof value.condition !== "string") return false
