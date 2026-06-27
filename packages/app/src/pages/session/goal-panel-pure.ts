@@ -96,6 +96,7 @@ export function applyArchivePoll(
 }
 
 const GOAL_STATUSES = new Set(["active", "paused", "achieved", "cleared"])
+const EVALUATOR_TYPES = new Set(["deterministic", "model", "heuristic"])
 const RENDERER_CONSTRAINT_BOUNDS = {
   minTurns: 1,
   maxTurns: 10_000,
@@ -120,11 +121,23 @@ function isEvaluationShape(value: unknown): value is GoalState["evaluationHistor
   )
 }
 
+function isLastEvaluationShape(value: unknown): value is NonNullable<GoalState["lastEvaluation"]> {
+  if (!isEvaluationShape(value)) return false
+  const evaluation = value as Record<string, unknown>
+  return (
+    typeof evaluation.evaluatorType === "string" &&
+    EVALUATOR_TYPES.has(evaluation.evaluatorType) &&
+    (evaluation.blocked === undefined || typeof evaluation.blocked === "boolean")
+  )
+}
+
 function withRendererGoalStateDefaults(parsed: unknown): unknown {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed
   const record = parsed as Record<string, unknown>
-  if (record.evaluationHistory !== undefined) return parsed
-  return { ...record, evaluationHistory: [] }
+  const defaults: Partial<GoalState> = {}
+  if (record.lastEvaluation === undefined) defaults.lastEvaluation = null
+  if (record.evaluationHistory === undefined) defaults.evaluationHistory = []
+  return Object.keys(defaults).length > 0 ? { ...record, ...defaults } : parsed
 }
 
 /** Structural gate for a parsed goal-state payload. Exported for unit
@@ -141,6 +154,7 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   if (!isFiniteNumberInRange(s.tokensUsed, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.startedAt, 0, Number.MAX_SAFE_INTEGER)) return false
   if (s.completedAt !== null && !isFiniteNumberInRange(s.completedAt, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (s.lastEvaluation !== null && !isLastEvaluationShape(s.lastEvaluation)) return false
   if (!Array.isArray(s.evaluationHistory) || s.evaluationHistory.length > 10) return false
   if (!s.evaluationHistory.every(isEvaluationShape)) return false
   const c = s.constraints as Record<string, unknown> | undefined

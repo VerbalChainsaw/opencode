@@ -124,6 +124,7 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     turnsEvaluated: 0,
     tokensUsed: 0,
     completedAt: null,
+    lastEvaluation: null,
     evaluationHistory: [],
     constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
   }
@@ -132,7 +133,7 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     const { isGoalStateShape } = await load()
     // The shape guard requires these fields to be present and well-typed:
     // id, condition, status (in the active/paused/achieved/cleared set),
-    // turnsEvaluated, tokensUsed, startedAt, completedAt, evaluationHistory,
+    // turnsEvaluated, tokensUsed, startedAt, completedAt, lastEvaluation, evaluationHistory,
     // constraints{maxTurns,maxTimeMinutes,maxTokens}
     expect(isGoalStateShape(validMinimalState)).toBe(true)
   })
@@ -186,6 +187,29 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     expect(isGoalStateShape({ ...validMinimalState, completedAt: "done" })).toBe(false)
     expect(isGoalStateShape({ ...validMinimalState, completedAt: -1 })).toBe(false)
     expect(isGoalStateShape({ ...validMinimalState, completedAt: Number.NaN })).toBe(false)
+  })
+
+  test("requires lastEvaluation to be null or a bounded evaluation object for safe evidence readouts", async () => {
+    const { isGoalStateShape } = await load()
+    const { lastEvaluation, ...missingLastEvaluation } = validMinimalState
+    const evaluation = {
+      met: false,
+      reason: "still failing",
+      timestamp: 1_700_000_000_000,
+      evaluatorType: "deterministic",
+      confidence: 0.6,
+      blocked: false,
+    }
+
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: null })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: evaluation })).toBe(true)
+    expect(isGoalStateShape(missingLastEvaluation)).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: { ...evaluation, met: "no" } })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: { ...evaluation, reason: 7 } })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: { ...evaluation, timestamp: -1 } })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: { ...evaluation, evaluatorType: "transcript" } })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: { ...evaluation, confidence: 2 } })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, lastEvaluation: { ...evaluation, blocked: "yes" } })).toBe(false)
   })
 
   test("requires evaluationHistory to be a capped array for safe report readouts", async () => {
@@ -324,7 +348,7 @@ describe("readGoalFromSdk (file.read defensive layer)", () => {
     expect(store.state?.id).toBe("x")
   })
 
-  test("normalizes legacy goal states without evaluationHistory to an empty history", async () => {
+  test("normalizes legacy goal states without renderer-required evaluation fields", async () => {
     const { readGoalFromSdk } = await load()
     const sdk = {
       client: {
@@ -338,6 +362,7 @@ describe("readGoalFromSdk (file.read defensive layer)", () => {
 
     const store = await readGoalFromSdk(sdk)
     expect(store).toMatchObject({ corrupt: false, loaded: true })
+    expect(store.state?.lastEvaluation).toBeNull()
     expect(store.state?.evaluationHistory).toEqual([])
   })
 

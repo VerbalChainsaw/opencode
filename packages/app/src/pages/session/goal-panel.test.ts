@@ -1545,6 +1545,7 @@ describe("isGoalStateShape", () => {
         completedAt: null,
         turnsEvaluated: 0,
         tokensUsed: 0,
+        lastEvaluation: null,
         evaluationHistory: [],
         constraints: { maxTurns: 5, maxTimeMinutes: 10, maxTokens: 1000 },
       }),
@@ -1622,11 +1623,10 @@ describe("cleanText", () => {
     expect(cleanText("café 🎯 résumé")).toBe("café 🎯 résumé")
   })
 
-  // Adversarial: cleanText is called on evaluationHistory[].reason,
-  // lastEvaluation.reason, and command — none of which are validated
-  // by isGoalStateShape. If any of these fields holds a non-string
-  // value (number, object, array), cleanText must return "" instead
-  // of throwing TypeError on .replace().
+  // Adversarial: cleanText also guards optional text surfaces like
+  // command. If any caller passes a non-string value (number, object,
+  // array), cleanText must return "" instead of throwing TypeError on
+  // .replace().
   test("returns empty string for non-string input (null, number, object, array)", () => {
     expect((cleanText as (s: unknown) => string)(null)).toBe("")
     expect((cleanText as (s: unknown) => string)(42)).toBe("")
@@ -1831,7 +1831,7 @@ describe("readGoalFromSdk", () => {
   // pinning the behavior guards future regressions.
   test("prototype-pollution-style payloads are rejected by isGoalStateShape", () => {
     const polluted = JSON.parse(
-      '{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"evaluationHistory":[],"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}',
+      '{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"lastEvaluation":null,"evaluationHistory":[],"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}',
     )
     // Shape-wise this is valid, so isGoalStateShape returns true —
     // which is correct: the validator checks shape, not origin. The
