@@ -4466,14 +4466,27 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <div
                           data-component="goal-runtime-command-tray"
                           data-state={runtimeDetailState()}
-                          class="order-first mb-1.5 rounded-md border p-1.5"
+                          class="order-first mb-1.5 rounded-lg border p-2"
                           style={{
-                            "background-color": "rgba(2, 6, 23, 0.30)",
-                            "border-color": "rgba(148, 163, 184, 0.14)",
+                            "background-color": "rgba(2, 6, 23, 0.36)",
+                            "border-color": "rgba(148, 163, 184, 0.18)",
+                            "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.035)",
                           }}
                         >
-                          <div class="grid min-w-0 gap-1.5">
-                            <div data-component="goal-runtime-primary-actions" class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1">
+                          <div class="mb-2 flex min-w-0 items-center justify-between gap-2">
+                            <div class="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-100/78">
+                              {language.t("session.goal.runControls")}
+                            </div>
+                            <button
+                              type="button"
+                              class="shrink-0 rounded-md border border-cyan-300/16 bg-cyan-500/8 px-2 py-1 text-[10px] font-semibold text-cyan-100/70 transition hover:border-cyan-200/36 hover:bg-cyan-500/14 hover:text-cyan-50"
+                              title={language.t("session.goal.report.copy")}
+                              onClick={copyGoalReport}
+                            >
+                              {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
+                            </button>
+                          </div>
+                          <div data-component="goal-runtime-actions" class="grid min-w-0 grid-cols-2 gap-1.5">
                               <Show when={pauseResume()}>
                                 {(action) => (
                                   <ActionButton
@@ -4485,7 +4498,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     variant="primary"
                                     busy={busy() === "pause" || busy() === "resume"}
                                     disabled={busy() !== null || !props.sessionID}
-                                    class="h-7 w-full min-w-0 px-2 text-11-medium"
+                                    class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                     onClick={() => {
                                       closeRuntimePanel()
                                       const next = action()
@@ -4510,19 +4523,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   variant={confirmingClear() ? "primary" : "secondary"}
                                   tone="danger"
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
+                                  class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                   onClick={() => openRuntimePanel("stop")}
                                 />
                               </Show>
-                            </div>
-                            <div data-component="goal-runtime-support-actions" class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(88px,1fr))] gap-1">
                               <Show when={runtimeCanRestart()}>
                                 <ActionButton
                                   label={language.t("session.goal.action.restart")}
                                   variant="secondary"
                                   busy={busy() === "restart"}
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
+                                  class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                   onClick={() => {
                                     closeRuntimePanel()
                                     void runAction("restart")
@@ -4534,7 +4545,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   label={language.t("session.goal.action.steer")}
                                   variant={steerOpen() ? "primary" : "secondary"}
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
+                                  class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                   title={language.t("session.goal.steer.hint")}
                                   onClick={() => (steerOpen() ? closeRuntimePanel() : openRuntimePanel("steer"))}
                                 />
@@ -4545,23 +4556,23 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   variant={handoffOpen() ? "primary" : "secondary"}
                                   busy={busy() === "handoff"}
                                   disabled={busy() !== null || !props.sessionID}
-                                  class="h-7 w-full min-w-0 px-2 text-11-medium"
+                                  class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                   title={language.t("session.goal.handoff.hint")}
                                   onClick={() => (handoffOpen() ? closeRuntimePanel() : openRuntimePanel("handoff"))}
                                 />
                               </Show>
-                            </div>
                           </div>
-                          <div
-                            data-component="goal-runtime-detail-slot"
-                            data-state={runtimeDetailState()}
-                            class="mt-1.5 min-h-[46px] rounded-md border p-1.5"
-                            style={{
-                              "background-color": "rgba(15, 23, 42, 0.30)",
-                              "border-color": "rgba(148, 163, 184, 0.10)",
-                            }}
-                          >
-                            <Switch>
+                          <Show when={confirmingClear() || steerOpen() || handoffOpen()}>
+                            <div
+                              data-component="goal-runtime-detail-slot"
+                              data-state={runtimeDetailState()}
+                              class="mt-2 rounded-md border p-2"
+                              style={{
+                                "background-color": "rgba(15, 23, 42, 0.34)",
+                                "border-color": "rgba(148, 163, 184, 0.14)",
+                              }}
+                            >
+                              <Switch>
                               <Match when={confirmingClear()}>
                                 <div
                                   data-component="goal-running-inline-panel"
@@ -4579,14 +4590,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       tone="danger"
                                       busy={busy() === "clear"}
                                       disabled={busy() !== null || !props.sessionID}
-                                      class="h-7 w-full min-w-0 px-2 text-11-medium"
+                                      class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                       onClick={() => void stopGoal()}
                                     />
                                     <ActionButton
                                       label={language.t("session.goal.action.cancel")}
                                       variant="ghost"
                                       disabled={busy() !== null}
-                                      class="h-7 w-full min-w-0 px-2 text-11-medium"
+                                      class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                       onClick={closeRuntimePanel}
                                     />
                                   </div>
@@ -4614,14 +4625,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     variant="primary"
                                     busy={busy() === "steer"}
                                     disabled={busy() !== null || !props.sessionID || !steerText().trim()}
-                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
+                                    class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                     onClick={() => void steerGoal()}
                                   />
                                   <ActionButton
                                     label={language.t("session.goal.action.cancel")}
                                     variant="ghost"
                                     disabled={busy() !== null}
-                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
+                                    class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                     onClick={() => {
                                       closeRuntimePanel()
                                       setSteerText("")
@@ -4651,14 +4662,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     variant="primary"
                                     busy={busy() === "handoff"}
                                     disabled={busy() !== null || !props.sessionID}
-                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
+                                    class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                     onClick={() => void handoffGoal()}
                                   />
                                   <ActionButton
                                     label={language.t("session.goal.action.cancel")}
                                     variant="ghost"
                                     disabled={busy() !== null}
-                                    class="h-8 w-full min-w-0 px-2 text-11-medium"
+                                    class="min-h-8 w-full min-w-0 px-2 text-center text-11-medium leading-tight"
                                     onClick={() => {
                                       closeRuntimePanel()
                                       setHandoffText("")
@@ -4666,28 +4677,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   />
                                 </div>
                               </Match>
-                              <Match when={true}>
-                                <div class="grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-1">
-                                  <div class="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-100/78">
-                                    {language.t("session.goal.runControls")}
-                                  </div>
-                                  <div class="flex min-w-0 items-center justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200/60 transition hover:bg-cyan-500/12 hover:text-cyan-100"
-                                      title={language.t("session.goal.report.copy")}
-                                      onClick={copyGoalReport}
-                                    >
-                                      {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
-                                    </button>
-                                    <div class="hidden min-w-0 truncate text-right text-11-regular text-cyan-100/52 xl:block">
-                                      {language.t("session.goal.commandStrip.hint")}
-                                    </div>
-                                  </div>
-                                </div>
-                              </Match>
                             </Switch>
-                          </div>
+                            </div>
+                          </Show>
                         </div>
                       </div>
                     </div>

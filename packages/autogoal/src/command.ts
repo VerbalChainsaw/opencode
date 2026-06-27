@@ -25,6 +25,7 @@ import {
   transitionGoal,
   readGoalState,
   readGoalStateResult,
+  readHandoffResult,
   listCorruptArtifacts,
   formatStatus,
   editMaxTurns,
@@ -68,6 +69,28 @@ const FRESH_STATE_FILES = [
   STEP_TIMELINE_FILE,
   SESSION_EVENTS_FILE,
 ] as const;
+
+function cancelClearedChainArtifact(directory: string): { ok: true; cancelled: boolean } | { ok: false; message: string } {
+  const state = readGoalState(directory);
+  const chainId = state?.metadata.chainId;
+  if (!chainId || state.status !== "cleared") return { ok: true, cancelled: false };
+
+  const handoff = readHandoffResult(directory);
+  if (handoff.kind === "ok" && handoff.value.state.metadata.chainId === chainId) {
+    return { ok: true, cancelled: false };
+  }
+
+  try {
+    unlinkSync(join(directory, CHAIN_FILE));
+    return { ok: true, cancelled: true };
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { ok: true, cancelled: false };
+    return {
+      ok: false,
+      message: `Goal cleared, but failed to cancel the chain: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
 
 function parseInlineChainStartPayload(raw: string):
   | { ok: true; steps: GoalChainStep[]; master?: { maxTurns?: number; maxMinutes?: number } }
@@ -489,7 +512,14 @@ export function dispatchGoalCommandStructured(
 
   if (CLEAR_ALIASES.has(action)) {
     const res = transitionGoal(directory, "clear");
-    if (res.ok) return { kind: "success", message: res.message! };
+    if (res.ok) {
+      const cancelled = cancelClearedChainArtifact(directory);
+      if (!cancelled.ok) return { kind: "write-failed", message: cancelled.message };
+      return {
+        kind: "success",
+        message: `${res.message!}${cancelled.cancelled ? " Active chain cancelled." : ""}`,
+      };
+    }
     // R2-1: switch on typed `reason` instead of regex-greping `error`.
     if (res.reason === "no-goal") return { kind: "no-goal", message: res.error! };
     return { kind: "write-failed", message: res.error ?? "Failed to clear." };

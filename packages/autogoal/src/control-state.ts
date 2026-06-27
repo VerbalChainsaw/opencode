@@ -281,8 +281,26 @@ async function transitionGoal(directory: string, action: "pause" | "resume" | "c
   if (!res.ok && res.reason !== "already-in-state") {
     throw new Error(res.error ?? `Cannot ${action} goal.`)
   }
-  const message = res.ok ? res.message! : res.error!
+  const chainCancelled = action === "clear" && res.ok ? await cancelClearedChainArtifact(directory) : false
+  const message = `${res.ok ? res.message! : res.error!}${chainCancelled ? " Active chain cancelled." : ""}`
   return result(message, action, now)
+}
+
+async function cancelClearedChainArtifact(directory: string) {
+  const state = await readGoalStateOptional(directory)
+  const chainId = state?.metadata.chainId
+  if (!chainId || state.status !== "cleared") return false
+
+  const handoff = await readHandoffOptional(directory).catch(() => null)
+  if (handoff?.state.metadata.chainId === chainId) return false
+
+  try {
+    await unlinkWithRetry(goalChainPath(directory))
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
+    throw error
+  }
 }
 
 async function restartGoal(directory: string, now: number) {

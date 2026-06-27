@@ -85,6 +85,47 @@ test("bridge: a started chain advances step 0 → step 1 (end-to-end)", async ()
   }
 });
 
+test("bridge: clear cancels the active chain artifact so a stopped run cannot revive", async () => {
+  const dir = freshDir();
+  try {
+    const payload = JSON.stringify({ steps: [{ condition: "Plan" }, { condition: "Build" }] });
+    await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
+    assert.ok(readGoalChain(dir), "precondition: chain file should exist after start");
+
+    const cleared = await runGoalControlStateFile(dir, "clear", Date.now());
+    assert.match(cleared.output, /cleared/i);
+    assert.equal(readGoalState(dir).status, "cleared");
+    assert.equal(readGoalChain(dir), null, "clearing from the Desktop bridge must remove the live chain");
+    assert.equal(existsSync(join(dir, ".opencode", ".goal-chain.json")), false);
+
+    const res = advanceGoalChain(dir);
+    assert.equal(res.ok, false, "a stopped chain must not advance after clear");
+    assert.match(res.error, /No active chain/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bridge: clear preserves a matching pending handoff chain for claim", async () => {
+  const dir = freshDir();
+  try {
+    const payload = JSON.stringify({ steps: [{ condition: "Plan" }, { condition: "Build" }] });
+    await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
+    const before = readGoalChain(dir);
+    assert.ok(before, "precondition: chain file should exist after start");
+
+    await runGoalControlStateFile(dir, "handoff carry this forward", Date.now());
+    await runGoalControlStateFile(dir, "clear", Date.now());
+
+    const after = readGoalChain(dir);
+    assert.ok(after, "a matching handoff needs the chain file for later claim");
+    assert.equal(after.id, before.id);
+    assert.equal(readGoalState(dir).status, "cleared");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("bridge: chain remove refuses the currently-running step", async () => {
   const dir = freshDir();
   try {

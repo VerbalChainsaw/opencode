@@ -164,6 +164,29 @@ test("parity: chain add / move produce equivalent state in both", async () => {
   }
 });
 
+test("parity: clear cancels active chain files in both dispatchers", async () => {
+  const payload = JSON.stringify({
+    steps: [{ condition: "Plan" }, { condition: "Build" }],
+  });
+  const cli = freshDir("cli");
+  const bridge = freshDir("br");
+  try {
+    const cmds = [`chain start-json ${payload}`, "clear"];
+    for (const c of cmds) {
+      dispatchGoalCommandStructured(cli, c);
+      await runGoalControlStateFile(bridge, c, Date.now());
+    }
+
+    assert.equal(readState(cli).status, "cleared");
+    assert.equal(readState(bridge).status, "cleared");
+    assert.equal(readChain(cli), null, "CLI clear must cancel the live chain");
+    assert.equal(readChain(bridge), null, "bridge clear must cancel the live chain");
+  } finally {
+    rmSync(cli, { recursive: true, force: true });
+    rmSync(bridge, { recursive: true, force: true });
+  }
+});
+
 function readHandoff(dir) {
   const p = join(dir, ".opencode", ".goal-handoff.json");
   return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
