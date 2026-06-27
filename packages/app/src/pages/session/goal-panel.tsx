@@ -3253,14 +3253,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         removeDraftStep(step.id, visibleChainSteps());
         return;
       case "remove-live-pending":
-        if (!liveGoal()) {
-          // v0.7.3 / scan 2026-06-25 (D-NEW-3) — no live chain means
-          // there's nothing to remove. Pre-fix the handler did
+        if (!liveGoal() && !terminalGoal()) {
+          // v0.7.3 / scan 2026-06-25 (D-NEW-3) — no live or terminal chain
+          // means there's nothing to remove. Pre-fix the handler did
           // `setChainDismissed(true); setChain(null)` here, which
           // silently dismissed the entire chain panel — a UX
           // regression masquerading as a noop. Correct behavior:
-          // silent noop. The user will see the row disappear on the
-          // next polling tick when the chain panel re-renders.
+          // silent noop. Terminal goals are allowed through so completed
+          // chain rows can be cleaned up instead of becoming inert.
           return
         }
         return void removeLiveChainStep(action.index);

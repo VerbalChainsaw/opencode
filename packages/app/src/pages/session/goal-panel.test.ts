@@ -1280,6 +1280,19 @@ describe("goal panel mission-control contracts", () => {
     expect(rowSrc).not.toContain("disabled={busy() !== null || !!liveGoal()}")
   })
 
+  test("terminal chain row delete still reaches the chain remove command", async () => {
+    const src = await goalPanelSource()
+    const removeVisibleStart = src.indexOf("const removeVisibleStep = (")
+    const removeVisibleEnd = src.indexOf("const runtimeDetailState = createMemo", removeVisibleStart)
+    expect(removeVisibleStart).toBeGreaterThan(-1)
+    expect(removeVisibleEnd).toBeGreaterThan(removeVisibleStart)
+    const removeVisible = src.slice(removeVisibleStart, removeVisibleEnd)
+    expect(removeVisible).toContain('case "remove-live-pending":')
+    expect(removeVisible).toContain("if (!liveGoal() && !terminalGoal())")
+    expect(removeVisible).not.toContain("if (!liveGoal())")
+    expect(removeVisible).toContain("return void removeLiveChainStep(action.index)")
+  })
+
   test("live run-order delete permits deleting a done step when the run is terminal (v0.7.3)", async () => {
     // v0.7.3 / audit June 2026: the original guard at
     // `removeLiveChainStep` blocked deletion of `index <= runningStepIndex()`
