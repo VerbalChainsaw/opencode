@@ -4052,7 +4052,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             style={isCritical(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)
                               ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(96, 165, 250, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)}%`, "background-color": burndownColor(elapsedMs() / 60_000, running.constraints.maxTimeMinutes) }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width] motion-reduce:transition-none" style={{ width: `${burndownPct(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)}%`, "background-color": burndownColor(elapsedMs() / 60_000, running.constraints.maxTimeMinutes) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-200/70">
                               {language.t("session.goal.metric.time")}
                             </div>
@@ -4067,7 +4067,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             style={isCritical(running.turnsEvaluated, running.constraints.maxTurns)
                               ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(167, 139, 250, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(running.turnsEvaluated, running.constraints.maxTurns)}%`, "background-color": burndownColor(running.turnsEvaluated, running.constraints.maxTurns) }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width] motion-reduce:transition-none" style={{ width: `${burndownPct(running.turnsEvaluated, running.constraints.maxTurns)}%`, "background-color": burndownColor(running.turnsEvaluated, running.constraints.maxTurns) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-200/70">
                               {language.t("session.goal.metric.turns")}
                             </div>
@@ -4081,7 +4081,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded-md border px-2"
                             style={{ "border-color": "rgba(134, 239, 172, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(runningStepIndex() + 1, Math.max(visibleStepCount(), 1))}%`, "background-color": "rgb(134, 239, 172)" }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width] motion-reduce:transition-none" style={{ width: `${burndownPct(runningStepIndex() + 1, Math.max(visibleStepCount(), 1))}%`, "background-color": "rgb(134, 239, 172)" }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
                               {language.t("session.goal.metric.chain")}
                             </div>
@@ -4096,7 +4096,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             style={isCritical(running.tokensUsed, running.constraints.maxTokens)
                               ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(251, 191, 36, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(running.tokensUsed, running.constraints.maxTokens)}%`, "background-color": burndownColor(running.tokensUsed, running.constraints.maxTokens) }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width] motion-reduce:transition-none" style={{ width: `${burndownPct(running.tokensUsed, running.constraints.maxTokens)}%`, "background-color": burndownColor(running.tokensUsed, running.constraints.maxTokens) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-amber-200/70">
                               {language.t("session.goal.metric.tokens")}
                             </div>
@@ -4122,7 +4122,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 const st = () => stepRunState(i)
                                 return (
                                   <div
-                                    class="h-2 rounded-full transition-all"
+                                    class="h-2 rounded-full transition-all motion-reduce:transition-none"
                                     style={{
                                       width: `${Math.max(6, Math.min(24, Math.round(120 / visibleStepCount())))}px`,
                                       "background-color":
