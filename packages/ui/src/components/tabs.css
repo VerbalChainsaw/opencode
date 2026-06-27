@@ -208,6 +208,7 @@
 
       [data-slot="tabs-trigger"] {
         height: 100%;
+        min-height: var(--tabs-compact-pill-height);
         padding: 0 !important;
       }
 
