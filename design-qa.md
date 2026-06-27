@@ -28,7 +28,9 @@ final result: passed
 **Current evidence**
 - Electron screenshot before rail fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-audit-live.png`
 - Electron screenshot after rail fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-audit-rail-bounded.png`
+- Electron screenshot after radius consistency fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-radius-consistency.png`
 - Root cause fixed in this pass: the right Actions rail was an unbounded grid. Electron measured `goal-method-library-rail` at 1151px tall in a 900px window, pushing the editor below the visible Goal workspace. The rail is now viewport-bounded at 756px in the same Electron window, with the library and editor scrolling internally.
+- Visual consistency defect fixed in this pass: live Electron computed `goal-method-row` at `0px` border radius while adjacent editor/status cells computed at `6px`. Bordered Goal controls now use explicit radius tokens (`rounded-sm`, `rounded-md`, or `rounded-lg`) instead of the generic `rounded` fallback.
 
 **Expanded UX punch list to keep auditing**
 - Missing affordances: every button/control needs an obvious purpose through label, icon, title, disabled reason, or nearby state.
@@ -42,6 +44,6 @@ final result: passed
 
 **Open UI follow-up candidates**
 - Audit small-height Electron geometry after the bounded rail fix to ensure the editor fields remain reachable through internal scrolling.
-- Inspect remaining rounded-xl and square internal surfaces for whether they should be normalized to the 8px Goal console radius.
+- Inspect remaining rounded-xl internal surfaces for whether they should be normalized to the 8px Goal console radius.
 - Review action-library category tabs and dense rows for minimum target size and whether icon-only add/edit controls need stronger tooltips.
 - Run a live chain with an actual active step to visually confirm the Current Step strip, pause/stop/restart controls, and stalled-state copy under real runtime state.
