@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./layout-helpers"
+import {
+  createSessionKeyReader,
+  ensureSessionKey,
+  knownProjectDirectoryKeys,
+  pruneSessionKeys,
+  restorableOpenProjects,
+  shouldRestoreOpenProject,
+  staleOpenProjectDirectories,
+} from "./layout-helpers"
 
 describe("layout session-key helpers", () => {
   test("couples touch and scroll seed in order", () => {
@@ -65,5 +73,34 @@ describe("pruneSessionKeys", () => {
     })
 
     expect(drop).toEqual([])
+  })
+})
+
+describe("layout project restore helpers", () => {
+  test("detects stale persisted projects outside the server project list", () => {
+    const known = knownProjectDirectoryKeys([
+      {
+        worktree: "C:\\Repos\\active",
+        sandboxes: ["C:\\Repos\\active-workspace"],
+      },
+    ])
+
+    expect(shouldRestoreOpenProject("C:/Repos/active", known)).toBe(true)
+    expect(shouldRestoreOpenProject("C:/Repos/active-workspace", known)).toBe(true)
+    expect(shouldRestoreOpenProject("C:/Repos/deleted", known)).toBe(false)
+    expect(
+      staleOpenProjectDirectories([{ worktree: "C:/Repos/active" }, { worktree: "C:/Repos/deleted" }], known),
+    ).toEqual(["C:/Repos/deleted"])
+    expect(
+      restorableOpenProjects([{ worktree: "C:/Repos/active" }, { worktree: "C:/Repos/deleted" }], known),
+    ).toEqual([{ worktree: "C:/Repos/active" }])
+  })
+
+  test("keeps a manually opened project pending until the server reports it", () => {
+    const known = knownProjectDirectoryKeys([])
+    const pending = new Set(["C:/Repos/new"])
+
+    expect(shouldRestoreOpenProject("C:/Repos/new", known, pending)).toBe(true)
+    expect(staleOpenProjectDirectories([{ worktree: "C:/Repos/new" }], known, pending)).toEqual([])
   })
 })

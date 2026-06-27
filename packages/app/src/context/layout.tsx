@@ -13,9 +13,18 @@ import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
+import { pathKey } from "@/utils/path-key"
 import type { ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { migrateLegacySessionStateKeys, ServerScope, SessionStateKey } from "@/utils/server-scope"
-import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./layout-helpers"
+import {
+  createSessionKeyReader,
+  ensureSessionKey,
+  knownProjectDirectoryKeys,
+  pruneSessionKeys,
+  restorableOpenProjects,
+  shouldRestoreOpenProject,
+  staleOpenProjectDirectories,
+} from "./layout-helpers"
 
 export { createSessionKeyReader, ensureSessionKey, pruneSessionKeys }
 
@@ -458,6 +467,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       return directory
     }
 
+    const pendingProjectOpens = new Set<string>()
+    const knownProjectKeys = createMemo(() => knownProjectDirectoryKeys(serverSync.data.project))
+
     createEffect(() => {
       const projects = server.projects.list()
       const seen = new Set(projects.map((project) => project.worktree))
@@ -479,7 +491,33 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       })
     })
 
-    const enriched = createMemo(() => server.projects.list().map(enrich))
+    createEffect(() => {
+      const known = knownProjectKeys()
+      if (known.size === 0) return
+
+      for (const key of Array.from(pendingProjectOpens)) {
+        if (known.has(key)) pendingProjectOpens.delete(key)
+      }
+    })
+
+    createEffect(() => {
+      if (!ready()) return
+      if (!serverSync.ready) return
+
+      const stale = staleOpenProjectDirectories(server.projects.list(), knownProjectKeys(), pendingProjectOpens)
+      if (stale.length === 0) return
+
+      batch(() => {
+        for (const directory of stale) {
+          server.projects.close(directory)
+        }
+      })
+    })
+
+    const openProjects = createMemo(() =>
+      restorableOpenProjects(server.projects.list(), knownProjectKeys(), pendingProjectOpens),
+    )
+    const enriched = createMemo(() => openProjects().map(enrich))
     const list = createMemo(() => {
       const projects = enriched()
       return projects.map((project) => {
@@ -546,17 +584,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
     let sessionFrame: number | undefined
     let sessionTimer: number | undefined
+    let startupSessionsLoaded = false
 
-    onMount(() => {
+    createEffect(() => {
+      if (startupSessionsLoaded) return
+      if (!ready()) return
+      if (!serverSync.ready) return
+
+      startupSessionsLoaded = true
+      const projects = openProjects()
+      if (projects.length === 0) return
+
       sessionFrame = requestAnimationFrame(() => {
         sessionFrame = undefined
         sessionTimer = window.setTimeout(() => {
           sessionTimer = undefined
-          void Promise.all(
-            server.projects.list().map((project) => {
-              return serverSync.project.loadSessions(project.worktree)
-            }),
-          )
+          void Promise.all(projects.map((project) => serverSync.project.loadSessions(project.worktree)))
         }, 0)
       })
     })
@@ -584,6 +627,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         open(directory: string) {
           const root = rootFor(directory)
           if (server.projects.list().find((x) => x.worktree === root)) return
+          pendingProjectOpens.add(pathKey(root))
           void serverSync.project.loadSessions(root)
           server.projects.open(root)
         },

@@ -373,7 +373,30 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("Project.list")(function* () {
-      return (yield* db.select().from(ProjectTable).all().pipe(Effect.orDie)).map(fromRow)
+      const rows = yield* db.select().from(ProjectTable).all().pipe(Effect.orDie)
+      const projects = yield* Effect.forEach(
+        rows,
+        (row) =>
+          Effect.gen(function* () {
+            if (!(yield* fs.isDir(row.worktree).pipe(Effect.orDie))) return undefined
+
+            const project = fromRow(row)
+            const sandboxes = yield* Effect.forEach(
+              project.sandboxes,
+              (sandbox) =>
+                fs.isDir(sandbox).pipe(
+                  Effect.orDie,
+                  Effect.map((exists) => (exists ? sandbox : undefined)),
+                ),
+              { concurrency: "unbounded" },
+            ).pipe(Effect.map((items) => items.filter((item): item is string => item !== undefined)))
+
+            return { ...project, sandboxes }
+          }),
+        { concurrency: "unbounded" },
+      )
+
+      return projects.filter((project): project is Info => project !== undefined)
     })
 
     const get = Effect.fn("Project.get")(function* (id: ProjectV2.ID) {

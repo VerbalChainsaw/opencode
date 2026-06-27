@@ -1,4 +1,5 @@
 import type { Accessor } from "solid-js"
+import { pathKey } from "@/utils/path-key"
 
 export function ensureSessionKey(key: string, touch: (key: string) => void, seed: (key: string) => void) {
   touch(key)
@@ -35,4 +36,54 @@ export function pruneSessionKeys(input: {
   return Array.from(keys)
     .sort((a, b) => score(b) - score(a))
     .slice(input.max)
+}
+
+export type ProjectDirectorySource = {
+  worktree?: string
+  sandboxes?: readonly string[]
+}
+
+export type OpenProjectDirectory = {
+  worktree: string
+}
+
+export function knownProjectDirectoryKeys(projects: readonly ProjectDirectorySource[]) {
+  const keys = new Set<string>()
+
+  for (const project of projects) {
+    if (project.worktree) keys.add(pathKey(project.worktree))
+
+    for (const sandbox of project.sandboxes ?? []) {
+      keys.add(pathKey(sandbox))
+    }
+  }
+
+  return keys
+}
+
+export function shouldRestoreOpenProject(
+  directory: string,
+  known: ReadonlySet<string>,
+  pending: ReadonlySet<string> = new Set(),
+) {
+  const key = pathKey(directory)
+  return known.has(key) || pending.has(key)
+}
+
+export function staleOpenProjectDirectories(
+  projects: readonly OpenProjectDirectory[],
+  known: ReadonlySet<string>,
+  pending: ReadonlySet<string> = new Set(),
+) {
+  return projects
+    .filter((project) => !shouldRestoreOpenProject(project.worktree, known, pending))
+    .map((project) => project.worktree)
+}
+
+export function restorableOpenProjects<T extends OpenProjectDirectory>(
+  projects: readonly T[],
+  known: ReadonlySet<string>,
+  pending: ReadonlySet<string> = new Set(),
+) {
+  return projects.filter((project) => shouldRestoreOpenProject(project.worktree, known, pending))
 }

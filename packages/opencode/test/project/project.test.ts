@@ -645,6 +645,20 @@ describe("Project.list and Project.get", () => {
     }),
   )
 
+  it.live("list omits stale project rows whose worktree is gone", () =>
+    Effect.gen(function* () {
+      const project = yield* Project.Service
+      const tmp = yield* tmpdirScoped({ git: true })
+      const result = yield* project.fromDirectory(tmp)
+
+      yield* Effect.promise(() => $`rm -rf ${tmp}`.quiet().nothrow())
+
+      const all = yield* project.list()
+
+      expect(all.find((p) => p.id === result.project.id)).toBeUndefined()
+    }),
+  )
+
   it.live("get returns project by id", () =>
     Effect.gen(function* () {
       const project = yield* Project.Service
