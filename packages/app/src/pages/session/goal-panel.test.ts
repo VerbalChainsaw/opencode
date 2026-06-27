@@ -941,6 +941,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.template.label")
     expect(src).toContain("session.goal.template.prompt")
     expect(src).toContain("session.goal.template.command")
+    expect(src).toContain('class="min-h-[76px] w-full"')
     expect(src).toContain("session.goal.template.category")
     expect(src).toContain("session.goal.template.save")
     expect(src).toContain("session.goal.template.duplicate")

@@ -5886,7 +5886,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             aria-label={language.t("session.goal.template.prompt")}
                             multiline
                             disabled={busy() !== null || !props.sessionID}
-                            class="w-full"
+                            class="min-h-[76px] w-full"
                           />
                           <TextField
                             value={actionDraft.command}
