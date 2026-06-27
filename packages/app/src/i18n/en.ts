@@ -611,6 +611,7 @@ export const dict = {
   "home.actions.newSession": "New Session",
   "home.actions.resumeLast": "Resume Last",
   "home.actions.openGoal": "Open Goal",
+  "home.actions.openGoal.disabled": "Appears when a session has an active goal. Start or resume a session to set one.",
   "home.actions.openProject": "Open Project",
   "home.attention.title": "Needs Attention",
   "home.attention.empty": "No outstanding alerts right now.",

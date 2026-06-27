@@ -84,6 +84,7 @@ describe("home mission-control contract", () => {
       "home.actions.newSession",
       "home.actions.resumeLast",
       "home.actions.openGoal",
+      "home.actions.openGoal.disabled",
       "home.actions.openProject",
     ]) {
       expect(src).toContain(key)
@@ -109,6 +110,9 @@ describe("home mission-control contract", () => {
     const actions = src.slice(actionsStart, actionsEnd)
     expect(actions).toContain('data-action="home-sidebar-open-goal"')
     expect(actions).toMatch(/data-action="home-sidebar-open-goal"[\s\S]*variant=\{latestGoalRecord\(\) \? "contrast" : "ghost-muted"\}/)
+    expect(actions).toContain('aria-describedby={!latestGoalRecord() ? "home-open-goal-disabled-reason" : undefined}')
+    expect(actions).toContain('data-component="home-open-goal-disabled-reason"')
+    expect(actions).toContain('language.t("home.actions.openGoal.disabled")')
     expect(actions.indexOf('data-action="home-sidebar-open-goal"')).toBeLessThan(actions.indexOf('data-action="home-sidebar-new-session"'))
   })
 

@@ -756,6 +756,7 @@ function HomeDesign() {
                       size="normal"
                       icon="status"
                       disabled={!latestGoalRecord()}
+                      aria-describedby={!latestGoalRecord() ? "home-open-goal-disabled-reason" : undefined}
                       onClick={() => {
                         const goal = latestGoalRecord()
                         if (!goal) return
@@ -764,6 +765,15 @@ function HomeDesign() {
                     >
                       {language.t("home.actions.openGoal")}
                     </ButtonV2>
+                    <Show when={!latestGoalRecord()}>
+                      <p
+                        id="home-open-goal-disabled-reason"
+                        data-component="home-open-goal-disabled-reason"
+                        class="-mt-1 px-1 text-[11px] leading-4 text-v2-text-text-muted"
+                      >
+                        {language.t("home.actions.openGoal.disabled")}
+                      </p>
+                    </Show>
                     <ButtonV2 data-action="home-sidebar-new-session" variant="contrast" size="normal" icon="plus" onClick={openNewSession}>
                       {language.t("home.actions.newSession")}
                     </ButtonV2>

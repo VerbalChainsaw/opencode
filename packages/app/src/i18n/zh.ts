@@ -528,6 +528,7 @@ export const dict = {
   "home.actions.newSession": "新建会话",
   "home.actions.resumeLast": "恢复上次",
   "home.actions.openGoal": "打开目标",
+  "home.actions.openGoal.disabled": "当会话有活动目标时可用。请先新建或恢复会话并设置目标。",
   "home.actions.openProject": "打开项目",
   "home.attention.title": "需要处理",
   "home.attention.empty": "当前没有待处理提醒。",
