@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -34,6 +34,12 @@ function plantActiveGoal(dir) {
     metadata: { setBy: "user" },
   };
   writeFileSync(join(dir, ".opencode", ".goal-state.json"), JSON.stringify(state));
+}
+
+function plantCorruptGoalState(dir) {
+  const opencodeDir = join(dir, ".opencode");
+  mkdirSync(opencodeDir, { recursive: true });
+  writeFileSync(join(opencodeDir, ".goal-state.json"), "{not json", "utf-8");
 }
 
 // ── kind per action ─────────────────────────────────────────────────────────
@@ -221,6 +227,24 @@ test("envelope: chain start-json accepts rich steps and master budgets", () => {
     assert.equal(state.constraints.maxTimeMinutes, 10);
     assert.equal(state.metadata.agentName, "explore");
     assert.equal(state.metadata.chainTotal, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("envelope: chain start-json surfaces corrupt current state", () => {
+  const dir = freshDir();
+  try {
+    plantCorruptGoalState(dir);
+    const payload = JSON.stringify({ steps: [{ condition: "Plan" }] });
+
+    const res = dispatchGoalCommandStructured(dir, `chain start-json ${payload}`);
+
+    assert.equal(res.kind, "corrupt-state", res.message);
+    assert.match(res.message, /Goal state file was corrupt/);
+    assert.equal(existsSync(join(dir, ".opencode", ".goal-chain.json")), false, "chain should not be created");
+    assert.ok(
+      readdirSync(join(dir, ".opencode")).some((name) => name.startsWith(".goal-state.json.corrupt.")),
+      "quarantined state artifact should remain visible",
+    );
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

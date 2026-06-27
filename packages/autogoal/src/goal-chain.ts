@@ -19,9 +19,11 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   readGoalState,
+  readGoalStateResult,
   writeGoalStateAtomic,
   createGoalState,
   withStateLock,
+  listCorruptArtifacts,
   type GoalState,
   type GoalConstraints,
   type Verification,
@@ -430,7 +432,7 @@ export function validateGoalChain(chain: unknown): chain is GoalChain {
 
 export type CreateChainResult =
   | { ok: true; chain: GoalChain; state: GoalState }
-  | { ok: false; error: string };
+  | { ok: false; reason?: "corrupt-goal"; error: string };
 
 export interface CreateChainOpts {
   setBy?: "user" | "template" | "chain";
@@ -478,6 +480,19 @@ function normalizeMasterBudget(raw: CreateChainOpts["master"]): ChainMasterBudge
     turnsUsed: 0,
     minutesUsed: 0,
   };
+}
+
+function newestCorruptArtifact(directory: string, prefix: string): string | null {
+  return listCorruptArtifacts(directory).find((name) => name.startsWith(prefix)) ?? null;
+}
+
+function corruptGoalStateForChainStartError(directory: string, reason: CorruptReason): string {
+  const newest = newestCorruptArtifact(directory, ".goal-state.json.corrupt.");
+  return (
+    `Goal state file was corrupt (${reason})` +
+    `${newest ? ` and was quarantined as ${newest}` : ""}. ` +
+    "Review the quarantined artifact before starting a chain."
+  );
 }
 
 function constraintsForStep(step: GoalChainStep, chain: Pick<GoalChain, "master"> | null): GoalConstraints {
@@ -581,6 +596,16 @@ export function createGoalChain(
     return { ok: false, error: "Chain master budget must include positive maxTurns or maxMinutes." };
   }
 
+  const existingResult = readGoalStateResult(directory);
+  if (existingResult.kind === "corrupt") {
+    return {
+      ok: false,
+      reason: "corrupt-goal",
+      error: corruptGoalStateForChainStartError(directory, existingResult.reason),
+    };
+  }
+  const existingGoal = existingResult.kind === "ok" ? existingResult.value : null;
+
   // Resolve the chain's webhook. Three modes:
   //   1. `opts.webhook` is a ChainWebhook object → use it directly.
   //   2. `opts.webhook === "from-state"` → pull from the current state.
@@ -592,8 +617,7 @@ export function createGoalChain(
   if (opts.webhook && typeof opts.webhook === "object") {
     resolvedWebhook = sanitizeChainWebhook(opts.webhook);
   } else if (opts.webhook === "from-state") {
-    const existing = readGoalState(directory);
-    const existingWh = existing?.metadata?.webhook;
+    const existingWh = existingGoal?.metadata?.webhook;
     if (existingWh) {
       resolvedWebhook = sanitizeChainWebhook(existingWh);
     }
@@ -606,7 +630,6 @@ export function createGoalChain(
   // (set via set_goal tool which captures ctx.agent).
   let resolvedAgentName = sanitizeAgentName(opts.agentName);
   if (!resolvedAgentName) {
-    const existingGoal = readGoalState(directory);
     const existingAgent = existingGoal?.metadata?.agentName;
     resolvedAgentName = sanitizeAgentName(existingAgent);
   }

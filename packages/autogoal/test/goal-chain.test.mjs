@@ -9,6 +9,13 @@ import { tmpdir } from "node:os";
 
 function freshDir() { return mkdtempSync(join(tmpdir(), "opengoal-chain-")); }
 function cleanDir(d) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+function plantCorruptGoalState(dir) {
+  const opencodeDir = join(dir, ".opencode");
+  mkdirSync(opencodeDir, { recursive: true });
+  const statePath = join(opencodeDir, ".goal-state.json");
+  writeFileSync(statePath, "{not json", "utf-8");
+  return statePath;
+}
 
 const { createGoalChain, readGoalChain, readGoalChainResult, advanceGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, validateGoalChain, CHAIN_FILE, MAX_CHAIN_SIZE } = await import("../dist/goal-chain.js");
 const { readGoalState, writeGoalStateAtomic, transitionGoal, setGoal, setGoalFields, createHandoff, claimHandoff } = await import("../dist/goal-state.js");
@@ -88,6 +95,25 @@ describe("createGoalChain", () => {
       const res = createGoalChain(dir, [{ condition: "plan", agent: "   " }]);
       assert.equal(res.ok, false);
       assert.match(res.error, /agent cannot be empty/);
+    } finally { cleanDir(dir); }
+  });
+
+  it("surfaces corrupt current state before starting a chain", () => {
+    const dir = freshDir();
+    try {
+      const statePath = plantCorruptGoalState(dir);
+
+      const res = createGoalChain(dir, [{ condition: "first" }], { webhook: "from-state" });
+
+      assert.equal(res.ok, false);
+      assert.equal(res.reason, "corrupt-goal");
+      assert.match(res.error, /Goal state file was corrupt/);
+      assert.equal(existsSync(statePath), false, "corrupt state should be quarantined");
+      assert.equal(existsSync(join(dir, CHAIN_FILE)), false, "chain should not be created");
+      assert.ok(
+        readdirSync(join(dir, ".opencode")).some((name) => name.startsWith(".goal-state.json.corrupt.")),
+        "quarantined state artifact should remain visible",
+      );
     } finally { cleanDir(dir); }
   });
 });

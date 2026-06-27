@@ -761,7 +761,7 @@ export function dispatchGoalCommandStructured(
       const parsed = parseInlineChainStartPayload(subPayload);
       if (!parsed.ok) return { kind: parsed.error.startsWith("Usage:") ? "usage" : "invalid-value", message: parsed.error };
       const res = createGoalChain(directory, parsed.steps, { webhook: "from-state", master: parsed.master });
-      if (!res.ok) return { kind: "invalid-value", message: res.error };
+      if (!res.ok) return { kind: res.reason === "corrupt-goal" ? "corrupt-state" : "invalid-value", message: res.error };
       return { kind: "success", message: `Chain started with ${parsed.steps.length} step${parsed.steps.length === 1 ? "" : "s"}. Step 1/${parsed.steps.length}: ${res.state.condition.slice(0, 60)}` };
     }
 
@@ -803,7 +803,7 @@ export function dispatchGoalCommandStructured(
         // configured a webhook and it never fired." The D6 API supports
         // this; the CLI was the propagation gap.
         const res = createGoalChain(directory, steps, { webhook: "from-state" });
-        if (!res.ok) return { kind: "invalid-value", message: res.error };
+        if (!res.ok) return { kind: res.reason === "corrupt-goal" ? "corrupt-state" : "invalid-value", message: res.error };
         return { kind: "success", message: `Chain started with ${steps.length} step${steps.length === 1 ? "" : "s"}. Step 1/${steps.length}: ${res.state.condition.slice(0, 60)}` };
       } catch (err: unknown) {
         return { kind: "invalid-value", message: `Failed to read chain file: ${err instanceof Error ? err.message : String(err)}` };
