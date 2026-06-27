@@ -4735,20 +4735,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 <div
                                   data-component="goal-running-inline-panel"
                                   data-state="steer"
-                                  class="grid min-h-9 min-w-0 grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 rounded-md border px-2 py-1.5"
+                                  class="grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_minmax(124px,1fr)] gap-1.5 rounded-md border px-2 py-1.5"
                                   style={runningInlinePanelStyle("steer")}
                                 >
-                                  <TextField
-                                    value={steerText()}
-                                    onChange={setSteerText}
-                                    onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" && steerText().trim() && busy() === null) void steerGoal() }}
-                                    label={language.t("session.goal.action.steer")}
-                                    hideLabel
-                                    placeholder={language.t("session.goal.steer.placeholder")}
-                                    aria-label={language.t("session.goal.action.steer")}
-                                    disabled={busy() !== null}
-                                    class="min-w-0 [grid-column:1/-1]"
-                                  />
+                                  <div data-component="goal-runtime-steer-field" class="[grid-column:1/-1] min-w-0">
+                                    <TextField
+                                      value={steerText()}
+                                      onChange={setSteerText}
+                                      onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" && steerText().trim() && busy() === null) void steerGoal() }}
+                                      label={language.t("session.goal.action.steer")}
+                                      hideLabel
+                                      placeholder={language.t("session.goal.steer.placeholder")}
+                                      aria-label={language.t("session.goal.action.steer")}
+                                      disabled={busy() !== null}
+                                      class="w-full min-w-0"
+                                    />
+                                  </div>
                                   <ActionButton
                                     label={language.t("session.goal.steer.send")}
                                     variant="primary"
@@ -4773,20 +4775,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 <div
                                   data-component="goal-running-inline-panel"
                                   data-state="handoff"
-                                  class="grid min-h-9 min-w-0 grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 rounded-md border px-2 py-1.5"
+                                  class="grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_minmax(124px,1fr)] gap-1.5 rounded-md border px-2 py-1.5"
                                   style={runningInlinePanelStyle("handoff")}
                                 >
-                                  <TextField
-                                    value={handoffText()}
-                                    onChange={setHandoffText}
-                                    onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" && busy() === null) void handoffGoal() }}
-                                    label={language.t("session.goal.action.handoff")}
-                                    hideLabel
-                                    placeholder={language.t("session.goal.handoff.placeholder")}
-                                    aria-label={language.t("session.goal.action.handoff")}
-                                    disabled={busy() !== null}
-                                    class="min-w-0 [grid-column:1/-1]"
-                                  />
+                                  <div data-component="goal-runtime-handoff-field" class="[grid-column:1/-1] min-w-0">
+                                    <TextField
+                                      value={handoffText()}
+                                      onChange={setHandoffText}
+                                      onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" && busy() === null) void handoffGoal() }}
+                                      label={language.t("session.goal.action.handoff")}
+                                      hideLabel
+                                      placeholder={language.t("session.goal.handoff.placeholder")}
+                                      aria-label={language.t("session.goal.action.handoff")}
+                                      disabled={busy() !== null}
+                                      class="w-full min-w-0"
+                                    />
+                                  </div>
                                   <ActionButton
                                     label={language.t("session.goal.handoff.send")}
                                     variant="primary"
