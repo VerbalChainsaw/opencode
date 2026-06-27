@@ -3393,7 +3393,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             <div
               data-testid="chain-workspace"
               data-component="goal-chain-builder-workspace"
-              class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"
+              class="flex min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden"
             >
               <section
                 data-testid="goal-status-card"
@@ -3595,7 +3595,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <span class="min-w-0 flex-1">{language.t("session.goal.backendUnreachable")}</span>
                 </div>
               </Show>
-              <div class="flex min-h-0 min-w-0 flex-col gap-3">
+              <div class="flex min-w-0 shrink-0 flex-col gap-3">
               <GoalConsoleSection
                 zone="chain-builder"
                 title={language.t("session.goal.chainBuilder.shortTitle")}
@@ -5241,7 +5241,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                 <aside
                   data-component="goal-method-library-rail"
-                  class="grid min-h-0 min-w-0 grid-cols-1 gap-2"
+                  class="grid min-w-0 shrink-0 grid-cols-1 gap-2"
                 >
                   <GoalConsoleSection
                     zone="action-library"
