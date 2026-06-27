@@ -75,3 +75,29 @@ test("transition tools surface corrupt goal state instead of reporting no active
     }
   }
 });
+
+test("goal_status surfaces corrupt goal state instead of reporting no active goal", async () => {
+  const dir = freshDir();
+  try {
+    const plugin = await server({ client: makeClient(), directory: dir });
+    plantCorruptState(dir);
+
+    const result = await plugin.tool.goal_status.execute(
+      {},
+      { directory: dir, sessionID: "ses_status_corrupt", agent: "build" },
+    );
+
+    assert.match(
+      String(result),
+      /corrupt|quarantined|goal-state\.json\.corrupt/i,
+      `goal_status should surface the corrupt state, got: ${String(result)}`,
+    );
+    assert.doesNotMatch(
+      String(result),
+      /No active goal/i,
+      "goal_status must not collapse corrupt state into no-goal",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -1152,15 +1152,20 @@ export const server: Plugin = async ({ client, directory }) => {
       .catch((err) => log("error", "notify (session message) failed", { error: String(err) }));
   }
 
+  function corruptStateNotice(reason: string): string {
+    const newest = listCorruptArtifacts(directory)[0];
+    return (
+      `goal state file was corrupt (${reason})` +
+      `${newest ? ` and was quarantined as ${newest}` : ""}. Set a new goal after reviewing the quarantined artifact.`
+    );
+  }
+
   function readStateForTransitionTool(action: "clear" | "pause" | "resume"): { state: GoalState | null; corruptMessage: string | null } {
     const result = readGoalStateResult(directory);
     if (result.kind === "corrupt") {
-      const newest = listCorruptArtifacts(directory)[0];
       return {
         state: null,
-        corruptMessage:
-          `Cannot ${action} the goal because the goal state file was corrupt (${result.reason})` +
-          `${newest ? ` and was quarantined as ${newest}` : ""}. Set a new goal after reviewing the quarantined artifact.`,
+        corruptMessage: `Cannot ${action} the goal because the ${corruptStateNotice(result.reason)}`,
       };
     }
     return { state: result.kind === "ok" ? result.value : null, corruptMessage: null };
@@ -2018,7 +2023,9 @@ export const server: Plugin = async ({ client, directory }) => {
         description: "Report the current goal and its progress (condition, status, turns/time used, verification command). Use when the user asks 'what's my goal?', 'how's it going?', or 'is there an active goal?'.",
         args: {},
         async execute(_args, ctx) {
-          const state = readGoalState(ctx.directory);
+          const result = readGoalStateResult(ctx.directory);
+          if (result.kind === "corrupt") return `The ${corruptStateNotice(result.reason)}`;
+          const state = result.kind === "ok" ? result.value : null;
           if (state && goalBelongsToSession(state, ctx.sessionID)) {
             const blocks = buildGoalStatusBlocks(state);
             return emitBlocks(ctx, blocks) || plainStatus(ctx.directory);
