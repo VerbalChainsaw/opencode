@@ -29,6 +29,11 @@ function plantCorruptState(dir) {
   writeFileSync(join(dir, ".opencode", ".goal-state.json"), "{this is not json!");
 }
 
+function plantCorruptHandoff(dir) {
+  mkdirSync(join(dir, ".opencode"), { recursive: true });
+  writeFileSync(join(dir, ".opencode", ".goal-handoff.json"), "{this handoff is not json!");
+}
+
 function makeClient() {
   return {
     app: { log: async () => {} },
@@ -271,6 +276,52 @@ test("goal_claim surfaces corrupt current state instead of overwriting it with a
     );
     const corruptArtifacts = readdirSync(join(ctxDir, ".opencode")).filter((name) => name.includes(".corrupt."));
     assert.ok(corruptArtifacts.length > 0, "goal_claim should leave a forensic corrupt artifact in ctx.directory");
+    assert.equal(
+      existsSync(join(serverDir, ".opencode", ".goal-state.json")),
+      false,
+      "goal_claim must not read or write state in the server factory directory for this tool call",
+    );
+  } finally {
+    rmSync(serverDir, { recursive: true, force: true });
+    rmSync(ctxDir, { recursive: true, force: true });
+  }
+});
+
+test("goal_claim surfaces corrupt handoff instead of reporting no handoff", async () => {
+  const serverDir = freshDir();
+  const ctxDir = freshDir();
+  try {
+    const plugin = await server({ client: makeClient(), directory: serverDir });
+    plantCorruptHandoff(ctxDir);
+
+    const result = await plugin.tool.goal_claim.execute(
+      {},
+      { directory: ctxDir, sessionID: "ses_claim_corrupt_handoff", agent: "build" },
+    );
+
+    assert.match(
+      String(result),
+      /goal-handoff\.json\.corrupt/i,
+      `goal_claim should name the quarantined handoff artifact, got: ${String(result)}`,
+    );
+    assert.doesNotMatch(
+      String(result),
+      /Handoff claimed|Goal resumed|No handoff/i,
+      "goal_claim must not hide a corrupt handoff as an absent handoff",
+    );
+
+    assert.equal(
+      existsSync(join(ctxDir, ".opencode", ".goal-state.json")),
+      false,
+      "goal_claim must not create goal state from a corrupt handoff",
+    );
+    assert.equal(
+      existsSync(join(ctxDir, ".opencode", ".goal-handoff.json")),
+      false,
+      "goal_claim should quarantine the corrupt handoff file",
+    );
+    const corruptArtifacts = readdirSync(join(ctxDir, ".opencode")).filter((name) => name.includes(".goal-handoff.json.corrupt."));
+    assert.ok(corruptArtifacts.length > 0, "goal_claim should leave a forensic corrupt handoff artifact in ctx.directory");
     assert.equal(
       existsSync(join(serverDir, ".opencode", ".goal-state.json")),
       false,

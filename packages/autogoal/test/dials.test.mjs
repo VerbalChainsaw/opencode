@@ -22,7 +22,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -804,19 +804,23 @@ test("claimHandoff: allows claim when current goal is in a terminal state", () =
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("claimHandoff: a stale handoff whose state is now invalid is ignored", () => {
-  // The handoff file exists but its state field fails validation. The
-  // claim should report no-handoff (because readHandoff returns null).
+test("claimHandoff: a stale handoff whose state is now invalid is surfaced and quarantined", () => {
+  // The handoff file exists but its state field fails validation. Claim
+  // should surface the corrupt handoff instead of collapsing it to no-handoff.
   const dir = freshDir();
   try {
     mkdirSync(join(dir, ".opencode"), { recursive: true });
+    const handoffPath = join(dir, ".opencode", ".goal-handoff.json");
     writeFileSync(join(dir, ".opencode", ".goal-handoff.json"), JSON.stringify({
       createdAt: "2026-06-10T00:00:00Z",
       state: { condition: "x", constraints: {} }, // invalid
     }));
     const res = claimHandoff(dir);
     assert.equal(res.ok, false);
-    if (!res.ok) assert.equal(res.reason, "no-handoff");
+    if (!res.ok) assert.equal(res.reason, "corrupt-handoff");
+    assert.equal(existsSync(handoffPath), false);
+    const corruptArtifacts = readdirSync(join(dir, ".opencode")).filter((name) => name.includes(".goal-handoff.json.corrupt."));
+    assert.ok(corruptArtifacts.length > 0, "invalid handoff should be preserved as a corrupt artifact");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

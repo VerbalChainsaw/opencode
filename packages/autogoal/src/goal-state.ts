@@ -1698,19 +1698,46 @@ export function readHandoff(directory: string): HandoffPayload | null {
   return r.kind === "ok" ? r.value : null;
 }
 
+function newestCorruptArtifact(directory: string, prefix: string): string | null {
+  return listCorruptArtifacts(directory).find((name) => name.startsWith(prefix)) ?? null;
+}
+
+function corruptClaimError(directory: string, fileLabel: string, artifactPrefix: string, reason: CorruptReason): string {
+  const newest = newestCorruptArtifact(directory, artifactPrefix);
+  return (
+    `${fileLabel} was corrupt (${reason})` +
+    `${newest ? ` and was quarantined as ${newest}` : ""}. Review the quarantined artifact before claiming the handoff.`
+  );
+}
+
 /**
  * Claim the handoff: read the payload, write it to the goal-state file,
  * delete the handoff. If no handoff exists, no-op. If a current goal
  * exists, refuse (the user must clear or finish it first).
  */
-export function claimHandoff(directory: string, now: number = Date.now()): { ok: true; state: GoalState; message: string } | { ok: false; reason: "no-handoff" | "current-goal" | "write-failed"; error?: string } {
+export function claimHandoff(directory: string, now: number = Date.now()): { ok: true; state: GoalState; message: string } | { ok: false; reason: "no-handoff" | "current-goal" | "corrupt-goal" | "corrupt-handoff" | "write-failed"; error?: string } {
   {
-    const current = readGoalState(directory);
-    if (current && isMutable(current)) {
+    const currentResult = readGoalStateResult(directory);
+    if (currentResult.kind === "corrupt") {
+      return {
+        ok: false,
+        reason: "corrupt-goal",
+        error: corruptClaimError(directory, "Goal state file", ".goal-state.json.corrupt.", currentResult.reason),
+      };
+    }
+    if (currentResult.kind === "ok" && isMutable(currentResult.value)) {
       return { ok: false, reason: "current-goal", error: "A goal is already active. Clear it before claiming the handoff." };
     }
-    const payload = readHandoff(directory);
-    if (!payload) return { ok: false, reason: "no-handoff" };
+    const handoffResult = readHandoffResult(directory);
+    if (handoffResult.kind === "absent") return { ok: false, reason: "no-handoff" };
+    if (handoffResult.kind === "corrupt") {
+      return {
+        ok: false,
+        reason: "corrupt-handoff",
+        error: corruptClaimError(directory, "Goal handoff file", ".goal-handoff.json.corrupt.", handoffResult.reason),
+      };
+    }
+    const payload = handoffResult.value;
 
     // Resume the handoff: copy the state into the goal-state file. The
     // resumed state keeps the same id (it IS the same goal) and keeps the

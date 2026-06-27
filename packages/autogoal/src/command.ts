@@ -648,6 +648,7 @@ export function dispatchGoalCommandStructured(
     if (!res.ok) {
       if (res.reason === "no-handoff") return { kind: "no-handoff", message: "No handoff to claim." };
       if (res.reason === "current-goal") return { kind: "current-goal", message: res.error ?? "A goal is already active. Clear it before claiming the handoff." };
+      if (res.reason === "corrupt-goal" || res.reason === "corrupt-handoff") return { kind: "corrupt-state", message: res.error ?? "Cannot claim handoff because a state file was corrupt." };
       return { kind: "write-failed", message: res.error ?? "Failed to claim handoff." };
     }
     return { kind: "success", message: res.message };

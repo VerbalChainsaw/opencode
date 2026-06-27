@@ -39,7 +39,7 @@ import {
 /** Result shape returned by the dial handlers. */
 export type DialResult =
   | { ok: true; message: string }
-  | { ok: false; reason: "invalid-input" | "no-goal" | "terminal-state" | "write-failed" | "already-empty" | "current-goal" | "no-handoff" | "handoff-exists" | "handoff-pending"; message: string };
+  | { ok: false; reason: "invalid-input" | "no-goal" | "terminal-state" | "write-failed" | "already-empty" | "current-goal" | "no-handoff" | "handoff-exists" | "handoff-pending" | "corrupt-state"; message: string };
 
 /** Convert a goal-state EditResult into a DialResult (the toast-equivalent shape). */
 function fromEditResult(res: EditResult): DialResult {
@@ -202,6 +202,9 @@ export function handleClaimSubmit(directory: string): DialResult {
     switch (res.reason) {
       case "no-handoff": return { ok: false, reason: "no-handoff", message: "No handoff to claim." };
       case "current-goal": return { ok: false, reason: "current-goal", message: res.error ?? "A goal is already active. Clear it before claiming the handoff." };
+      case "corrupt-goal":
+      case "corrupt-handoff":
+        return { ok: false, reason: "corrupt-state", message: res.error ?? "Cannot claim handoff because a state file was corrupt." };
       case "write-failed": return { ok: false, reason: "write-failed", message: res.error ?? "Failed to write state." };
     }
   }
