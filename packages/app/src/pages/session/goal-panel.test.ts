@@ -1545,6 +1545,7 @@ describe("isGoalStateShape", () => {
         completedAt: null,
         turnsEvaluated: 0,
         tokensUsed: 0,
+        evaluationHistory: [],
         constraints: { maxTurns: 5, maxTimeMinutes: 10, maxTokens: 1000 },
       }),
     ).toBe(true)
@@ -1830,7 +1831,7 @@ describe("readGoalFromSdk", () => {
   // pinning the behavior guards future regressions.
   test("prototype-pollution-style payloads are rejected by isGoalStateShape", () => {
     const polluted = JSON.parse(
-      '{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}',
+      '{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"evaluationHistory":[],"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}',
     )
     // Shape-wise this is valid, so isGoalStateShape returns true —
     // which is correct: the validator checks shape, not origin. The

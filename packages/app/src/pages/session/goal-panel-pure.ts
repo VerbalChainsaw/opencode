@@ -109,6 +109,24 @@ function isFiniteNumberInRange(value: unknown, min: number, max: number): value 
   return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
 }
 
+function isEvaluationShape(value: unknown): value is GoalState["evaluationHistory"][number] {
+  if (!value || typeof value !== "object") return false
+  const evaluation = value as Record<string, unknown>
+  return (
+    typeof evaluation.met === "boolean" &&
+    typeof evaluation.reason === "string" &&
+    isFiniteNumberInRange(evaluation.timestamp, 0, Number.MAX_SAFE_INTEGER) &&
+    (evaluation.confidence === undefined || isFiniteNumberInRange(evaluation.confidence, 0, 1))
+  )
+}
+
+function withRendererGoalStateDefaults(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed
+  const record = parsed as Record<string, unknown>
+  if (record.evaluationHistory !== undefined) return parsed
+  return { ...record, evaluationHistory: [] }
+}
+
 /** Structural gate for a parsed goal-state payload. Exported for unit
  *  tests (and for any future consumer in the renderer). This is the
  *  renderer's trust boundary: anything that fails this check renders as
@@ -123,6 +141,8 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   if (!isFiniteNumberInRange(s.tokensUsed, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.startedAt, 0, Number.MAX_SAFE_INTEGER)) return false
   if (s.completedAt !== null && !isFiniteNumberInRange(s.completedAt, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (!Array.isArray(s.evaluationHistory) || s.evaluationHistory.length > 10) return false
+  if (!s.evaluationHistory.every(isEvaluationShape)) return false
   const c = s.constraints as Record<string, unknown> | undefined
   if (!c || typeof c !== "object") return false
   if (
@@ -1211,10 +1231,11 @@ export async function readGoalFromSdk(sdk: GoalSdkClient): Promise<GoalStore> {
     } catch {
       return { state: null, corrupt: true, loaded: true }
     }
-    if (!isGoalStateShape(parsed)) {
+    const state = withRendererGoalStateDefaults(parsed)
+    if (!isGoalStateShape(state)) {
       return { state: null, corrupt: true, loaded: true }
     }
-    return { state: parsed, corrupt: false, loaded: true }
+    return { state, corrupt: false, loaded: true }
   } catch (err) {
     // CENTER-AUDIT NCO1 (2026-06-26): distinguish legitimate file-not-found
     // (no goal set) from backend-unreachable (server crashed, network blip,
@@ -1275,13 +1296,14 @@ export async function readHandoffFromSdk(sdk: GoalSdkClient): Promise<GoalHandof
       return { handoff: null, corrupt: true, loaded: true }
     }
     const record = parsed as Record<string, unknown>
-    if (typeof record.createdAt !== "string" || !isGoalStateShape(record.state)) {
+    const state = withRendererGoalStateDefaults(record.state)
+    if (typeof record.createdAt !== "string" || !isGoalStateShape(state)) {
       return { handoff: null, corrupt: true, loaded: true }
     }
     return {
       handoff: {
         createdAt: cleanText(record.createdAt),
-        state: record.state,
+        state,
         ...(typeof record.note === "string" && cleanText(record.note).trim()
           ? { note: cleanText(record.note).trim() }
           : {}),

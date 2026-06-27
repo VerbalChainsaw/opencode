@@ -124,6 +124,7 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     turnsEvaluated: 0,
     tokensUsed: 0,
     completedAt: null,
+    evaluationHistory: [],
     constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
   }
 
@@ -131,7 +132,7 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     const { isGoalStateShape } = await load()
     // The shape guard requires these fields to be present and well-typed:
     // id, condition, status (in the active/paused/achieved/cleared set),
-    // turnsEvaluated, tokensUsed, startedAt, completedAt,
+    // turnsEvaluated, tokensUsed, startedAt, completedAt, evaluationHistory,
     // constraints{maxTurns,maxTimeMinutes,maxTokens}
     expect(isGoalStateShape(validMinimalState)).toBe(true)
   })
@@ -185,6 +186,20 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     expect(isGoalStateShape({ ...validMinimalState, completedAt: "done" })).toBe(false)
     expect(isGoalStateShape({ ...validMinimalState, completedAt: -1 })).toBe(false)
     expect(isGoalStateShape({ ...validMinimalState, completedAt: Number.NaN })).toBe(false)
+  })
+
+  test("requires evaluationHistory to be a capped array for safe report readouts", async () => {
+    const { isGoalStateShape } = await load()
+    const { evaluationHistory, ...missingHistory } = validMinimalState
+    const cycle = { met: false, reason: "still failing", timestamp: 1_700_000_000_000 }
+
+    expect(isGoalStateShape({ ...validMinimalState, evaluationHistory: [cycle] })).toBe(true)
+    expect(isGoalStateShape(missingHistory)).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, evaluationHistory: { length: 1 } })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, evaluationHistory: [null] })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, evaluationHistory: [{ ...cycle, met: "no" }] })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, evaluationHistory: [{ ...cycle, timestamp: -1 }] })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, evaluationHistory: Array.from({ length: 11 }, () => cycle) })).toBe(false)
   })
 
   test("rejects constraint values outside the documented renderer contract", async () => {
@@ -283,7 +298,7 @@ describe("readGoalFromSdk (file.read defensive layer)", () => {
             data: {
               type: "text",
               content:
-                '{"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
+                '{"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"evaluationHistory":[],"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
             },
           }),
         },
@@ -300,13 +315,30 @@ describe("readGoalFromSdk (file.read defensive layer)", () => {
       client: {
         file: {
           read: async () => ({
-            data: '{"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
+            data: '{"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"evaluationHistory":[],"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
           }),
         },
       },
     }
     const store = await readGoalFromSdk(sdk)
     expect(store.state?.id).toBe("x")
+  })
+
+  test("normalizes legacy goal states without evaluationHistory to an empty history", async () => {
+    const { readGoalFromSdk } = await load()
+    const sdk = {
+      client: {
+        file: {
+          read: async () => ({
+            data: '{"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
+          }),
+        },
+      },
+    }
+
+    const store = await readGoalFromSdk(sdk)
+    expect(store).toMatchObject({ corrupt: false, loaded: true })
+    expect(store.state?.evaluationHistory).toEqual([])
   })
 
   test("marks store as corrupt when JSON is invalid", async () => {
