@@ -2329,6 +2329,10 @@ export const server: Plugin = async ({ client, directory }) => {
           note: tool.schema.string().optional().describe("Optional note for the future session."),
         },
         async execute(args, ctx) {
+          const stateResult = readGoalStateResult(ctx.directory);
+          if (stateResult.kind === "corrupt") {
+            return `Cannot handoff the goal because the ${corruptStateNotice(stateResult.reason, ctx.directory)}`;
+          }
           const res = createHandoff(ctx.directory, args.note);
           if (res.ok) return res.message;
           if (res.reason === "no-goal") return "No active goal to handoff.";
