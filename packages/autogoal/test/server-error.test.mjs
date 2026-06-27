@@ -50,7 +50,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createServer } from "node:http";
@@ -84,6 +84,11 @@ function readStateFileRaw(dir) {
   return JSON.parse(readFileSync(join(dir, ".opencode", ".goal-state.json"), "utf-8"));
 }
 
+function plantCorruptState(dir) {
+  mkdirSync(join(dir, ".opencode"), { recursive: true });
+  writeFileSync(join(dir, ".opencode", ".goal-state.json"), "{this is not json!");
+}
+
 /** Build a mock OpenCode client with spies on notify()'s two surfaces.
  *  - `toast` is what client.tui.showToast receives (TUI-rendered).
  *  - `prompts` is what client.session.prompt receives (the session
@@ -91,10 +96,11 @@ function readStateFileRaw(dir) {
 function makeSpyClient() {
   const toast = [];
   const prompts = [];
+  const logs = [];
   return {
-    spies: { toast, prompts },
+    spies: { toast, prompts, logs },
     client: {
-      app: { log: () => Promise.resolve() },
+      app: { log: (...args) => { logs.push(args); return Promise.resolve(); } },
       tui: { showToast: async (req) => { toast.push(req.body); } },
       session: {
         messages: async () => ({ data: [] }),
@@ -410,6 +416,33 @@ describe("session.error handler (defect B-3b)", () => {
     assert.equal(spies.prompts.length, 0, "no session message when no goal exists");
     // No state file written.
     assert.equal(readGoalState(dir), null);
+  });
+
+  it("surfaces corrupt state on session.error instead of silently treating it as no goal", async () => {
+    plantCorruptState(dir);
+    spies.logs.length = 0;
+    spies.toast.length = 0;
+    spies.prompts.length = 0;
+
+    await plugin.event({
+      event: {
+        type: "session.error",
+        properties: {
+          sessionID: "test-session",
+          error: { name: "ProviderAuthError", data: { providerID: "anthropic", message: "Invalid API key" } },
+        },
+      },
+    });
+
+    const logText = spies.logs
+      .map((args) => args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" "))
+      .join("\n");
+
+    assert.match(
+      logText,
+      /session\.error.*goal state file is corrupt|goal state file is corrupt.*session\.error/i,
+      `session.error corrupt state should be surfaced in plugin logs; got: ${logText}`,
+    );
   });
 
   it("handles an error payload with no message field (data is empty)", async () => {

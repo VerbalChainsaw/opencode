@@ -2558,7 +2558,18 @@ export const server: Plugin = async ({ client, directory }) => {
         case "session.error": {
           const sessionId = event.properties.sessionID;
           if (!sessionId) return;
-          const current = readGoalState(directory);
+          const currentResult = readGoalStateResult(directory);
+          if (currentResult.kind === "absent") return;
+          if (currentResult.kind === "corrupt") {
+            const quarantined = listCorruptArtifacts(directory)[0] ?? null;
+            log("error", "skipping session.error: goal state file is corrupt", {
+              sessionId,
+              reason: currentResult.reason,
+              quarantined,
+            });
+            return;
+          }
+          const current = currentResult.value;
           if (!current || current.status !== "active" || !goalBelongsToSession(current, sessionId)) return;
           // Build a human-readable reason. The SDK's `error` is a
           // discriminated union (ProviderAuthError | UnknownError |
