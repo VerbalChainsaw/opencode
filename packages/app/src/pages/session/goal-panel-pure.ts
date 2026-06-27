@@ -96,6 +96,18 @@ export function applyArchivePoll(
 }
 
 const GOAL_STATUSES = new Set(["active", "paused", "achieved", "cleared"])
+const RENDERER_CONSTRAINT_BOUNDS = {
+  minTurns: 1,
+  maxTurns: 10_000,
+  minMinutes: 1,
+  maxMinutes: 10_000,
+  minTokens: 1,
+  maxTokens: 10_000_000,
+} as const
+
+function isFiniteNumberInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
+}
 
 /** Structural gate for a parsed goal-state payload. Exported for unit
  *  tests (and for any future consumer in the renderer). This is the
@@ -104,19 +116,17 @@ const GOAL_STATUSES = new Set(["active", "paused", "achieved", "cleared"])
 export function isGoalStateShape(v: unknown): v is GoalState {
   if (!v || typeof v !== "object") return false
   const s = v as Record<string, unknown>
-  if (typeof s.id !== "string" || typeof s.condition !== "string") return false
+  if (typeof s.id !== "string" || !s.id.trim()) return false
+  if (typeof s.condition !== "string" || !s.condition.trim()) return false
   if (typeof s.status !== "string" || !GOAL_STATUSES.has(s.status)) return false
-  if (typeof s.turnsEvaluated !== "number" || !Number.isFinite(s.turnsEvaluated)) return false
-  if (typeof s.startedAt !== "number" || !Number.isFinite(s.startedAt)) return false
+  if (!isFiniteNumberInRange(s.turnsEvaluated, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (!isFiniteNumberInRange(s.startedAt, 0, Number.MAX_SAFE_INTEGER)) return false
   const c = s.constraints as Record<string, unknown> | undefined
   if (!c || typeof c !== "object") return false
   if (
-    typeof c.maxTurns !== "number" ||
-    !Number.isFinite(c.maxTurns) ||
-    typeof c.maxTimeMinutes !== "number" ||
-    !Number.isFinite(c.maxTimeMinutes) ||
-    typeof c.maxTokens !== "number" ||
-    !Number.isFinite(c.maxTokens)
+    !isFiniteNumberInRange(c.maxTurns, RENDERER_CONSTRAINT_BOUNDS.minTurns, RENDERER_CONSTRAINT_BOUNDS.maxTurns) ||
+    !isFiniteNumberInRange(c.maxTimeMinutes, RENDERER_CONSTRAINT_BOUNDS.minMinutes, RENDERER_CONSTRAINT_BOUNDS.maxMinutes) ||
+    !isFiniteNumberInRange(c.maxTokens, RENDERER_CONSTRAINT_BOUNDS.minTokens, RENDERER_CONSTRAINT_BOUNDS.maxTokens)
   )
     return false
   return true

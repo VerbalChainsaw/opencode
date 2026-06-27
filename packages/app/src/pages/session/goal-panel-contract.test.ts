@@ -116,21 +116,21 @@ describe("cleanText (sanitization for safe rendering)", () => {
 })
 
 describe("isGoalStateShape (defensive shape guard for corrupted state files)", () => {
+  const validMinimalState = {
+    id: "abc",
+    condition: "ship it",
+    status: "active",
+    startedAt: 0,
+    turnsEvaluated: 0,
+    constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
+  }
+
   test("accepts a minimal valid GoalState", async () => {
     const { isGoalStateShape } = await load()
     // The shape guard requires these fields to be present and well-typed:
     // id, condition, status (in the active/paused/achieved/cleared set),
     // turnsEvaluated, startedAt, constraints{maxTurns,maxTimeMinutes,maxTokens}
-    expect(
-      isGoalStateShape({
-        id: "abc",
-        condition: "ship it",
-        status: "active",
-        startedAt: 0,
-        turnsEvaluated: 0,
-        constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
-      }),
-    ).toBe(true)
+    expect(isGoalStateShape(validMinimalState)).toBe(true)
   })
 
   test("rejects non-objects", async () => {
@@ -157,15 +157,28 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
 
   test("rejects objects with empty condition", async () => {
     const { isGoalStateShape } = await load()
-    expect(
-      isGoalStateShape({
-        id: "x",
-        condition: "   ",
-        status: "active",
-        createdAt: 0,
-        constraints: { maxTurns: 1, maxTimeMinutes: 1, maxTokens: 1 },
-      }),
-    ).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, condition: "   " })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, id: "   " })).toBe(false)
+  })
+
+  test("rejects negative runtime counters and timestamps", async () => {
+    const { isGoalStateShape } = await load()
+    expect(isGoalStateShape({ ...validMinimalState, turnsEvaluated: -1 })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, startedAt: -1 })).toBe(false)
+  })
+
+  test("rejects constraint values outside the documented renderer contract", async () => {
+    const { isGoalStateShape } = await load()
+    for (const constraints of [
+      { maxTurns: 0, maxTimeMinutes: 30, maxTokens: 100000 },
+      { maxTurns: 10001, maxTimeMinutes: 30, maxTokens: 100000 },
+      { maxTurns: 20, maxTimeMinutes: 0, maxTokens: 100000 },
+      { maxTurns: 20, maxTimeMinutes: 10001, maxTokens: 100000 },
+      { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 0 },
+      { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 10000001 },
+    ]) {
+      expect(isGoalStateShape({ ...validMinimalState, constraints })).toBe(false)
+    }
   })
 })
 
@@ -301,6 +314,25 @@ describe("readGoalFromSdk (file.read defensive layer)", () => {
     }
     const store = await readGoalFromSdk(sdk)
     expect(store.corrupt).toBe(true)
+  })
+
+  test("marks store as corrupt when JSON has a blank condition despite valid required fields", async () => {
+    const { readGoalFromSdk } = await load()
+    const sdk = {
+      client: {
+        file: {
+          read: async () => ({
+            data: {
+              type: "text",
+              content:
+                '{"id":"x","condition":"   ","status":"active","startedAt":0,"turnsEvaluated":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
+            },
+          }),
+        },
+      },
+    }
+    const store = await readGoalFromSdk(sdk)
+    expect(store).toMatchObject({ state: null, corrupt: true, loaded: true })
   })
 })
 
