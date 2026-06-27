@@ -980,6 +980,8 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("const refreshTemplates = () =>")
     expect(src).toContain("const [localTemplateOverrides, setLocalTemplateOverrides]")
     expect(src).toContain("const [deletedTemplateIDs, setDeletedTemplateIDs]")
+    expect(src).toContain("readStoredHiddenTemplateIDs(props.sessionID)")
+    expect(src).toContain("writeStoredHiddenTemplateIDs(props.sessionID, deletedTemplateIDs())")
     expect(src).toContain("const mergeTemplates = (")
     expect(src).toContain("const upsertLocalTemplate = (template: GoalTemplateButton)")
     expect(src).toContain("const removeLocalTemplate = (id: string)")
@@ -1010,7 +1012,11 @@ describe("goal panel mission-control contracts", () => {
     const deleteEnd = src.indexOf("const uniqueTemplateID =", deleteStart)
     expect(deleteStart).toBeGreaterThan(-1)
     expect(deleteEnd).toBeGreaterThan(deleteStart)
-    expect(src.slice(deleteStart, deleteEnd)).toContain("removeLocalTemplate(template.id)")
+    const deleteTemplate = src.slice(deleteStart, deleteEnd)
+    expect(deleteTemplate).toContain("if (template.builtin) {")
+    expect(deleteTemplate).toContain("removeLocalTemplate(template.id)")
+    expect(deleteTemplate).toContain('language.t("session.goal.template.builtinHidden")')
+    expect(deleteTemplate).not.toContain("if (template.builtin) return")
   })
 
   test("start chain delegates payload construction to the pure contract", async () => {
@@ -1238,7 +1244,12 @@ describe("goal panel mission-control contracts", () => {
     // is unchanged for the pending-step case and is preserved here as a contract.
     const src = await goalPanelSource()
     expect(src).toContain("const removeLiveChainStep = async (index: number) => {")
-    expect(src).toContain("index <= runningStepIndex()")
+    const removeLiveStart = src.indexOf("const removeLiveChainStep = async (index: number) => {")
+    const removeLiveEnd = src.indexOf("const removeVisibleStep =", removeLiveStart)
+    expect(removeLiveStart).toBeGreaterThan(-1)
+    expect(removeLiveEnd).toBeGreaterThan(removeLiveStart)
+    const removeLive = src.slice(removeLiveStart, removeLiveEnd)
+    expect(removeLive).toContain("index <= runningStepIndex()")
     expect(src).toContain('sendGoalCommand("chain", `chain remove ${index + 1}`)')
     // AG-P1-05 — the routing layer is the pure selector.
     expect(src).toContain("chainStepVisibleAction")
@@ -1259,11 +1270,13 @@ describe("goal panel mission-control contracts", () => {
     expect(rowStart).toBeGreaterThan(-1)
     expect(rowEnd).toBeGreaterThan(rowStart)
     const rowSrc = src.slice(rowStart, rowEnd)
-    expect(rowSrc).toContain('aria-label={language.t(visibleChainStepSource() === "live" ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}')
+    expect(rowSrc).toContain("aria-label={chainStepRemoveLabel(i())}")
+    expect(rowSrc).toContain("title={chainStepRemoveLabel(i())}")
     expect(rowSrc).toContain("disabled={busy() !== null || !visibleChainRowsAreDraft()}")
     expect(rowSrc).toContain("disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === 0}")
     expect(rowSrc).toContain("disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === visibleStepCount() - 1}")
-    expect(rowSrc).toContain('disabled={busy() !== null || (visibleChainStepSource() === "live" && i() <= runningStepIndex())}')
+    expect(src).toContain('return language.t("session.goal.chainBuilder.stepRemoveLocked")')
+    expect(rowSrc).toContain("disabled={chainStepRemoveDisabled(i())}")
     expect(rowSrc).not.toContain("disabled={busy() !== null || !!liveGoal()}")
   })
 
@@ -1284,13 +1297,18 @@ describe("goal panel mission-control contracts", () => {
     // The original guard is still present (the in-flight non-terminal
     // case must still block deletion — we don't want users to delete
     // the step the engine is currently driving).
-    expect(src).toContain("index <= runningStepIndex()")
+    const removeLiveStart = src.indexOf("const removeLiveChainStep = async (index: number) => {")
+    const removeLiveEnd = src.indexOf("const removeVisibleStep =", removeLiveStart)
+    expect(removeLiveStart).toBeGreaterThan(-1)
+    expect(removeLiveEnd).toBeGreaterThan(removeLiveStart)
+    const removeLive = src.slice(removeLiveStart, removeLiveEnd)
+    expect(removeLive).toContain("index <= runningStepIndex()")
     // The escape hatch: the guard's return condition must include
     // a check against `achieved` or `cleared`. We assert both
     // substrings appear in proximity to `runningStepIndex()`.
-    const guardIndex = src.indexOf("index <= runningStepIndex()")
+    const guardIndex = removeLive.indexOf("index <= runningStepIndex()")
     expect(guardIndex).toBeGreaterThan(0)
-    const window = src.slice(guardIndex, guardIndex + 200)
+    const window = removeLive.slice(guardIndex, guardIndex + 200)
     expect(window).toMatch(/achieved|cleared/)
   })
 

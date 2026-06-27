@@ -3,8 +3,8 @@
 ## State persistence model
 
 - The local chain draft lives in `sessionStorage` (`opencode.goalChainDraft.${sessionID || "workspace"}`). It survives navigation within a session but not a browser/Electron restart or storage clear.
-- Template customizations (`deletedTemplateIDs`, `localTemplateOverrides`) are in-memory signals only. Deleting or overriding a built-in template hides it for the current session; it returns on the next reload.
-- Built-in method templates (`DEFAULT_TEMPLATE_BUTTONS` in `goal-panel-pure.ts`) are always prepended to the action library. `templateButtonsFromSnapshot()` has no "replace" or "hide built-ins" mode, so users cannot permanently remove shipped defaults through the UI.
+- Template customizations (`deletedTemplateIDs`, `localTemplateOverrides`) are merged locally over the plugin snapshot. Hidden template IDs are persisted in sessionStorage with the active session key so poll refreshes do not resurrect hidden action cards.
+- Built-in method templates (`DEFAULT_TEMPLATE_BUTTONS` in `goal-panel-pure.ts`) are always prepended by `templateButtonsFromSnapshot()`, but the GoalPanel delete button treats a built-in delete as "hide this action in the GUI session" instead of sending an impossible plugin delete.
 
 ## HMR & defensive rendering
 

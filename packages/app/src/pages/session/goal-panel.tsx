@@ -1511,6 +1511,40 @@ function writeStoredChainDraft(sessionID: string | undefined, draft: ChainDraftS
   }
 }
 
+function hiddenTemplateStorageKey(sessionID?: string) {
+  return `opencode.goalHiddenTemplates.${sessionID || "workspace"}`
+}
+
+function readStoredHiddenTemplateIDs(sessionID?: string): Record<string, true> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.sessionStorage.getItem(hiddenTemplateStorageKey(sessionID))
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    const ids = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === "object"
+        ? Object.keys(parsed as Record<string, unknown>)
+        : []
+    return Object.fromEntries(
+      ids
+        .filter((id): id is string => typeof id === "string" && TEMPLATE_SAVE_ID_RE.test(id))
+        .map((id) => [id, true as const]),
+    )
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredHiddenTemplateIDs(sessionID: string | undefined, ids: Record<string, true>) {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.setItem(hiddenTemplateStorageKey(sessionID), JSON.stringify(Object.keys(ids)))
+  } catch {
+    // Storage is best-effort; hidden action cards still stay hidden in memory.
+  }
+}
+
 export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Promise<void> }; sessionID?: string }) {
   const language = useLanguage()
   const server = useServer()
@@ -1552,10 +1586,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   //                                terminal goal; hide it from the
   //                                unarchived view"
   const [dismissedTerminalGoalIDs, setDismissedTerminalGoalIDs] = createStore<{ ids: string[] }>({ ids: [] })
-  const [templates, setTemplates] = createSignal(DEFAULT_TEMPLATE_BUTTONS)
+  const initialHiddenTemplateIDs = readStoredHiddenTemplateIDs(props.sessionID)
+  const [templates, setTemplates] = createSignal(DEFAULT_TEMPLATE_BUTTONS.filter((template) => !initialHiddenTemplateIDs[template.id]))
   const [localTemplateOverrides, setLocalTemplateOverrides] = createSignal<Record<string, GoalTemplateButton>>({})
-  const [deletedTemplateIDs, setDeletedTemplateIDs] = createSignal<Record<string, true>>({})
+  const [deletedTemplateIDs, setDeletedTemplateIDs] = createSignal<Record<string, true>>(initialHiddenTemplateIDs)
   const [selectedTemplateID, setSelectedTemplateID] = createSignal<string | null>(null)
+  const [loadedTemplateSessionID, setLoadedTemplateSessionID] = createSignal(props.sessionID)
   const [templateVars, setTemplateVars] = createSignal<Record<string, string>>({})
   const [templateSearch, setTemplateSearch] = createSignal("")
   const [templateCategory, setTemplateCategory] = createSignal<ActionCategory>("All")
@@ -1719,6 +1755,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
         }
       })
       .catch(ignoreRefreshError("mergeTemplates"))
+  createEffect(() => {
+    const sessionID = props.sessionID
+    if (sessionID === loadedTemplateSessionID()) return
+    const nextDeleted = readStoredHiddenTemplateIDs(sessionID)
+    setLoadedTemplateSessionID(sessionID)
+    setDeletedTemplateIDs(nextDeleted)
+    setTemplates(mergeTemplates(templates(), localTemplateOverrides(), nextDeleted))
+    void refreshTemplates()
+  })
+  createEffect(() => {
+    writeStoredHiddenTemplateIDs(props.sessionID, deletedTemplateIDs())
+  })
   const refreshSkills = () =>
     void readAvailableSkills(sdk)
       .then((next) => {
@@ -2452,7 +2500,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return language.t("session.goal.template.newDraftHint")
   })
   const deleteActionTemplate = async (template: GoalTemplateButton) => {
-    if (template.builtin) return
+    if (template.builtin) {
+      removeLocalTemplate(template.id)
+      const next = templates().find((candidate) => candidate.id !== template.id)
+      if (next) {
+        selectActionForView(next)
+      } else {
+        openActionEditor()
+      }
+      setSaveError(language.t("session.goal.template.builtinHidden"))
+      setTimeout(() => setSaveError(""), 4000)
+      return
+    }
     const sent = await sendGoalCommand("template", `template delete ${template.id}`)
     if (sent) {
       removeLocalTemplate(template.id)
@@ -3121,6 +3180,18 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     }),
   )
   const visibleChainRowsAreDraft = createMemo(() => visibleChainStepSource() === "draft")
+  const chainStepRemoveDisabled = (index: number) =>
+    busy() !== null || (visibleChainStepSource() === "live" && index <= runningStepIndex())
+  const chainStepRemoveLabel = (index: number) => {
+    if (visibleChainStepSource() === "live" && index <= runningStepIndex()) {
+      return language.t("session.goal.chainBuilder.stepRemoveLocked")
+    }
+    return language.t(
+      visibleChainStepSource() === "live"
+        ? "session.goal.chainBuilder.stepRemovePending"
+        : "session.goal.chainBuilder.stepRemove",
+    )
+  }
   const runningStepIndex = createMemo(() => {
     if (!liveGoal()) return -1
     const runningChain = chain()
@@ -4931,10 +5002,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   </button>
                                   <button
                                     type="button"
-                                    aria-label={language.t(visibleChainStepSource() === "live" ? "session.goal.chainBuilder.stepRemovePending" : "session.goal.chainBuilder.stepRemove")}
+                                    aria-label={chainStepRemoveLabel(i())}
+                                    title={chainStepRemoveLabel(i())}
                                     class={inlineCommandButtonClass("remove")}
                                     style={inlineCommandButtonStyle("remove")}
-                                    disabled={busy() !== null || (visibleChainStepSource() === "live" && i() <= runningStepIndex())}
+                                    disabled={chainStepRemoveDisabled(i())}
                                     // AG-P1-05 — pass the visible source
                                     // explicitly so the pure selector
                                     // decides the action kind instead

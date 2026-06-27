@@ -263,7 +263,6 @@ export function actionEditorControlState(input: {
   if (!input.hasSession) return { disabled: true, reason: "missing-session" }
   if (input.control === "delete") {
     if (!input.selectedTemplate) return { disabled: true, reason: "no-template" }
-    if (input.selectedTemplate.builtin) return { disabled: true, reason: "builtin-template" }
     return { disabled: false, reason: null }
   }
   if (!cleanText(input.prompt).trim()) return { disabled: true, reason: "missing-prompt" }

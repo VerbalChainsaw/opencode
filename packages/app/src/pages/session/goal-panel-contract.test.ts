@@ -871,7 +871,7 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
         prompt: "anything",
         selectedTemplate: builtinTemplate,
       }),
-    ).toEqual({ disabled: true, reason: "builtin-template" })
+    ).toEqual({ disabled: false, reason: null })
     expect(
       actionEditorControlState({
         control: "delete",
