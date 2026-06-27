@@ -503,7 +503,7 @@ function ActionButton(props: {
 }
 
 function goalCommandButtonClass(_variant: "primary" | "secondary" | "ghost", _tone: "default" | "success" | "danger") {
-  return "inline-flex min-w-0 items-center justify-center truncate rounded-md border px-2 py-1 text-11-medium font-semibold transition disabled:cursor-not-allowed disabled:opacity-30"
+  return "inline-flex min-w-0 items-center justify-center truncate rounded-md border px-2 py-0 text-11-medium font-semibold leading-none transition disabled:cursor-not-allowed disabled:opacity-30"
 }
 
 function goalCommandButtonStyle(variant: "primary" | "secondary" | "ghost", tone: "default" | "success" | "danger") {

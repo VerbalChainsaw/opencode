@@ -756,7 +756,7 @@ function TabNavItem(props: {
       </Show>
 
       <div
-        class="absolute not-group-hover:not-group-data-[active=true]:not-data-[truncate=true]:left-52 group-hover:right-0 group-data-[active=true]:right-0 data-[truncate=true]:right-0 inset-y-0 flex flex-row items-center pr-1 py-1 w-8 pl-2"
+        class="absolute not-group-hover:not-group-data-[active=true]:not-data-[truncate=true]:left-52 group-hover:right-0 group-data-[active=true]:right-0 data-[truncate=true]:right-0 inset-y-0 flex w-9 flex-row items-center px-1 py-1"
         data-truncate={props.forceTruncate}
       >
         <div
@@ -767,7 +767,7 @@ function TabNavItem(props: {
           }}
         />
         <IconButtonV2
-          size="small"
+          size="normal"
           variant="ghost-muted"
           class="opacity-0 group-hover:opacity-100 group-data-[active='true']:opacity-100 z-10"
           onClick={closeTab}
@@ -838,7 +838,7 @@ function DraftTabItem(props: {
       </a>
       <div class="absolute right-0 inset-y-0 flex w-7 items-center justify-center">
         <IconButtonV2
-          size="small"
+          size="normal"
           variant="ghost-muted"
           onMouseDown={(event) => {
             event.preventDefault()

@@ -387,7 +387,7 @@ export function SessionSidePanel(props: {
                                   <IconButton
                                     icon="close-small"
                                     variant="ghost"
-                                    class="h-5 w-5"
+                                    class="h-6 w-6"
                                     onClick={closeGoalTab}
                                     aria-label={language.t("common.closeTab")}
                                   />
@@ -418,7 +418,7 @@ export function SessionSidePanel(props: {
                                 <IconButton
                                   icon="close-small"
                                   variant="ghost"
-                                  class="h-5 w-5"
+                                  class="h-6 w-6"
                                   onClick={() => tabs().close("context")}
                                   aria-label={language.t("common.closeTab")}
                                 />

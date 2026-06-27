@@ -58,4 +58,14 @@ describe("titlebar TSX wiring", () => {
     expect(src).toContain('aria-label={language.t("home.title")}')
     expect(src.match(/aria-label=\{language\.t\("common\.closeTab"\)\}/g)?.length).toBeGreaterThanOrEqual(2)
   })
+
+  test("session tab close buttons use at least normal V2 hit targets", async () => {
+    const src = await titlebar()
+    const closeButtons = src.match(/<IconButtonV2[\s\S]{0,520}aria-label=\{language\.t\("common\.closeTab"\)\}/g) ?? []
+    expect(closeButtons.length).toBeGreaterThanOrEqual(2)
+    expect(closeButtons.every((button) => button.includes('size="normal"'))).toBe(true)
+    expect(closeButtons.some((button) => button.includes('size="small"'))).toBe(false)
+    expect(src).toContain("data-[truncate=true]:right-0 inset-y-0 flex w-9 flex-row items-center px-1 py-1")
+    expect(src).not.toContain("pr-1 py-1 w-8 pl-2")
+  })
 })
