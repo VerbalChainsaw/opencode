@@ -3677,7 +3677,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <ActionButton
                       label={primaryRunLabel()}
                       variant={liveGoal() ? "secondary" : "primary"}
-                      class="h-5 shrink-0 px-2.5 text-11-medium"
+                      class="min-h-7 shrink-0 px-2.5 text-11-medium leading-tight"
                       busy={busy() === "chain" || busy() === "set"}
                       disabled={primaryRunDisabled()}
                       title={primaryRunTitle()}
@@ -3689,7 +3689,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           <ActionButton
                             label={language.t("session.goal.chainBuilder.check")}
                             variant="secondary"
-                            class="h-5 shrink-0 px-2.5 text-11-medium"
+                            class="min-h-7 shrink-0 px-2.5 text-11-medium leading-tight"
                             disabled={busy() !== null || !props.sessionID}
                             onClick={() => {
                               const errors = validateChainDraft(runnableChainSteps(), {
@@ -4492,7 +4492,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               {reportCopied() ? language.t("session.goal.report.copied") : language.t("session.goal.report.copy")}
                             </button>
                           </div>
-                          <div data-component="goal-runtime-actions" class="grid min-w-0 grid-cols-2 gap-1.5">
+                          <div data-component="goal-runtime-actions" class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(116px,1fr))] gap-1.5">
                               <Show when={pauseResume()}>
                                 {(action) => (
                                   <ActionButton
@@ -4796,7 +4796,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-density="compact-chain-row"
                                 data-run-state={stepRunState(i())}
                                 data-editing={editingChainStepID() === step.id ? "true" : "false"}
-                                class={`group grid min-w-0 grid-cols-[24px_32px_minmax(74px,1fr)_minmax(56px,68px)_minmax(88px,108px)_104px] items-center gap-1 rounded-lg border px-1.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
+                                class={`group grid min-w-0 grid-cols-[24px_32px_minmax(96px,1fr)_minmax(56px,68px)_minmax(128px,148px)_96px] items-center gap-1 rounded-lg border px-1.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
                                 classList={{
                                   "ring-2 ring-sky-300/70 shadow-[0_0_24px_rgba(56,189,248,0.22)] brightness-110":
                                     editingChainStepID() === step.id,
@@ -4861,9 +4861,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 >
                                   {actionCategoryShortLabel(inferActionCategory(step))}
                                 </span>
-                                <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-2 gap-0.5">
+                                <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-[minmax(58px,1fr)_minmax(58px,1fr)] gap-1">
                                   <label
-                                    class="grid h-6 grid-cols-[30px_minmax(24px,1fr)] items-center gap-0.5"
+                                    class="grid h-6 grid-cols-[30px_minmax(26px,1fr)] items-center gap-1"
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
                                     <input
@@ -4875,11 +4875,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
                                       }
-                                      class="h-5 w-full rounded border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                      class="h-5 w-full min-w-0 rounded border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                                     />
                                   </label>
                                   <label
-                                    class="grid h-6 grid-cols-[20px_minmax(28px,1fr)] items-center gap-0.5"
+                                    class="grid h-6 grid-cols-[22px_minmax(30px,1fr)] items-center gap-1"
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
                                     <input
@@ -4891,11 +4891,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
                                       }
-                                      class="h-5 w-full rounded border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                      class="h-5 w-full min-w-0 rounded border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                                     />
                                   </label>
                                 </span>
-                                <span data-component="goal-chain-step-actions" class="flex min-w-[104px] shrink-0 items-center justify-end gap-1">
+                                <span data-component="goal-chain-step-actions" class="flex min-w-[96px] shrink-0 items-center justify-end gap-1">
                                   <button
                                     type="button"
                                     aria-label={language.t("session.goal.chainBuilder.stepEditAria", { label: step.label })}
