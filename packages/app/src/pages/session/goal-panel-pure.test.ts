@@ -18,7 +18,14 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { chainStepVisibleAction, chainStepVisibleSourceForState } from "./goal-panel-pure";
+import {
+  actionDraftTemplateFromState,
+  chainStartPayload,
+  chainStepVisibleAction,
+  chainStepVisibleSourceForState,
+  type GoalActionDraftState,
+  type GoalChainDraftStep,
+} from "./goal-panel-pure";
 
 describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
   test("1. draft row always edits the local draft, never the live chain", () => {
@@ -220,6 +227,123 @@ describe("AG-P0-04: selectRunnableChainSteps with explicit draft provenance", ()
         reloaded.source,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("chain orchestration payload contracts", () => {
+  test("action draft saves runtime routing pins and limits into the reusable action", () => {
+    const draft: GoalActionDraftState = {
+      sourceID: "debug",
+      id: "",
+      label: "Runtime route",
+      prompt: "Debug {scope}",
+      command: "bun test",
+      turns: 2.6,
+      minutes: 4.2,
+      category: "Debugging",
+      tone: "orange",
+      elevation: "raised",
+      agent: " build ",
+      skills: ["frontend-design", "playwright"],
+      model: "openai:gpt-5-codex",
+    };
+
+    const template = actionDraftTemplateFromState(draft, {
+      variables: {
+        scope: { description: "Scope" },
+        unused: { description: "Unused" },
+      },
+    });
+
+    expect(template).toMatchObject({
+      id: "runtime-route",
+      label: "Runtime route",
+      condition: "Debug {scope}",
+      command: "bun test",
+      constraints: { maxTurns: 3, maxTimeMinutes: 4 },
+      variables: { scope: { description: "Scope" } },
+      category: "Debugging",
+      tone: "orange",
+      elevation: "raised",
+      agent: "build",
+      skills: ["frontend-design", "playwright"],
+      model: { providerID: "openai", modelID: "gpt-5-codex" },
+      builtin: false,
+    });
+  });
+
+  test("chain start payload applies objective, budgets, verification, and per-step runtime pins", () => {
+    const steps: GoalChainDraftStep[] = [
+      {
+        id: "step-1",
+        actionID: "debug",
+        label: "Debug",
+        condition: "Debug the reported failure.",
+        conditionTemplate: "Debug {scope}.",
+        command: "bun test",
+        maxTurns: 2,
+        maxTimeMinutes: 3,
+        category: "Debugging",
+        tone: "orange",
+        elevation: "raised",
+        agent: " build ",
+        skills: ["frontend-design", "playwright"],
+        model: "openai:gpt-5-codex",
+        builtin: true,
+      },
+      {
+        id: "step-2",
+        actionID: "validate",
+        label: "Validate",
+        condition: "Validate the current change.",
+        conditionTemplate: "Validate {scope}.",
+        command: "",
+        maxTurns: 4,
+        maxTimeMinutes: 5,
+        category: "Testing",
+        tone: "sky",
+        elevation: "flat",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+        builtin: true,
+      },
+    ];
+
+    const start = chainStartPayload(steps, { maxTurns: 10, maxTimeMinutes: 20 }, "the desktop chain smoke");
+    const payload = JSON.parse(start.payload) as {
+      master: { maxTurns: number; maxMinutes: number };
+      steps: Array<Record<string, unknown>>;
+    };
+
+    expect(start).toMatchObject({
+      firstStepAgent: "build",
+      firstStepModel: { providerID: "openai", modelID: "gpt-5-codex" },
+      firstStepSkills: ["frontend-design", "playwright"],
+    });
+    expect(payload.master).toEqual({ maxTurns: 10, maxMinutes: 20 });
+    expect(payload.steps[0]).toMatchObject({
+      condition: "Debug the desktop chain smoke.",
+      command: "bun test",
+      verification: { type: "shell", command: "bun test" },
+      maxTurns: 2,
+      maxMinutes: 3,
+      category: "Debugging",
+      tone: "orange",
+      elevation: "raised",
+      agent: "build",
+      skills: ["frontend-design", "playwright"],
+      model: { providerID: "openai", modelID: "gpt-5-codex" },
+    });
+    expect(payload.steps[1]).toMatchObject({
+      condition: "Validate the desktop chain smoke.",
+      verification: { type: "marker" },
+      maxTurns: 4,
+      maxMinutes: 5,
+      category: "Testing",
+      tone: "sky",
+      elevation: "flat",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+    });
+    expect(payload.steps[1]).not.toHaveProperty("command");
   });
 });
 

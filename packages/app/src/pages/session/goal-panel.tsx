@@ -3385,12 +3385,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             <div
               data-testid="chain-workspace"
               data-component="goal-chain-builder-workspace"
-              class="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:h-[calc(100vh-8rem)] xl:grid-cols-[minmax(620px,1fr)_minmax(360px,420px)] xl:gap-3"
+              class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"
             >
               <section
                 data-testid="goal-status-card"
                 data-component="goal-status-card"
-                class={unarchivedTerminalGoal() ? "h-fit xl:col-span-2" : "hidden"}
+                class={unarchivedTerminalGoal() ? "h-fit" : "hidden"}
             >
             <Show when={unarchivedTerminalGoal()} keyed>
               {(terminal) => {
@@ -3479,7 +3479,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           )}
                         </Show>
                       </div>
-                      <div data-component="goal-terminal-banner-metrics" class="grid min-w-0 grid-cols-4 gap-1.5 px-3 py-2">
+                      <div data-component="goal-terminal-banner-metrics" class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(112px,1fr))] gap-1.5 px-3 py-2">
                         <RunMetricPill
                           label={language.t("session.goal.history.turns")}
                           value={`${turns}/${maxTurns}`}
@@ -3557,7 +3557,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <div
                     data-component="goal-control-error"
                     role="alert"
-                    class="xl:col-span-2 flex items-start gap-2 rounded-md border border-red-400/35 bg-red-400/8 px-3 py-2 text-12-regular text-red-100/86"
+                    class="flex items-start gap-2 rounded-md border border-red-400/35 bg-red-400/8 px-3 py-2 text-12-regular text-red-100/86"
                   >
                     <span class="min-w-0 flex-1">{error()}</span>
                     <button
@@ -3581,7 +3581,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 <div
                   data-component="goal-backend-unreachable"
                   role="status"
-                  class="xl:col-span-2 flex items-center gap-2 rounded-md border border-amber-400/35 bg-amber-400/8 px-3 py-2 text-12-regular text-amber-100/86"
+                  class="flex items-center gap-2 rounded-md border border-amber-400/35 bg-amber-400/8 px-3 py-2 text-12-regular text-amber-100/86"
                 >
                   <span class="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-300" aria-hidden />
                   <span class="min-w-0 flex-1">{language.t("session.goal.backendUnreachable")}</span>
@@ -3592,7 +3592,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 zone="chain-builder"
                 title={language.t("session.goal.chainBuilder.shortTitle")}
                 subtitle={liveGoal() ? chainRunStateSubtitle() : language.t("session.goal.chainBuilder.sectionHint")}
-                class="min-h-0 flex-1"
+                class="min-h-[520px]"
               >
               <div
                 data-component="goal-chain-builder"
@@ -3699,7 +3699,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 <Show when={!liveGoal()}>
                   <div
                     data-component="goal-chain-target-field"
-                    class="mt-1 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md border px-2 py-1"
+                    class="mt-1 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-1.5 rounded-md border px-2 py-1"
                     style={{
                       "background-color": "rgba(15, 23, 42, 0.22)",
                       "border-color": "rgba(100, 140, 200, 0.12)",
@@ -3714,14 +3714,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       onKeyDown={(e) => { if (e.key === "Enter" && !primaryRunDisabled()) void startGoalOrChain() }}
                       disabled={busy() !== null || !props.sessionID}
                       placeholder={language.t("session.goal.chainBuilder.objectivePlaceholder")}
+                      title={language.t("session.goal.chainBuilder.objectiveHint")}
                       class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-text-base outline-none placeholder:text-sky-100/30 disabled:opacity-40"
                     />
-                    <span
-                      class="shrink-0 text-[9px] font-medium text-sky-100/40"
-                      title={language.t("session.goal.chainBuilder.objectiveHint")}
-                    >
-                      {"{scope}"}
-                    </span>
                   </div>
                   <Show when={!hasRunnableChain()}>
                     <div
@@ -3912,7 +3907,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </Show>
                         <div
                           data-component="goal-running-metric-strip"
-                          class="mt-1.5 grid min-w-0 grid-cols-4 gap-1"
+                          class="mt-1.5 grid min-w-0 grid-cols-[repeat(auto-fit,minmax(112px,1fr))] gap-1"
                         >
                           <div
                             data-component="goal-running-clock"
@@ -4790,7 +4785,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-density="compact-chain-row"
                                 data-run-state={stepRunState(i())}
                                 data-editing={editingChainStepID() === step.id ? "true" : "false"}
-                                class={`group grid min-w-[540px] grid-cols-[28px_36px_minmax(132px,1fr)_72px_136px_104px] items-center gap-1.5 rounded-lg border px-2 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
+                                class={`group grid min-w-0 grid-cols-[24px_32px_minmax(74px,1fr)_minmax(56px,68px)_minmax(88px,108px)_104px] items-center gap-1 rounded-lg border px-1.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
                                 classList={{
                                   "ring-2 ring-sky-300/70 shadow-[0_0_24px_rgba(56,189,248,0.22)] brightness-110":
                                     editingChainStepID() === step.id,
@@ -4807,12 +4802,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               >
                                 <span
                                   data-component="goal-chain-run-rail"
-                                  class="relative flex h-10 items-center justify-center"
+                                  class="relative flex h-9 items-center justify-center"
                                   aria-hidden
                                 >
                                   <span
                                     data-component="goal-chain-step-number"
-                                    class="z-10 flex h-7 w-7 items-center justify-center rounded-full text-11-medium font-bold tabular-nums"
+                                    class="z-10 flex h-6 w-6 items-center justify-center rounded-full text-11-medium font-bold tabular-nums"
                                     classList={{
                                       "bg-gradient-to-br from-emerald-400/40 to-emerald-600/20 text-emerald-100 ring-1 ring-emerald-400/30":
                                         stepRunState(i()) === "running",
@@ -4831,7 +4826,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 </span>
                                 <span
                                   data-component="goal-chain-step-icon"
-                                  class="flex h-9 w-9 items-center justify-center rounded-md border shadow-[0_6px_12px_rgba(0,0,0,0.14)]"
+                                  class="flex h-8 w-8 items-center justify-center rounded-md border shadow-[0_6px_12px_rgba(0,0,0,0.14)]"
                                   style={chainStepBadgeStyle(step)}
                                   aria-hidden
                                 >
@@ -4849,15 +4844,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   </Show>
                                 </div>
                                 <span
-                                  class="flex h-8 items-center justify-center truncate rounded-md border px-2 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                                  class="flex h-8 min-w-0 items-center justify-center truncate rounded-md border px-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
                                   style={chainStepSoftStyle(step)}
                                   title={inferActionCategory(step)}
                                 >
                                   {actionCategoryShortLabel(inferActionCategory(step))}
                                 </span>
-                                <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-2 gap-1">
+                                <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-2 gap-0.5">
                                   <label
-                                    class="grid h-6 grid-cols-[34px_30px] items-center gap-1"
+                                    class="grid h-6 grid-cols-[30px_minmax(24px,1fr)] items-center gap-0.5"
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
                                     <input
@@ -4873,7 +4868,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     />
                                   </label>
                                   <label
-                                    class="grid h-6 grid-cols-[24px_34px] items-center gap-1"
+                                    class="grid h-6 grid-cols-[20px_minmax(28px,1fr)] items-center gap-0.5"
                                   >
                                     <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
                                     <input
@@ -4889,7 +4884,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     />
                                   </label>
                                 </span>
-                                <span data-component="goal-chain-step-actions" class="flex shrink-0 items-center justify-end gap-1">
+                                <span data-component="goal-chain-step-actions" class="flex min-w-[104px] shrink-0 items-center justify-end gap-1">
                                   <button
                                     type="button"
                                     aria-label={language.t("session.goal.chainBuilder.stepEditAria", { label: step.label })}
@@ -5238,13 +5233,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                 <aside
                   data-component="goal-method-library-rail"
-                  class="grid min-h-0 min-w-0 grid-rows-[minmax(320px,1fr)_minmax(280px,0.88fr)] gap-2 xl:h-[calc(100vh-8rem)]"
+                  class="grid min-h-0 min-w-0 grid-cols-1 gap-2"
                 >
                   <GoalConsoleSection
                     zone="action-library"
                     title={language.t("session.goal.template.libraryShortTitle")}
                     subtitle={language.t("session.goal.template.librarySubtitle")}
-                    class="min-h-0"
+                    class="min-h-[320px]"
                   >
                   <section data-testid="action-library" data-component="goal-method-library" class="flex h-full min-h-0 min-w-0 flex-col p-2">
                     <div
@@ -5378,7 +5373,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     zone="action-editor"
                     title={language.t("session.goal.template.editorShortTitle")}
                     subtitle={language.t("session.goal.template.editorSubtitle")}
-                    class="min-h-0"
+                    class="min-h-[360px]"
                   >
                     <section
                       data-testid="action-editor"

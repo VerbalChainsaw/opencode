@@ -738,7 +738,7 @@ export const dict = {
   "session.goal.chainBuilder.autosaveHint": "仅保存到此会话，直到“重置状态”清除。",
   "session.goal.chainBuilder.objective": "目标",
   "session.goal.chainBuilder.objectivePlaceholder": "代理应完成什么？例如：所有测试通过",
-  "session.goal.chainBuilder.objectiveHint": "链动作可将此作为 {scope} 使用。",
+  "session.goal.chainBuilder.objectiveHint": "此目标会在运行时应用到每个链动作。",
   "session.goal.chainBuilder.masterTurns": "主轮次",
   "session.goal.chainBuilder.masterMinutes": "主时长（分钟）",
   "session.goal.chainBuilder.emptyChain": "暂无动作。请在库中使用“添加”。",

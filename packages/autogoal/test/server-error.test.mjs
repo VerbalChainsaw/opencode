@@ -849,6 +849,32 @@ describe("v0.7.2: chain advance issues a real model turn (shell case)", () => {
     assert.ok(typeof stateAfterAdvance.metadata.stepMarkerAt === "number");
     assert.ok(stateAfterAdvance.metadata.stepMarkerAt > 0);
   });
+
+  it("includes next-step skill pins in the chain-advance prompt text", async () => {
+    const create = createGoalChain(dir, [
+      {
+        condition: "achievable step",
+        verification: { type: "shell", command: process.platform === "win32" ? "exit 0" : "true" },
+      },
+      {
+        condition: "follow-up step",
+        skills: ["frontend-design", "playwright"],
+      },
+    ]);
+    assert.equal(create.ok, true);
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    assert.equal(spies.prompts.length, 3);
+    assert.notEqual(spies.prompts[2].body.noReply, true, "the next-step nudge is a real model turn");
+    assert.match(
+      spies.prompts[2].body.parts[0].text,
+      /Pinned skills for this OpenGoal action: frontend-design, playwright/
+    );
+    assert.equal("skills" in spies.prompts[2].body, false);
+  });
 });
 
 describe("session.idle skips nudge when a permission is open (defect coverage)", () => {

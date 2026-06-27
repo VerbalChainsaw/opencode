@@ -688,7 +688,7 @@ export const dict = {
   "session.goal.chainBuilder.autosaveHint": "Stored only for this session until Reset state clears it.",
   "session.goal.chainBuilder.objective": "Goal",
   "session.goal.chainBuilder.objectivePlaceholder": "What should the agent accomplish? e.g. all tests pass",
-  "session.goal.chainBuilder.objectiveHint": "Chain actions can use this as {scope}.",
+  "session.goal.chainBuilder.objectiveHint": "This target is applied to every chain action at run time.",
   "session.goal.chainBuilder.stat.turns": "Turns",
   "session.goal.chainBuilder.stat.time": "Time",
   "session.goal.chainBuilder.stat.actions": "Actions",

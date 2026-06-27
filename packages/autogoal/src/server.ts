@@ -1656,12 +1656,13 @@ export const server: Plugin = async ({ client, directory }) => {
             const reasonSuffix = snapshot.reason
               ? `\nPrevious step evidence: ${sanitizeForPrompt(snapshot.reason).slice(0, 240)}`
               : "";
-            // v0.7.2 — chain-advance prompt must respect the new step's
-            // pinned model + agent (mirrors the not-met nudge at line 878).
-            // A chain step that pins a model/agent should keep the new
-            // step on the same configuration. Read the pin BEFORE
-            // building the body so the spread order is stable.
+            // v0.7.2+ — chain-advance prompt must respect the new step's
+            // pinned model, agent, and skill hints (mirrors the not-met
+            // nudge path below). A chain step that pins runtime settings
+            // should keep the new step on the same configuration from its
+            // first model turn, not only after a later retry/nudge.
             const stepPinnedModel = currentChainStepPinnedModel(directory);
+            const stepPinnedSkills = currentChainStepPinnedSkills(directory);
             const stepPinnedAgent = currentChainStepPinnedAgent(directory) ?? chainResult.state.metadata.agentName;
             // AG-P1-06 part 3 — the chain-advance prompt now routes
             // through the unified `deliverContinuation` dispatcher. Pre-fix,
@@ -1696,6 +1697,7 @@ export const server: Plugin = async ({ client, directory }) => {
                       `🎯 [Chain advanced] The previous step is complete. ` +
                       `Working on the next step now: ${nextCondition}.` +
                       reasonSuffix +
+                      pinnedSkillPromptSuffix(stepPinnedSkills) +
                       `\nWhen satisfied, write a line beginning "GOAL_COMPLETE:" with the evidence. ` +
                       `If truly blocked, write a line beginning "GOAL_BLOCKED:" explaining why.`,
                   },

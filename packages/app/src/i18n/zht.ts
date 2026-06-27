@@ -733,7 +733,7 @@ export const dict = {
   "session.goal.chainBuilder.autosaveHint": "僅儲存到此工作階段，直到「重置狀態」清除。",
   "session.goal.chainBuilder.objective": "目標",
   "session.goal.chainBuilder.objectivePlaceholder": "代理應完成什麼？例如：所有測試通過",
-  "session.goal.chainBuilder.objectiveHint": "鏈動作可將此作為 {scope} 使用。",
+  "session.goal.chainBuilder.objectiveHint": "此目標會在執行時套用到每個鏈動作。",
   "session.goal.chainBuilder.masterTurns": "主回合數",
   "session.goal.chainBuilder.masterMinutes": "主時長（分鐘）",
   "session.goal.chainBuilder.emptyChain": "尚無動作。請在庫中使用「新增」。",
