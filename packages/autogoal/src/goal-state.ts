@@ -1591,14 +1591,28 @@ function writeHandoffAtomic(path: string, payload: HandoffPayload): void {
  * single-slot — if a handoff already exists, this is a no-op (return
  * `handoff-exists`). The user must claim or delete the prior handoff first.
  */
-export function createHandoff(directory: string, note?: string, now: number = Date.now()): { ok: true; path: string; message: string } | { ok: false; reason: "no-goal" | "terminal-state" | "handoff-exists" | "write-failed"; error?: string } {
+export function createHandoff(directory: string, note?: string, now: number = Date.now()): { ok: true; path: string; message: string } | { ok: false; reason: "no-goal" | "terminal-state" | "handoff-exists" | "corrupt-goal" | "write-failed"; error?: string } {
   // Cap + sanitize the note (Security review #10): a multi-MB or ANSI-laden
   // note would bloat the handoff and could land control chars in a later read.
   const safeNote = typeof note === "string" ? sanitizeForPrompt(note).slice(0, MAX_STEERING_LEN) : "";
 
   {
-    const state = readGoalState(directory);
-    if (!state) return { ok: false, reason: "no-goal" };
+    const stateResult = readGoalStateResult(directory);
+    if (stateResult.kind === "corrupt") {
+      return {
+        ok: false,
+        reason: "corrupt-goal",
+        error: corruptFileError(
+          directory,
+          "Goal state file",
+          ".goal-state.json.corrupt.",
+          stateResult.reason,
+          "Review the quarantined artifact before creating a handoff.",
+        ),
+      };
+    }
+    if (stateResult.kind === "absent") return { ok: false, reason: "no-goal" };
+    const state = stateResult.value;
     if (isTerminal(state)) return { ok: false, reason: "terminal-state", error: `Cannot handoff a ${state.status} goal.` };
 
     const path = handoffPath(directory);
@@ -1702,11 +1716,11 @@ function newestCorruptArtifact(directory: string, prefix: string): string | null
   return listCorruptArtifacts(directory).find((name) => name.startsWith(prefix)) ?? null;
 }
 
-function corruptClaimError(directory: string, fileLabel: string, artifactPrefix: string, reason: CorruptReason): string {
+function corruptFileError(directory: string, fileLabel: string, artifactPrefix: string, reason: CorruptReason, recovery: string): string {
   const newest = newestCorruptArtifact(directory, artifactPrefix);
   return (
     `${fileLabel} was corrupt (${reason})` +
-    `${newest ? ` and was quarantined as ${newest}` : ""}. Review the quarantined artifact before claiming the handoff.`
+    `${newest ? ` and was quarantined as ${newest}` : ""}. ${recovery}`
   );
 }
 
@@ -1722,7 +1736,7 @@ export function claimHandoff(directory: string, now: number = Date.now()): { ok:
       return {
         ok: false,
         reason: "corrupt-goal",
-        error: corruptClaimError(directory, "Goal state file", ".goal-state.json.corrupt.", currentResult.reason),
+        error: corruptFileError(directory, "Goal state file", ".goal-state.json.corrupt.", currentResult.reason, "Review the quarantined artifact before claiming the handoff."),
       };
     }
     if (currentResult.kind === "ok" && isMutable(currentResult.value)) {
@@ -1734,7 +1748,7 @@ export function claimHandoff(directory: string, now: number = Date.now()): { ok:
       return {
         ok: false,
         reason: "corrupt-handoff",
-        error: corruptClaimError(directory, "Goal handoff file", ".goal-handoff.json.corrupt.", handoffResult.reason),
+        error: corruptFileError(directory, "Goal handoff file", ".goal-handoff.json.corrupt.", handoffResult.reason, "Review the quarantined artifact before claiming the handoff."),
       };
     }
     const payload = handoffResult.value;

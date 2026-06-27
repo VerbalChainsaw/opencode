@@ -638,6 +638,7 @@ export function dispatchGoalCommandStructured(
       if (res.reason === "no-goal") return { kind: "no-goal", message: "No active goal to handoff." };
       if (res.reason === "terminal-state") return { kind: "terminal-state", message: res.error! };
       if (res.reason === "handoff-exists") return { kind: "handoff-exists", message: res.error ?? "A handoff is already pending." };
+      if (res.reason === "corrupt-goal") return { kind: "corrupt-state", message: res.error ?? "Cannot create handoff because the goal state file was corrupt." };
       return { kind: "write-failed", message: res.error ?? "Failed to create handoff." };
     }
     return { kind: "success", message: res.message };

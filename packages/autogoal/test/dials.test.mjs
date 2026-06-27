@@ -660,6 +660,24 @@ test("createHandoff: no goal → no-goal error", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("createHandoff: corrupt current state is surfaced and quarantined", () => {
+  const dir = freshDir();
+  try {
+    mkdirSync(join(dir, ".opencode"), { recursive: true });
+    const statePath = join(dir, ".opencode", ".goal-state.json");
+    writeFileSync(statePath, "{this state is not json!");
+
+    const res = createHandoff(dir);
+
+    assert.equal(res.ok, false);
+    if (!res.ok) assert.equal(res.reason, "corrupt-goal");
+    assert.equal(existsSync(statePath), false);
+    assert.equal(existsSync(join(dir, ".opencode", ".goal-handoff.json")), false);
+    const corruptArtifacts = readdirSync(join(dir, ".opencode")).filter((name) => name.includes(".goal-state.json.corrupt."));
+    assert.ok(corruptArtifacts.length > 0, "corrupt current state should be preserved before handoff creation");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("createHandoff: terminal state rejected", () => {
   const dir = freshDir();
   try {
@@ -674,20 +692,19 @@ test("createHandoff: evaluationHistory capped at 10 (validator + writer both enf
   const dir = freshDir();
   try {
     setGoal(dir, "do the thing");
-    // Plant a state with 15 evaluations. The validator (added in v0.2.0-rc.6
-    // hardening) caps at 10, so a state with 15 fails validation and
-    // readGoalState returns null. createHandoff then returns no-goal. The
-    // security-validated behavior: a corrupt state with >10 evals is
-    // rejected outright.
+    // Plant a state with 15 evaluations. The validator caps at 10, so
+    // a state with 15 fails validation and is now surfaced as corrupt
+    // rather than collapsed into no-goal by the legacy nullable reader.
     const state = readGoalState(dir);
     state.evaluationHistory = Array.from({ length: 15 }, (_, i) => ({
       at: i, met: false, reason: `eval-${i}`, confidence: 0.5, evaluatorType: "deterministic",
     }));
     writeFileSync(join(dir, ".opencode", ".goal-state.json"), JSON.stringify(state));
-    // The next readGoalState rejects (15 > 10) → null → createHandoff returns no-goal.
+    // The next read rejects (15 > 10), quarantines the state, and
+    // createHandoff reports corrupt-goal.
     const res = createHandoff(dir);
     assert.equal(res.ok, false);
-    if (!res.ok) assert.equal(res.reason, "no-goal");
+    if (!res.ok) assert.equal(res.reason, "corrupt-goal");
     // And the validator works on a hand-crafted 10-entry state too: that
     // one passes validation, so createHandoff succeeds. Sanity check.
     plantState(dir, {

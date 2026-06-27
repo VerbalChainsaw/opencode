@@ -189,6 +189,7 @@ export function handleHandoffSubmit(directory: string, rawNote: string | undefin
       case "no-goal": return { ok: false, reason: "no-goal", message: "No active goal to handoff." };
       case "terminal-state": return { ok: false, reason: "terminal-state", message: res.error ?? "Goal is in a terminal state." };
       case "handoff-exists": return { ok: false, reason: "handoff-exists", message: res.error ?? "A handoff is already pending." };
+      case "corrupt-goal": return { ok: false, reason: "corrupt-state", message: res.error ?? "Cannot create handoff because the goal state file was corrupt." };
       case "write-failed": return { ok: false, reason: "write-failed", message: res.error ?? "Failed to write handoff." };
     }
   }
