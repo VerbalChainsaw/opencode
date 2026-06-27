@@ -391,6 +391,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   class="!w-9 shrink-0"
                   icon={<IconV2 name="grid-plus" />}
                   state={!!homeMatch() ? "pressed" : undefined}
+                  aria-label={language.t("home.title")}
                 />
 
                 <div
@@ -691,6 +692,7 @@ function TabNavItem(props: {
   activeServer: boolean
   forceTruncate?: boolean
 }) {
+  const language = useLanguage()
   const closeTab = (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
@@ -770,6 +772,7 @@ function TabNavItem(props: {
           class="opacity-0 group-hover:opacity-100 group-data-[active='true']:opacity-100 z-10"
           onClick={closeTab}
           icon={<IconV2 name="xmark-small" />}
+          aria-label={language.t("common.closeTab")}
         />
       </div>
     </div>

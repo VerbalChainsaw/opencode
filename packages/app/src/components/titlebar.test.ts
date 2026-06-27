@@ -52,4 +52,10 @@ describe("titlebar TSX wiring", () => {
     expect(src).toContain('aria-label={language.t("common.closeTab")}')
     expect(src).not.toContain('aria-label="Close tab"')
   })
+
+  test("V2 icon-only navigation controls expose localized labels", async () => {
+    const src = await titlebar()
+    expect(src).toContain('aria-label={language.t("home.title")}')
+    expect(src.match(/aria-label=\{language\.t\("common\.closeTab"\)\}/g)?.length).toBeGreaterThanOrEqual(2)
+  })
 })
