@@ -45,6 +45,16 @@ export function shouldAutoOpenGoalTab(input: {
     input.currentGoalID !== input.dismissedGoalID
 }
 
+export function shouldDefaultOpenGoalTab(input: {
+  sessionKey: string | undefined
+  defaultedSessionKey: string | null
+  goalVisible: boolean
+}) {
+  return !!input.sessionKey &&
+    input.goalVisible &&
+    input.sessionKey !== input.defaultedSessionKey
+}
+
 /**
  * Whether the Goal tab's close affordance should be offered. A *live* goal
  * (active or paused) is NOT closeable — hiding the tab would strip away the

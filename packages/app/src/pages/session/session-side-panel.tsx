@@ -30,6 +30,7 @@ import {
   getTabReorderIndex,
   goalTabCloseable,
   shouldAutoOpenGoalTab,
+  shouldDefaultOpenGoalTab,
   shouldShowFileTree,
   type Sizing,
 } from "@/pages/session/helpers"
@@ -173,6 +174,7 @@ export function SessionSidePanel(props: {
     previousID: null as string | null,
     dismissedID: null as string | null,
     dismissedKey: null as string | null,
+    defaultedSessionKey: null as string | null,
   })
   const currentGoalID = createMemo(() => {
     const state = goal.store.state
@@ -207,6 +209,20 @@ export function SessionSidePanel(props: {
     if (goalID) setGoalTabState("dismissedID", goalID)
     tabs().close("goal")
   }
+  createEffect(() => {
+    const key = sessionKey()
+    if (
+      shouldDefaultOpenGoalTab({
+        sessionKey: key,
+        defaultedSessionKey: goalTabState.defaultedSessionKey,
+        goalVisible: goalVisible(),
+      })
+    ) {
+      setGoalTabState("defaultedSessionKey", key)
+      void tabs().open("goal")
+      tabs().setActive("goal")
+    }
+  })
   createEffect(() => {
     const currentID = currentGoalID()
     const previousID = goalTabState.previousID

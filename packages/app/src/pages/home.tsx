@@ -65,7 +65,7 @@ import {
 
 const HOME_SESSION_LIMIT = 64
 const HOME_ROW_LAYOUT =
-  "flex min-w-0 w-full shrink-0 cursor-default items-center rounded-[6px] bg-transparent text-left transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out focus-visible:outline-none"
+  "flex min-w-0 w-full shrink-0 cursor-default items-center rounded-md bg-transparent text-left transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out focus-visible:outline-none"
 const HOME_ROW_BASE = `${HOME_ROW_LAYOUT} border-0`
 const HOME_ROW = `${HOME_ROW_BASE} [font-weight:530] text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover`
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
@@ -514,7 +514,7 @@ function HomeDesign() {
   }
 
   return (
-    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
+    <div class="rounded-lg shadow-[var(--v2-elevation-raised)] m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
       <div class="mx-auto grid w-full h-full max-w-[1160px] gap-6 px-6 pb-12 lg:grid-cols-[280px_minmax(0,1fr)]">
         <HomeProjectColumn
           projects={projects()}
@@ -648,7 +648,7 @@ function HomeDesign() {
             <div class="grid min-h-0 flex-1 grid-rows-[minmax(240px,1fr)_auto] gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:grid-rows-none">
               <section
                 data-component="home-live-board"
-                class="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded-[10px] border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 pb-2 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] xl:min-h-0"
+                class="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 pb-2 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] xl:min-h-0"
               >
                 <div class="mb-2 flex items-center justify-between gap-3 px-2">
                   <div class="min-w-0">
@@ -747,9 +747,23 @@ function HomeDesign() {
               </section>
 
               <aside class="flex min-h-0 flex-col gap-4">
-                <section class="rounded-[10px] border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                <section data-component="home-actions-panel" class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                   <div class="mb-2 text-v2-text-text-muted [font-weight:440]">{language.t("home.actions.title")}</div>
                   <div class="flex flex-col gap-2">
+                    <ButtonV2
+                      data-action="home-sidebar-open-goal"
+                      variant={latestGoalRecord() ? "contrast" : "ghost-muted"}
+                      size="normal"
+                      icon="status"
+                      disabled={!latestGoalRecord()}
+                      onClick={() => {
+                        const goal = latestGoalRecord()
+                        if (!goal) return
+                        openGoalRecord(goal)
+                      }}
+                    >
+                      {language.t("home.actions.openGoal")}
+                    </ButtonV2>
                     <ButtonV2 data-action="home-sidebar-new-session" variant="contrast" size="normal" icon="plus" onClick={openNewSession}>
                       {language.t("home.actions.newSession")}
                     </ButtonV2>
@@ -764,16 +778,6 @@ function HomeDesign() {
                       {language.t("home.actions.resumeLast")}
                     </ButtonV2>
                     <ButtonV2
-                      data-action="home-sidebar-open-goal"
-                      variant="ghost-muted"
-                      size="normal"
-                      icon="status"
-                      disabled={!latestGoalRecord()}
-                      onClick={() => latestGoalRecord() && openGoalRecord(latestGoalRecord()!)}
-                    >
-                      {language.t("home.actions.openGoal")}
-                    </ButtonV2>
-                    <ButtonV2
                       data-action="home-sidebar-open-project"
                       variant="ghost-muted"
                       size="normal"
@@ -786,8 +790,11 @@ function HomeDesign() {
                   </div>
                 </section>
 
-                <section class="rounded-[10px] border border-amber-500/40 bg-amber-500/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                  <div class="mb-2 text-v2-text-text-base [font-weight:530]">{language.t("home.attention.title")}</div>
+                <section data-component="home-attention-panel" class="rounded-lg border border-v2-border-border-base border-l-amber-400/60 bg-v2-background-bg-layer-01 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                  <div class="mb-2 flex min-w-0 items-center gap-2 text-v2-text-text-base [font-weight:530]">
+                    <span class="h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />
+                    <span class="min-w-0 truncate">{language.t("home.attention.title")}</span>
+                  </div>
                   <Show
                     when={attentionRecords().length > 0}
                     fallback={<p class="text-[13px] leading-5 text-v2-text-text-muted">{language.t("home.attention.empty")}</p>}
@@ -813,7 +820,7 @@ function HomeDesign() {
                               <Show when={record.clearable}>
                                 <button
                                   type="button"
-                                  class="shrink-0 rounded-md px-1.5 text-[11px] text-v2-text-text-weaker transition-colors hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
+                                  class="shrink-0 rounded-md border border-transparent px-1.5 text-[11px] text-v2-text-text-weaker transition-colors hover:border-amber-400/30 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:border-amber-400/30 focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
                                   onClick={() => clearAttentionRecord(record)}
                                   aria-label={language.t("home.attention.clear", { reason: record.reason })}
                                 >
@@ -862,14 +869,14 @@ function HomeMetricCard(props: {
     <button
       type="button"
       data-component="home-metric-card"
-      class="group flex min-h-[92px] w-full flex-col items-stretch rounded-[10px] border px-3 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[background-color,border-color,box-shadow] disabled:cursor-default disabled:opacity-70"
+      class="group flex min-h-[92px] w-full flex-col items-stretch rounded-lg border px-3 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[background-color,border-color,box-shadow] disabled:cursor-default disabled:opacity-70"
       classList={{
         "border-v2-border-border-base bg-v2-background-bg-layer-01 hover:border-border-strong hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong":
           props.tone !== "warning" && isInteractive(),
         "border-v2-border-border-base bg-v2-background-bg-layer-01": props.tone !== "warning" && !isInteractive(),
-        "border-amber-500/40 bg-amber-500/8 hover:border-amber-400/60 hover:bg-amber-500/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60":
+        "border-amber-500/50 bg-v2-background-bg-layer-01 hover:border-amber-400/70 hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60":
           props.tone === "warning" && isInteractive(),
-        "border-amber-500/40 bg-amber-500/8": props.tone === "warning" && !isInteractive(),
+        "border-amber-500/50 bg-v2-background-bg-layer-01": props.tone === "warning" && !isInteractive(),
       }}
       onClick={() => isInteractive() && props.onClick?.()}
       disabled={!isInteractive() || props.loading}
@@ -878,7 +885,7 @@ function HomeMetricCard(props: {
       <div class="flex min-w-0 items-center justify-between gap-2">
         <span class="flex min-w-0 items-center gap-1.5">
           <span
-            class="flex size-5 shrink-0 items-center justify-center rounded-[5px] border border-v2-border-border-muted text-v2-icon-icon-muted"
+            class="flex size-5 shrink-0 items-center justify-center rounded-md border border-v2-border-border-muted text-v2-icon-icon-muted"
             classList={{
               "border-amber-400/30 text-amber-300": props.tone === "warning",
             }}
@@ -1075,12 +1082,12 @@ function HomeProjectColumn(props: {
     <aside class="flex min-h-0 min-w-0 flex-col pb-8 pt-10" aria-label={props.language.t("home.projects")}>
       <nav
         data-component="home-project-tree"
-        class="flex min-h-0 flex-1 min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-v2-border-border-base bg-v2-background-bg-layer-01 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+        class="flex min-h-0 flex-1 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
       >
         <div class="flex h-8 min-w-0 items-center justify-between px-1">
           <div class={HOME_SECTION_LABEL}>{props.language.t("home.projects")}</div>
           <div class="flex items-center gap-1">
-            <span class="rounded-[6px] border border-v2-border-border-muted px-1.5 py-0.5 text-[10px] tabular-nums text-v2-text-text-weaker">
+            <span class="rounded-md border border-v2-border-border-muted px-1.5 py-0.5 text-[10px] tabular-nums text-v2-text-text-weaker">
               {props.projects.length}
             </span>
             <Show when={global.servers.list().length === 1}>
@@ -1149,7 +1156,7 @@ function HomeServerRow(props: {
 }) {
   const [state, setState] = createStore({ menuOpen: false })
   return (
-    <div class="group/server relative flex h-8 min-w-0 items-center rounded-[6px]">
+    <div class="group/server relative flex h-8 min-w-0 items-center rounded-md">
       <button
         type="button"
         class={`${HOME_PROJECT_NAV_ROW} pr-16 disabled:opacity-60`}
@@ -1164,7 +1171,7 @@ function HomeServerRow(props: {
           <span class={HOME_PROJECT_NAV_LABEL}>{props.server.displayName ?? new URL(props.server.http.url).host}</span>
           <Show when={props.server.label}>
             {(label) => (
-              <span class="shrink-0 rounded-[3px] border border-v2-border-border-base px-1 py-0.5 text-[9px] leading-none text-v2-text-text-muted">
+              <span class="shrink-0 rounded-md border border-v2-border-border-base px-1 py-0.5 text-[9px] leading-none text-v2-text-text-muted">
                 {label()}
               </span>
             )}
@@ -1246,7 +1253,7 @@ function HomeProjectRow(props: {
 }) {
   const [state, setState] = createStore({ menuOpen: false })
   return (
-    <div class="group/project relative flex h-8 min-w-0 items-center rounded-[6px]">
+    <div class="group/project relative flex h-8 min-w-0 items-center rounded-md">
       <button
         type="button"
         data-component="home-project-row"
@@ -1258,7 +1265,7 @@ function HomeProjectRow(props: {
         <HomeProjectAvatar project={props.project} />
         <span class={HOME_PROJECT_NAV_LABEL}>{displayName(props.project)}</span>
         <Show when={props.unseenCount > 0}>
-          <span class="shrink-0 rounded-[6px] border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-300">
+          <span class="shrink-0 rounded-md border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-300">
             {props.unseenCount}
           </span>
         </Show>
@@ -1452,7 +1459,7 @@ function HomeSessionSearch(props: {
         <Show when={props.open}>
           <div
             data-component="home-session-search-panel"
-            class="absolute flex flex-col rounded-[12px] bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)]"
+            class="absolute flex flex-col rounded-lg bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)]"
             style={{
               top: "-6px",
               left: "-6px",
@@ -1503,7 +1510,7 @@ function HomeSessionSearch(props: {
           </div>
         </Show>
         <label
-          class="relative z-20 flex h-9 w-full items-center gap-2 rounded-[6px] py-1 pl-3 pr-2 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out"
+          class="relative z-20 flex h-9 w-full items-center gap-2 rounded-md py-1 pl-3 pr-2 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out"
           classList={{
             "bg-v2-background-bg-deep focus-within:bg-v2-background-bg-base focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]":
               !props.open,
@@ -1682,7 +1689,7 @@ function HomeSessionSkeleton(props: { label: string }) {
         <div class={HOME_SECTION_LABEL}>{props.label}</div>
       </div>
       <div class="flex min-w-0 flex-col gap-px" aria-hidden="true">
-        <For each={[0, 1, 2, 3]}>{() => <div class="h-10 rounded-[6px] bg-v2-background-bg-deep opacity-70" />}</For>
+        <For each={[0, 1, 2, 3]}>{() => <div class="h-10 rounded-md bg-v2-background-bg-deep opacity-70" />}</For>
       </div>
     </div>
   )

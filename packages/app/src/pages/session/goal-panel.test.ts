@@ -402,17 +402,17 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.template.searchPlaceholder")
     expect(src).toContain("session.goal.template.empty")
     expect(src).toContain("session.goal.chainBuilder.steps")
-    expect(src).toContain('class="flex min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden"')
-    expect(src).toContain('class="flex min-w-0 shrink-0 flex-col gap-3"')
+    expect(src).toContain('class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-start gap-3 overflow-x-hidden"')
+    expect(src).toContain('class="flex min-w-0 flex-col gap-3"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"')
-    expect(src).toContain('class="grid min-w-0 shrink-0 grid-cols-1 gap-2"')
+    expect(src).toContain('class="grid min-w-0 grid-cols-1 gap-2"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-2"')
     expect(src).not.toMatch(/xl:grid-cols-\[minmax\(620px,1fr\)_minmax\(360px,420px\)\]/)
     expect(src).not.toContain("xl:col-span-2")
     expect(src).toMatch(/data-component="goal-chain-builder"[\s\S]*data-component="goal-chain-builder-header-strip"[\s\S]*data-component="goal-global-budget"[\s\S]*data-component="goal-playbook-chain-pane"/)
     expect(src).toMatch(/data-testid="chain-workspace"[\s\S]*data-testid="chain-builder"[\s\S]*data-component="goal-method-library-rail"/)
     expect(src).toContain('data-component="goal-status-card"')
-    expect(src).toContain('class={unarchivedTerminalGoal() ? "h-fit" : "hidden"}')
+    expect(src).toContain('class={unarchivedTerminalGoal() ? "col-span-full h-fit" : "hidden"}')
     expect(src).toContain("templateCategory")
     expect(src).toContain("inferActionCategory")
     expect(src).not.toContain('data-component="goal-action-context-summary"')
@@ -543,11 +543,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-target-toolbar"')
     expect(src).toContain('data-component="goal-target-stat-strip"')
     expect(src).toContain('data-component="goal-status-card"')
-    expect(src).toContain('class={unarchivedTerminalGoal() ? "h-fit" : "hidden"}')
-    expect(src).toContain('class="flex min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden"')
-    expect(src).toContain('class="flex min-w-0 shrink-0 flex-col gap-3"')
+    expect(src).toContain('class={unarchivedTerminalGoal() ? "col-span-full h-fit" : "hidden"}')
+    expect(src).toContain('class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-start gap-3 overflow-x-hidden"')
+    expect(src).toContain('class="flex min-w-0 flex-col gap-3"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"')
-    expect(src).toContain('class="grid min-w-0 shrink-0 grid-cols-1 gap-2"')
+    expect(src).toContain('class="grid min-w-0 grid-cols-1 gap-2"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-2"')
     expect(src).toContain("grid-cols-[repeat(auto-fit,minmax(112px,1fr))]")
     expect(src).not.toContain("xl:col-span-2")
@@ -637,6 +637,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("chainRunStateTitle")
     expect(src).toContain("chainRunStateSubtitle")
     expect(src).toContain("visibleChainSteps")
+    expect(src).toContain("const runningStep = createMemo")
     // A single live goal (no chain file) must render as ONE synthetic running
     // step, never the leftover sessionStorage chain draft (which would show a
     // fake "1/N" executing chain on the running screen).
@@ -649,7 +650,12 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('liveRunStatus() === "active"')
     expect(src).toContain('liveRunStatus() === "paused"')
     expect(src).toContain('data-component="goal-running-metric-strip"')
+    expect(src).toContain('data-component="goal-running-now-step"')
+    expect(src).toContain("session.goal.chainBuilder.currentStep")
+    expect(src).toContain("session.goal.chainBuilder.currentStepAria")
     expect(src).toContain('data-component="goal-running-progress-hero"')
+    expect(src).toContain('class="rounded-md border px-2.5 py-2 text-right"')
+    expect(src).not.toContain('data-component="goal-running-clock"\n                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"')
     expect(src).toContain("stepRuntimeModelLabel")
     expect(src).toContain("stepRuntimeSkillLabel")
     expect(src).toContain("chainStepRunBadgeStyle")
@@ -2378,13 +2384,109 @@ describe("stopGoalRun", () => {
       { sessionID: "child-1", directory: "C:\\repo\\project" },
       { sessionID: "child-2", directory: "C:\\repo\\project" },
       { sessionID: "grandchild-1", directory: "C:\\repo\\project" },
+      { sessionID: "session-1", directory: "C:\\repo\\project" },
+      { sessionID: "child-1", directory: "C:\\repo\\project" },
+      { sessionID: "child-2", directory: "C:\\repo\\project" },
+      { sessionID: "grandchild-1", directory: "C:\\repo\\project" },
     ])
     expect(aborted).toEqual([
       { sessionID: "grandchild-1", directory: "C:\\repo\\project" },
       { sessionID: "child-2", directory: "C:\\repo\\project" },
       { sessionID: "child-1", directory: "C:\\repo\\project" },
       { sessionID: "session-1", directory: "C:\\repo\\project" },
+      { sessionID: "grandchild-1", directory: "C:\\repo\\project" },
+      { sessionID: "child-2", directory: "C:\\repo\\project" },
+      { sessionID: "child-1", directory: "C:\\repo\\project" },
+      { sessionID: "session-1", directory: "C:\\repo\\project" },
     ])
+  })
+
+  test("aborts the tree before and after clearing so late child work cannot restart the parent", async () => {
+    const events: string[] = []
+    const post = mock(async () => {
+      events.push("clear")
+      return { data: { title: "Goal control", output: "ok", metadata: {} } }
+    })
+    const children = mock(async (args: { sessionID: string; directory?: string }) => {
+      events.push(`children:${args.sessionID}`)
+      if (args.sessionID === "session-1") return { data: [{ id: "child-1" }] }
+      return { data: [] }
+    })
+    const abort = mock(async (args: { sessionID: string; directory?: string }) => {
+      events.push(`abort:${args.sessionID}`)
+    })
+
+    const result = await stopGoalRun(
+      {
+        client: { post },
+        session: { abort, children },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(events).toEqual([
+      "children:session-1",
+      "children:child-1",
+      "abort:child-1",
+      "abort:session-1",
+      "clear",
+      "children:session-1",
+      "children:child-1",
+      "abort:child-1",
+      "abort:session-1",
+    ])
+  })
+
+  test("continues aborting known sessions when one child listing fails", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const children = mock(async (args: { sessionID: string; directory?: string }) => {
+      if (args.sessionID === "session-1") return { data: [{ id: "child-1" }, { id: "child-2" }] }
+      if (args.sessionID === "child-1") throw new Error("child vanished")
+      return { data: [] }
+    })
+    const aborted: string[] = []
+    const abort = mock(async (args: { sessionID: string; directory?: string }) => {
+      aborted.push(args.sessionID)
+    })
+
+    const result = await stopGoalRun(
+      {
+        client: { post },
+        session: { abort, children },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      warning: expect.stringContaining("child-1 children were not discovered: child vanished"),
+    })
+    expect(aborted).toEqual(["child-2", "child-1", "session-1", "child-2", "child-1", "session-1"])
+  })
+
+  test("deduplicates cyclic child listings while aborting the run tree", async () => {
+    const post = mock(async () => ({ data: { title: "Goal control", output: "ok", metadata: {} } }))
+    const children = mock(async (args: { sessionID: string; directory?: string }) => {
+      if (args.sessionID === "session-1") return { data: [{ id: "child-1" }, { id: "child-1" }] }
+      if (args.sessionID === "child-1") return { data: [{ id: "session-1" }] }
+      return { data: [] }
+    })
+    const aborted: string[] = []
+    const abort = mock(async (args: { sessionID: string; directory?: string }) => {
+      aborted.push(args.sessionID)
+    })
+
+    const result = await stopGoalRun(
+      {
+        client: { post },
+        session: { abort, children },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(aborted).toEqual(["child-1", "session-1", "child-1", "session-1"])
   })
 
   test("does not abort when the session is already idle", async () => {
@@ -2438,9 +2540,11 @@ describe("stopGoalRun", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "native goal control bridge is unavailable; active session tree aborted",
+      error: "native goal control bridge is unavailable; active session tree aborted before control and after control",
     })
     expect(aborted).toEqual([
+      { sessionID: "child-1", directory: "C:\\repo\\project" },
+      { sessionID: "session-1", directory: "C:\\repo\\project" },
       { sessionID: "child-1", directory: "C:\\repo\\project" },
       { sessionID: "session-1", directory: "C:\\repo\\project" },
     ])
@@ -2472,6 +2576,43 @@ describe("pauseGoalRun", () => {
       },
     })
     expect(abort).toHaveBeenCalledWith({ sessionID: "session-1", directory: "C:\\repo\\project" })
+  })
+
+  test("aborts the run tree before and after pausing", async () => {
+    const events: string[] = []
+    const post = mock(async () => {
+      events.push("pause")
+      return { data: { title: "Goal control", output: "ok", metadata: {} } }
+    })
+    const children = mock(async (args: { sessionID: string; directory?: string }) => {
+      events.push(`children:${args.sessionID}`)
+      if (args.sessionID === "session-1") return { data: [{ id: "child-1" }] }
+      return { data: [] }
+    })
+    const abort = mock(async (args: { sessionID: string; directory?: string }) => {
+      events.push(`abort:${args.sessionID}`)
+    })
+
+    const result = await pauseGoalRun(
+      {
+        client: { post },
+        session: { abort, children },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(events).toEqual([
+      "children:session-1",
+      "children:child-1",
+      "abort:child-1",
+      "abort:session-1",
+      "pause",
+      "children:session-1",
+      "children:child-1",
+      "abort:child-1",
+      "abort:session-1",
+    ])
   })
 
   test("does not abort when the session is already idle (plain soft pause)", async () => {
@@ -2507,7 +2648,10 @@ describe("pauseGoalRun", () => {
   })
 
   test("still aborts the active turn when goal pause fails", async () => {
-    const abort = mock(async () => undefined)
+    const aborted: Array<{ sessionID: string }> = []
+    const abort = mock(async (args: { sessionID: string }) => {
+      aborted.push(args)
+    })
 
     const result = await pauseGoalRun(
       {
@@ -2518,9 +2662,9 @@ describe("pauseGoalRun", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "native goal control bridge is unavailable; active session tree aborted",
+      error: "native goal control bridge is unavailable; active session tree aborted before control and after control",
     })
-    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1" })
+    expect(aborted).toEqual([{ sessionID: "session-1" }, { sessionID: "session-1" }])
   })
 })
 

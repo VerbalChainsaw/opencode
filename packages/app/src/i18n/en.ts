@@ -699,6 +699,8 @@ export const dict = {
   "session.goal.chainBuilder.stat.turnLimitAria": "Chain turn limit",
   "session.goal.chainBuilder.stat.timeLimitAria": "Chain time limit",
   "session.goal.chainBuilder.stat.actionsAria": "{{count}} chain actions",
+  "session.goal.chainBuilder.currentStep": "Current step",
+  "session.goal.chainBuilder.currentStepAria": "Current step {{current}} of {{total}}",
   "session.goal.chainBuilder.budget.ready": "Within limits",
   "session.goal.chainBuilder.budget.turnsOver": "Turns over",
   "session.goal.chainBuilder.budget.timeOver": "Time over",

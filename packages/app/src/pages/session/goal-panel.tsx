@@ -3199,6 +3199,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       return Math.max(0, Math.min(runningChain.current, Math.max(0, runningChain.steps.length - 1)))
     return visibleStepCount() > 0 ? 0 : -1
   })
+  const runningStep = createMemo(() => {
+    const index = runningStepIndex()
+    if (index < 0) return
+    return visibleChainSteps()[index]
+  })
   const stepRunState = (index: number): ChainStepRunState => {
     if (!liveGoal()) return "draft"
     const current = runningStepIndex()
@@ -3475,12 +3480,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             <div
               data-testid="chain-workspace"
               data-component="goal-chain-builder-workspace"
-              class="flex min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden"
+              class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-start gap-3 overflow-x-hidden"
             >
               <section
                 data-testid="goal-status-card"
                 data-component="goal-status-card"
-                class={unarchivedTerminalGoal() ? "h-fit" : "hidden"}
+                class={unarchivedTerminalGoal() ? "col-span-full h-fit" : "hidden"}
             >
             <Show when={unarchivedTerminalGoal()} keyed>
               {(terminal) => {
@@ -3677,7 +3682,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <span class="min-w-0 flex-1">{language.t("session.goal.backendUnreachable")}</span>
                 </div>
               </Show>
-              <div class="flex min-w-0 shrink-0 flex-col gap-3">
+              <div class="flex min-w-0 flex-col gap-3">
               <GoalConsoleSection
                 zone="chain-builder"
                 title={language.t("session.goal.chainBuilder.shortTitle")}
@@ -3995,17 +4000,59 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             {language.t("session.goal.chainBuilder.stalledHint")} {language.t("session.goal.chainBuilder.stalledIdleMinutes", { minutes: liveRunIdleMinutes() })}
                           </div>
                         </Show>
+                        <Show when={runningStep()} keyed>
+                          {(step) => {
+                            const title = () => cleanText(step.label || step.condition || language.t("session.goal.chainBuilder.steps"))
+                            const detail = () => cleanText(step.condition || step.label || "")
+                            return (
+                              <div
+                                data-component="goal-running-now-step"
+                                class="mb-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2 py-1.5"
+                                style={{
+                                  "border-color": "rgba(96, 165, 250, 0.22)",
+                                  "background-color": "rgba(59, 130, 246, 0.06)",
+                                  "box-shadow": "inset 0 1px 0 rgba(147, 197, 253, 0.08)",
+                                }}
+                              >
+                                <div class="min-w-0">
+                                  <div class="truncate text-[9px] font-black uppercase tracking-[0.08em] text-blue-100/62">
+                                    {language.t("session.goal.chainBuilder.currentStep")}
+                                  </div>
+                                  <div class="mt-0.5 truncate text-[12px] font-semibold leading-4 text-blue-50/92" title={detail() || title()}>
+                                    {title()}
+                                  </div>
+                                </div>
+                                <div
+                                  class="grid h-8 min-w-[64px] shrink-0 place-items-center rounded-md border px-2 text-[14px] font-black leading-none tabular-nums text-blue-50"
+                                  style={{
+                                    "border-color": "rgba(147, 197, 253, 0.22)",
+                                    "background-color": "rgba(15, 23, 42, 0.34)",
+                                  }}
+                                  aria-label={language.t("session.goal.chainBuilder.currentStepAria", {
+                                    current: runningStepIndex() + 1,
+                                    total: Math.max(visibleStepCount(), 1),
+                                  })}
+                                >
+                                  <span>
+                                    {runningStepIndex() + 1}
+                                    <span class="text-[10px] font-bold text-blue-100/52">/{Math.max(visibleStepCount(), 1)}</span>
+                                  </span>
+                                </div>
+                              </div>
+                            )
+                          }}
+                        </Show>
                         <div
                           data-component="goal-running-metric-strip"
                           class="mt-1.5 grid min-w-0 grid-cols-[repeat(auto-fit,minmax(112px,1fr))] gap-1"
                         >
                           <div
                             data-component="goal-running-clock"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded-md border px-2"
                             style={isCritical(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)
                               ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(96, 165, 250, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)}%`, "background-color": burndownColor(elapsedMs() / 60_000, running.constraints.maxTimeMinutes) }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(elapsedMs() / 60_000, running.constraints.maxTimeMinutes)}%`, "background-color": burndownColor(elapsedMs() / 60_000, running.constraints.maxTimeMinutes) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-blue-200/70">
                               {language.t("session.goal.metric.time")}
                             </div>
@@ -4016,11 +4063,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                           <div
                             data-component="goal-running-turns"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded-md border px-2"
                             style={isCritical(running.turnsEvaluated, running.constraints.maxTurns)
                               ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(167, 139, 250, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(running.turnsEvaluated, running.constraints.maxTurns)}%`, "background-color": burndownColor(running.turnsEvaluated, running.constraints.maxTurns) }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(running.turnsEvaluated, running.constraints.maxTurns)}%`, "background-color": burndownColor(running.turnsEvaluated, running.constraints.maxTurns) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-violet-200/70">
                               {language.t("session.goal.metric.turns")}
                             </div>
@@ -4031,10 +4078,10 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                           <div
                             data-component="goal-running-step"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded-md border px-2"
                             style={{ "border-color": "rgba(134, 239, 172, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(runningStepIndex() + 1, Math.max(visibleStepCount(), 1))}%`, "background-color": "rgb(134, 239, 172)" }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(runningStepIndex() + 1, Math.max(visibleStepCount(), 1))}%`, "background-color": "rgb(134, 239, 172)" }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/70">
                               {language.t("session.goal.metric.chain")}
                             </div>
@@ -4045,11 +4092,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                           <div
                             data-component="goal-running-tokens"
-                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded border px-2"
+                            class="relative flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden rounded-md border px-2"
                             style={isCritical(running.tokensUsed, running.constraints.maxTokens)
                               ? { "border-color": "rgba(248, 113, 113, 0.4)", "box-shadow": "inset 0 0 8px rgba(248, 113, 113, 0.25)" } : { "border-color": "rgba(251, 191, 36, 0.2)" }}
                           >
-                            <div class="absolute inset-y-0 left-0 rounded-l opacity-20 transition-[width]" style={{ width: `${burndownPct(running.tokensUsed, running.constraints.maxTokens)}%`, "background-color": burndownColor(running.tokensUsed, running.constraints.maxTokens) }} />
+                            <div class="absolute inset-y-0 left-0 rounded-l-md opacity-20 transition-[width]" style={{ width: `${burndownPct(running.tokensUsed, running.constraints.maxTokens)}%`, "background-color": burndownColor(running.tokensUsed, running.constraints.maxTokens) }} />
                             <div class="relative truncate text-[9px] font-bold uppercase tracking-[0.06em] text-amber-200/70">
                               {language.t("session.goal.metric.tokens")}
                             </div>
@@ -4064,7 +4111,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <Show when={visibleStepCount() > 1}>
                           <div
                             data-component="goal-chain-minimap"
-                            class="mb-1.5 flex items-center gap-1 rounded border px-2.5 py-1.5"
+                            class="mb-1.5 flex items-center gap-1 rounded-md border px-2.5 py-1.5"
                             style={{ "background-color": "rgba(16, 185, 129, 0.05)", "border-color": "rgba(110, 231, 183, 0.1)" }}
                           >
                             <span class="mr-1 text-[9px] font-bold uppercase tracking-[0.06em] text-emerald-200/55">
@@ -4095,7 +4142,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         </Show>
                         <div
                           data-component="goal-running-progress-hero"
-                          class="rounded border px-2.5 py-2 text-right"
+                          class="rounded-md border px-2.5 py-2 text-right"
                           style={{ "border-color": "rgba(110, 231, 183, 0.12)", "background-color": "rgba(16, 185, 129, 0.04)" }}
                         >
                           <div class="flex items-center justify-between gap-2">
@@ -5316,7 +5363,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                 <aside
                   data-component="goal-method-library-rail"
-                  class="grid min-w-0 shrink-0 grid-cols-1 gap-2"
+                  class="grid min-w-0 grid-cols-1 gap-2"
                 >
                   <GoalConsoleSection
                     zone="action-library"

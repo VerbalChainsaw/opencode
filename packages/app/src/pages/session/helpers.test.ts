@@ -9,6 +9,7 @@ import {
   getTabReorderIndex,
   goalTabCloseable,
   shouldAutoOpenGoalTab,
+  shouldDefaultOpenGoalTab,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
 } from "./helpers"
@@ -18,6 +19,52 @@ describe("shouldShowFileTree", () => {
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: false, opened: true })).toBe(false)
     expect(shouldShowFileTree({ desktopV2: false, showFileTree: false, opened: true })).toBe(true)
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: true, opened: true })).toBe(true)
+  })
+})
+
+describe("shouldDefaultOpenGoalTab", () => {
+  test("opens the Goal tab once per restored session when the Goal surface is visible", () => {
+    expect(
+      shouldDefaultOpenGoalTab({
+        sessionKey: "workspace/session-a",
+        defaultedSessionKey: null,
+        goalVisible: true,
+      }),
+    ).toBe(true)
+
+    expect(
+      shouldDefaultOpenGoalTab({
+        sessionKey: "workspace/session-a",
+        defaultedSessionKey: "workspace/session-a",
+        goalVisible: true,
+      }),
+    ).toBe(false)
+
+    expect(
+      shouldDefaultOpenGoalTab({
+        sessionKey: "workspace/session-b",
+        defaultedSessionKey: "workspace/session-a",
+        goalVisible: true,
+      }),
+    ).toBe(true)
+  })
+
+  test("does not open when there is no session key or visible Goal surface", () => {
+    expect(
+      shouldDefaultOpenGoalTab({
+        sessionKey: undefined,
+        defaultedSessionKey: null,
+        goalVisible: true,
+      }),
+    ).toBe(false)
+
+    expect(
+      shouldDefaultOpenGoalTab({
+        sessionKey: "workspace/session-a",
+        defaultedSessionKey: null,
+        goalVisible: false,
+      }),
+    ).toBe(false)
   })
 })
 

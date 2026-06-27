@@ -571,6 +571,8 @@ export const dict = {
   "session.goal.chainBuilder.stat.turnLimitAria": "Chain turn limit",
   "session.goal.chainBuilder.stat.timeLimitAria": "Chain time limit",
   "session.goal.chainBuilder.stat.actionsAria": "{{count}} chain actions",
+  "session.goal.chainBuilder.currentStep": "当前步骤",
+  "session.goal.chainBuilder.currentStepAria": "当前第 {{current}} / {{total}} 步",
   "session.goal.chainBuilder.budget.ready": "未超限",
   "session.goal.chainBuilder.budget.turnsOver": "轮次超限",
   "session.goal.chainBuilder.budget.timeOver": "时间超限",

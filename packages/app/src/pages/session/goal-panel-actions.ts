@@ -152,14 +152,21 @@ function childSessionIDs(response: unknown) {
 }
 
 async function collectSessionTreeIDs(client: GoalCommandClient, input: GoalSessionScope) {
-  if (!client.session?.children) return [input.sessionID]
+  if (!client.session?.children) return { ids: [input.sessionID], warnings: [] }
   const ids = [input.sessionID]
   const seen = new Set(ids)
   const queue = [input.sessionID]
+  const warnings: string[] = []
   for (let i = 0; i < queue.length; i++) {
     const parentID = queue[i]
     if (!parentID) continue
-    const response = await client.session.children(goalSessionScope(input, parentID))
+    let response: unknown
+    try {
+      response = await client.session.children(goalSessionScope(input, parentID))
+    } catch (error) {
+      warnings.push(`${parentID} children were not discovered: ${errorText(error)}`)
+      continue
+    }
     for (const childID of childSessionIDs(response)) {
       if (seen.has(childID)) continue
       seen.add(childID)
@@ -167,27 +174,21 @@ async function collectSessionTreeIDs(client: GoalCommandClient, input: GoalSessi
       queue.push(childID)
     }
   }
-  return ids
+  return { ids, warnings }
 }
 
 async function abortActiveSessionTree(
   client: GoalCommandClient,
   input: GoalSessionScope,
-  label: "Goal cleared" | "Goal paused",
 ) {
   if (!client.session?.abort) {
-    return { ok: true, warning: `${label}, but this OpenCode client cannot abort the active turn.` } as const
+    return { attempted: false, warnings: ["this OpenCode client cannot abort the active turn."] } as const
   }
 
-  let ids = [input.sessionID]
-  const warnings: string[] = []
-  try {
-    ids = await collectSessionTreeIDs(client, input)
-  } catch (error) {
-    warnings.push(`child session discovery failed: ${errorText(error)}`)
-  }
+  const tree = await collectSessionTreeIDs(client, input)
+  const warnings = [...tree.warnings]
 
-  const abortIDs = [...ids].reverse()
+  const abortIDs = [...tree.ids].reverse()
   for (const sessionID of abortIDs) {
     try {
       await client.session.abort(goalSessionScope(input, sessionID))
@@ -196,10 +197,55 @@ async function abortActiveSessionTree(
     }
   }
 
-  if (warnings.length > 0) {
-    return { ok: true, warning: `${label}, but ${warnings.join("; ")}` } as const
+  return { attempted: true, warnings } as const
+}
+
+function uniqueMessages(items: string[]) {
+  return [...new Set(items.filter(Boolean))]
+}
+
+function formatAbortWarning(label: "Goal cleared" | "Goal paused", warnings: string[]) {
+  return `${label}, but ${uniqueMessages(warnings).join("; ")}`
+}
+
+async function executeGoalCommandWithHardAbort(
+  client: GoalCommandClient,
+  input: {
+    sessionID: string
+    directory?: string
+    workspace?: string
+    abortActiveTurn?: boolean
+  },
+  command: "clear" | "pause",
+  label: "Goal cleared" | "Goal paused",
+) {
+  if (!input.abortActiveTurn) {
+    return executeGoalCommand(client, {
+      sessionID: input.sessionID,
+      arguments: command,
+      directory: input.directory,
+      workspace: input.workspace,
+    })
   }
-  return { ok: true } as const
+
+  const before = await abortActiveSessionTree(client, input)
+  const result = await executeGoalCommand(client, {
+    sessionID: input.sessionID,
+    arguments: command,
+    directory: input.directory,
+    workspace: input.workspace,
+  })
+  const after = before.attempted ? await abortActiveSessionTree(client, input) : { attempted: false, warnings: [] }
+  const warnings = uniqueMessages([...before.warnings, ...after.warnings])
+  if (result.ok) {
+    if (warnings.length > 0) return { ok: true, warning: formatAbortWarning(label, warnings) } as const
+    return { ok: true } as const
+  }
+
+  if (warnings.length > 0) {
+    return { ok: false, error: `${result.error}; ${formatAbortWarning(label, warnings)}` } as const
+  }
+  return { ok: false, error: `${result.error}; active session tree aborted before control and after control` } as const
 }
 
 export function goalSteerPrompt(note: string) {
@@ -318,22 +364,7 @@ export async function stopGoalRun(
     abortActiveTurn?: boolean
   },
 ) {
-  const result = await executeGoalCommand(client, {
-    sessionID: input.sessionID,
-    arguments: "clear",
-    directory: input.directory,
-    workspace: input.workspace,
-  })
-  if (!result.ok) {
-    if (!input.abortActiveTurn) return result
-    const abortResult = await abortActiveSessionTree(client, input, "Goal cleared")
-    return {
-      ok: false,
-      error: abortResult.warning ? `${result.error}; ${abortResult.warning}` : `${result.error}; active session tree aborted`,
-    }
-  }
-  if (!input.abortActiveTurn) return result
-  return abortActiveSessionTree(client, input, "Goal cleared")
+  return executeGoalCommandWithHardAbort(client, input, "clear", "Goal cleared")
 }
 
 export async function resetGoalWorkspaceState(
@@ -365,22 +396,7 @@ export async function pauseGoalRun(
     abortActiveTurn?: boolean
   },
 ) {
-  const result = await executeGoalCommand(client, {
-    sessionID: input.sessionID,
-    arguments: "pause",
-    directory: input.directory,
-    workspace: input.workspace,
-  })
-  if (!result.ok) {
-    if (!input.abortActiveTurn) return result
-    const abortResult = await abortActiveSessionTree(client, input, "Goal paused")
-    return {
-      ok: false,
-      error: abortResult.warning ? `${result.error}; ${abortResult.warning}` : `${result.error}; active session tree aborted`,
-    }
-  }
-  if (!input.abortActiveTurn) return result
-  return abortActiveSessionTree(client, input, "Goal paused")
+  return executeGoalCommandWithHardAbort(client, input, "pause", "Goal paused")
 }
 
 export async function steerGoalRun(client: GoalCommandClient, input: GoalPromptAsyncInput, note: string) {

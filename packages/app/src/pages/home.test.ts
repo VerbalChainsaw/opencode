@@ -100,6 +100,18 @@ describe("home mission-control contract", () => {
     expect(await uses("latestGoalRecord")).toBe(true)
   })
 
+  test("home quick actions prioritize Open Goal when goal state exists", async () => {
+    const src = await home()
+    const actionsStart = src.indexOf('data-component="home-actions-panel"')
+    const actionsEnd = src.indexOf('data-component="home-attention-panel"', actionsStart)
+    expect(actionsStart).toBeGreaterThan(-1)
+    expect(actionsEnd).toBeGreaterThan(actionsStart)
+    const actions = src.slice(actionsStart, actionsEnd)
+    expect(actions).toContain('data-action="home-sidebar-open-goal"')
+    expect(actions).toMatch(/data-action="home-sidebar-open-goal"[\s\S]*variant=\{latestGoalRecord\(\) \? "contrast" : "ghost-muted"\}/)
+    expect(actions.indexOf('data-action="home-sidebar-open-goal"')).toBeLessThan(actions.indexOf('data-action="home-sidebar-new-session"'))
+  })
+
   test("home opening window has the OpenCode brand strip and primary action buttons", async () => {
     const src = await home()
     expect(src).toContain('data-component="home-brand-strip"')
@@ -398,7 +410,7 @@ describe("home mission-control contract", () => {
     const src = await home()
     const tree = src.slice(src.indexOf('data-component="home-project-tree"'), src.indexOf('data-component="home-project-row"'))
     expect(tree).toContain('data-component="home-project-tree"')
-    expect(tree).toContain("rounded-[10px]")
+    expect(tree).toContain("rounded-lg")
     expect(tree).toContain("flex-1")
     expect(tree).toContain("overflow-hidden")
     expect(src).toContain("overflow-y-auto")
@@ -407,5 +419,16 @@ describe("home mission-control contract", () => {
     expect(src).toContain("data-[selected]:border-l-sky-400")
     expect(src).toContain("border border-transparent")
     expect(src).toContain("props.unseenCount > 0")
+  })
+
+  test("home polish uses consistent rounded panels and neutral warning surfaces", async () => {
+    const src = await home()
+    expect(src).toContain('data-component="home-actions-panel" class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01')
+    expect(src).toContain('data-component="home-attention-panel" class="rounded-lg border border-v2-border-border-base border-l-amber-400/60 bg-v2-background-bg-layer-01')
+    expect(src).toContain('data-component="home-live-board"')
+    expect(src).toContain("rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01")
+    expect(src).not.toMatch(/rounded-\[(10|12|6|5|3)px\]/)
+    expect(src).not.toContain("bg-amber-500/8")
+    expect(src).not.toContain("bg-amber-500/12")
   })
 })
