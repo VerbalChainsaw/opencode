@@ -122,6 +122,7 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     status: "active",
     startedAt: 0,
     turnsEvaluated: 0,
+    tokensUsed: 0,
     constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
   }
 
@@ -129,7 +130,8 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     const { isGoalStateShape } = await load()
     // The shape guard requires these fields to be present and well-typed:
     // id, condition, status (in the active/paused/achieved/cleared set),
-    // turnsEvaluated, startedAt, constraints{maxTurns,maxTimeMinutes,maxTokens}
+    // turnsEvaluated, tokensUsed, startedAt,
+    // constraints{maxTurns,maxTimeMinutes,maxTokens}
     expect(isGoalStateShape(validMinimalState)).toBe(true)
   })
 
@@ -165,6 +167,14 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     const { isGoalStateShape } = await load()
     expect(isGoalStateShape({ ...validMinimalState, turnsEvaluated: -1 })).toBe(false)
     expect(isGoalStateShape({ ...validMinimalState, startedAt: -1 })).toBe(false)
+  })
+
+  test("rejects missing or invalid token readouts", async () => {
+    const { isGoalStateShape } = await load()
+    const { tokensUsed, ...missingTokensUsed } = validMinimalState
+    expect(isGoalStateShape(missingTokensUsed)).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, tokensUsed: -1 })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, tokensUsed: Number.NaN })).toBe(false)
   })
 
   test("rejects constraint values outside the documented renderer contract", async () => {
@@ -263,7 +273,7 @@ describe("readGoalFromSdk (file.read defensive layer)", () => {
             data: {
               type: "text",
               content:
-                '{"id":"x","condition":"y","status":"active","startedAt":0,"turnsEvaluated":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
+                '{"id":"x","condition":"y","status":"active","startedAt":0,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
             },
           }),
         },
@@ -280,7 +290,7 @@ describe("readGoalFromSdk (file.read defensive layer)", () => {
       client: {
         file: {
           read: async () => ({
-            data: '{"id":"x","condition":"y","status":"active","startedAt":0,"turnsEvaluated":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
+            data: '{"id":"x","condition":"y","status":"active","startedAt":0,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":1,"maxTimeMinutes":1,"maxTokens":1}}',
           }),
         },
       },

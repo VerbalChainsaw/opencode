@@ -120,6 +120,7 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   if (typeof s.condition !== "string" || !s.condition.trim()) return false
   if (typeof s.status !== "string" || !GOAL_STATUSES.has(s.status)) return false
   if (!isFiniteNumberInRange(s.turnsEvaluated, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (!isFiniteNumberInRange(s.tokensUsed, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.startedAt, 0, Number.MAX_SAFE_INTEGER)) return false
   const c = s.constraints as Record<string, unknown> | undefined
   if (!c || typeof c !== "object") return false
