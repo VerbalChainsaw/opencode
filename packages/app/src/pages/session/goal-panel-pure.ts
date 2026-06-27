@@ -122,6 +122,7 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   if (!isFiniteNumberInRange(s.turnsEvaluated, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.tokensUsed, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.startedAt, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (s.completedAt !== null && !isFiniteNumberInRange(s.completedAt, 0, Number.MAX_SAFE_INTEGER)) return false
   const c = s.constraints as Record<string, unknown> | undefined
   if (!c || typeof c !== "object") return false
   if (

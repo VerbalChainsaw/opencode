@@ -1542,6 +1542,7 @@ describe("isGoalStateShape", () => {
         condition: "y",
         status: "active",
         startedAt: 0,
+        completedAt: null,
         turnsEvaluated: 0,
         tokensUsed: 0,
         constraints: { maxTurns: 5, maxTimeMinutes: 10, maxTokens: 1000 },
@@ -1829,7 +1830,7 @@ describe("readGoalFromSdk", () => {
   // pinning the behavior guards future regressions.
   test("prototype-pollution-style payloads are rejected by isGoalStateShape", () => {
     const polluted = JSON.parse(
-      '{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"id":"x","condition":"y","status":"active","startedAt":0,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}',
+      '{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"id":"x","condition":"y","status":"active","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}',
     )
     // Shape-wise this is valid, so isGoalStateShape returns true —
     // which is correct: the validator checks shape, not origin. The
@@ -1908,7 +1909,7 @@ describe("readGoalFromSdk", () => {
   // isGoalStateShape validates normally.
   test("duplicate JSON keys resolve to last value and validate normally", async () => {
     const duped =
-      '{"status":"active","status":"cleared","id":"x","condition":"y","startedAt":0,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}'
+      '{"status":"active","status":"cleared","id":"x","condition":"y","startedAt":0,"completedAt":null,"turnsEvaluated":0,"tokensUsed":0,"constraints":{"maxTurns":5,"maxTimeMinutes":10,"maxTokens":1000}}'
     const sdk = mockSdk({ read: async () => ({ data: duped }) })
     const { state, corrupt } = await readGoalFromSdk(sdk)
     expect(corrupt).toBe(false)
