@@ -3695,9 +3695,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 class="relative z-10 shrink-0 border-b px-2.5 py-1"
                 style={chainBuilderHeaderStyle(chainBudgetStatus(), !!liveGoal())}
               >
-                <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:grid-cols-[minmax(260px,1fr)_auto]">
+                <div class="flex min-w-0 flex-wrap items-center justify-between gap-2">
                   <div
-                    class="flex min-w-0 items-center gap-1.5"
+                    class="flex min-w-[160px] flex-1 flex-wrap items-center gap-1.5"
                     title={liveGoal() ? chainRunStateSubtitle() : language.t("session.goal.chainBuilder.subtitle")}
                   >
                     <span
@@ -3710,7 +3710,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       }}
                       aria-hidden
                     />
-                    <div class="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-sky-50/85">
+                    <div class="shrink-0 text-[12px] font-bold uppercase tracking-[0.12em] text-sky-50/85">
                       {liveGoal() ? language.t("session.goal.chainBuilder.runningHeader") : chainRunStateLabel()}
                     </div>
                     <span
@@ -3738,13 +3738,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     </Show>
                     <Show when={liveGoal()}>
                       {(goal) => (
-                        <span class="min-w-0 truncate text-[11px] font-semibold text-text-weak">
+                        <span class="min-w-0 flex-1 basis-[120px] truncate text-[11px] font-semibold text-text-weak">
                           {cleanText(goal().condition)}
                         </span>
                       )}
                     </Show>
                   </div>
-                  <div data-component="goal-target-toolbar" class="flex shrink-0 items-center justify-end gap-1.5">
+                  <div data-component="goal-target-toolbar" class="flex min-w-[160px] flex-1 flex-wrap items-center justify-end gap-1.5">
                     <ActionButton
                       label={primaryRunLabel()}
                       variant={liveGoal() ? "secondary" : "primary"}
@@ -3850,7 +3850,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     >
                     <div
                       data-component="goal-chain-compact-stats"
-                      class="grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-3"
+                      class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-1.5"
                     >
                     <label
                       data-component="goal-chain-compact-stat"
