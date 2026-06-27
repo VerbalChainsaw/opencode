@@ -203,6 +203,22 @@ describe("home mission-control contract", () => {
     expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?loading=\{goalLoad\.isLoading/)
   })
 
+  test("home metric details switch to idle copy when counts are zero", async () => {
+    const src = await home()
+    expect(src).toContain("liveSessionDetail")
+    expect(src).toContain("activeGoalDetail")
+    expect(src).toContain("attentionDetail")
+    expect(src).toContain('language.t("home.metrics.liveSessions.detail.idle")')
+    expect(src).toContain('language.t("home.metrics.activeGoals.detail.idle")')
+    expect(src).toContain('language.t("home.metrics.needsAttention.detail.clear")')
+
+    const strip = src.match(/data-component="home-metric-strip"[\s\S]*?<\/div>\s*<\/div>/)
+    expect(strip).toBeTruthy()
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?detail=\{liveSessionDetail\(\)\}/)
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?detail=\{activeGoalDetail\(\)\}/)
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?detail=\{attentionDetail\(\)\}/)
+  })
+
   test("Needs Attention is backed by actionable session records", async () => {
     // Needs Attention used to be a vague project-level unseen notification
     // count. The home board needs queue-style records with reasons so the
@@ -214,7 +230,7 @@ describe("home mission-control contract", () => {
 
     const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
     expect(attentionCard).toBeTruthy()
-    expect(attentionCard![0]).toContain("attentionRecords().length")
+    expect(attentionCard![0]).toContain("attentionCount()")
 
     const aside = src.match(/<For each=\{attentionRecords\(\)\.slice\(0, 3\)\}>[\s\S]{0,2500}/)
     expect(aside).toBeTruthy()

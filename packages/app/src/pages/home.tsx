@@ -265,6 +265,16 @@ function HomeDesign() {
       goalAttentionRecords(),
     )
   })
+  const attentionCount = createMemo(() => attentionRecords().length)
+  const liveSessionDetail = createMemo(() =>
+    liveSessionCount() > 0 ? language.t("home.metrics.liveSessions.detail") : language.t("home.metrics.liveSessions.detail.idle"),
+  )
+  const activeGoalDetail = createMemo(() =>
+    activeGoalCount() > 0 ? language.t("home.metrics.activeGoals.detail") : language.t("home.metrics.activeGoals.detail.idle"),
+  )
+  const attentionDetail = createMemo(() =>
+    attentionCount() > 0 ? language.t("home.metrics.needsAttention.detail") : language.t("home.metrics.needsAttention.detail.clear"),
+  )
   const latestRecord = createMemo(() => records()[0])
   const latestGoalRecord = createMemo(() => activeGoalRecords()[0] ?? null)
 
@@ -617,7 +627,7 @@ function HomeDesign() {
                 label={language.t("home.metrics.liveSessions")}
                 value={String(liveSessionCount())}
                 loading={sessionLoad.isLoading && sessionLoad.data === undefined}
-                detail={language.t("home.metrics.liveSessions.detail")}
+                detail={liveSessionDetail()}
                 icon="status-active"
                 disabled={liveSessionCount() === 0 || (sessionLoad.isLoading && sessionLoad.data === undefined)}
                 onClick={() => {
@@ -629,19 +639,19 @@ function HomeDesign() {
                 label={language.t("home.metrics.activeGoals")}
                 value={String(activeGoalCount())}
                 loading={goalLoad.isLoading && goalLoad.data === undefined}
-                detail={language.t("home.metrics.activeGoals.detail")}
+                detail={activeGoalDetail()}
                 icon="status"
                 disabled={goalLoad.isLoading && goalLoad.data === undefined}
                 onClick={() => openGoalsDialog()}
               />
               <HomeMetricCard
                 label={language.t("home.metrics.needsAttention")}
-                value={String(attentionRecords().length)}
+                value={String(attentionCount())}
                 loading={goalLoad.isLoading && goalLoad.data === undefined}
-                detail={language.t("home.metrics.needsAttention.detail")}
+                detail={attentionDetail()}
                 icon="help"
                 tone="warning"
-                disabled={attentionRecords().length === 0 || (goalLoad.isLoading && goalLoad.data === undefined)}
+                disabled={attentionCount() === 0 || (goalLoad.isLoading && goalLoad.data === undefined)}
                 onClick={() => openAttentionDialog()}
               />
             </div>
