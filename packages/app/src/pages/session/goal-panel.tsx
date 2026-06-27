@@ -60,11 +60,11 @@ import {
   chainStartControlState,
   chainMatchesGoal,
   chainStartPayload,
+  chainStepRuntimeLabels,
   chainStepFromTemplate,
   chainStepVisibleSourceForState,
   resolveStepConditionWithObjective,
   cleanText,
-  completionRuleTranslationKey,
   readHandoffFromSdk,
   readGoalFromSdk,
   removeVisibleDraftStep,
@@ -1258,10 +1258,6 @@ function hasVerificationCommand(input: ActionDescriptor) {
   return typeof input.command === "string" && input.command.trim().length > 0
 }
 
-function completionRuleKey(input: ActionDescriptor) {
-  return completionRuleTranslationKey(input)
-}
-
 function completionRuleClass(input: ActionDescriptor) {
   return hasVerificationCommand(input)
     ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
@@ -2239,18 +2235,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const sessionAgentLabel = () =>
     agentOptions().find((option) => option.mode === "primary")?.label ||
     language.t("session.goal.template.sessionDefaultAgent")
-  const stepRuntimeModelLabel = (step: GoalChainDraftStep) => modelLabel(step.model) || sessionModelLabel()
-  const stepRuntimeAgentLabel = (step: GoalChainDraftStep) => agentLabel(step.agent) || sessionAgentLabel()
-  const stepRuntimeSkillLabel = (step: GoalChainDraftStep) => {
-    const count = step.skills?.length ?? 0
-    if (count <= 0) return language.t("session.goal.template.noPinnedSkills")
-    if (count === 1) return step.skills?.[0] ?? language.t("session.goal.template.skillCount", { count: 1 })
-    return language.t("session.goal.template.skillCount", { count })
-  }
-  const stepRuntimeTitle = (step: GoalChainDraftStep) => {
-    const skills = step.skills?.length ? step.skills.join(", ") : language.t("session.goal.template.noPinnedSkills")
-    return `${stepRuntimeAgentLabel(step)}; ${stepRuntimeModelLabel(step)}; ${skills}; ${language.t(completionRuleKey(step))}`
-  }
+  const stepRuntime = (step: GoalChainDraftStep) =>
+    chainStepRuntimeLabels({
+      step,
+      sessionAgentLabel: sessionAgentLabel(),
+      sessionModelLabel: sessionModelLabel(),
+      noPinnedSkillsLabel: language.t("session.goal.template.noPinnedSkills"),
+      skillCountLabel: (count) => language.t("session.goal.template.skillCount", { count }),
+      completionLabel: (key) => language.t(key),
+      resolveAgentLabel: agentLabel,
+      resolveModelLabel: modelLabel,
+    })
+  const stepRuntimeModelLabel = (step: GoalChainDraftStep) => stepRuntime(step).model
+  const stepRuntimeAgentLabel = (step: GoalChainDraftStep) => stepRuntime(step).agent
+  const stepRuntimeSkillLabel = (step: GoalChainDraftStep) => stepRuntime(step).skills
+  const stepRuntimeCompletionLabel = (step: GoalChainDraftStep) => stepRuntime(step).completion
+  const stepRuntimeTitle = (step: GoalChainDraftStep) => stepRuntime(step).title
   const skillOptionsForDraft = createMemo(() => {
     const seen = new Set<string>()
     const out: SkillOption[] = []
@@ -4022,6 +4022,36 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   </div>
                                   <div class="mt-0.5 truncate text-[12px] font-semibold leading-4 text-blue-50/92" title={detail() || title()}>
                                     {title()}
+                                  </div>
+                                  <div
+                                    data-component="goal-running-now-step-runtime"
+                                    class="mt-1 flex min-w-0 flex-wrap gap-1"
+                                    title={stepRuntimeTitle(step)}
+                                  >
+                                    <span class="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-blue-300/14 bg-blue-500/8 px-1.5 py-0.5 text-[9px] font-semibold leading-3 text-blue-50/82">
+                                      <span class="shrink-0 uppercase tracking-[0.04em] text-blue-100/50">
+                                        {language.t("session.goal.runtime.agent")}
+                                      </span>
+                                      <span class="min-w-0 truncate">{stepRuntimeAgentLabel(step)}</span>
+                                    </span>
+                                    <span class="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-violet-300/14 bg-violet-500/8 px-1.5 py-0.5 text-[9px] font-semibold leading-3 text-violet-50/82">
+                                      <span class="shrink-0 uppercase tracking-[0.04em] text-violet-100/50">
+                                        {language.t("session.goal.runtime.model")}
+                                      </span>
+                                      <span class="min-w-0 truncate">{stepRuntimeModelLabel(step)}</span>
+                                    </span>
+                                    <span class="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-emerald-300/14 bg-emerald-500/8 px-1.5 py-0.5 text-[9px] font-semibold leading-3 text-emerald-50/82">
+                                      <span class="shrink-0 uppercase tracking-[0.04em] text-emerald-100/50">
+                                        {language.t("session.goal.runtime.skills")}
+                                      </span>
+                                      <span class="min-w-0 truncate">{stepRuntimeSkillLabel(step)}</span>
+                                    </span>
+                                    <span class="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-amber-300/14 bg-amber-500/8 px-1.5 py-0.5 text-[9px] font-semibold leading-3 text-amber-50/82">
+                                      <span class="shrink-0 uppercase tracking-[0.04em] text-amber-100/50">
+                                        {language.t("session.goal.runtime.completion")}
+                                      </span>
+                                      <span class="min-w-0 truncate">{stepRuntimeCompletionLabel(step)}</span>
+                                    </span>
                                   </div>
                                 </div>
                                 <div

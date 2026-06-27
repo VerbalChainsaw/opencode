@@ -840,6 +840,82 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     expect(completionRuleTranslationKey({ command: "" })).toBe("session.goal.template.completionMarker")
   })
 
+  test("summarizes chain step runtime routing for the running screen", async () => {
+    const { chainStepRuntimeLabels } = await load()
+
+    const explicit = chainStepRuntimeLabels({
+      step: {
+        agent: " review ",
+        model: { providerID: "openai", modelID: "gpt-5-codex" },
+        skills: ["superpowers:test-driven-development", "frontend-testing"],
+        command: " npm test ",
+      },
+      sessionAgentLabel: "Primary agent",
+      sessionModelLabel: "Session model",
+      noPinnedSkillsLabel: "No pinned skills",
+      skillCountLabel: (count) => `${count} skills`,
+      completionLabel: (key) =>
+        key === "session.goal.template.completionShell" ? "Shell command" : "Completion marker",
+      resolveAgentLabel: (agent) => (agent === "review" ? "Review agent" : ""),
+      resolveModelLabel: (model) =>
+        model.providerID === "openai" && model.modelID === "gpt-5-codex" ? "OpenAI / GPT-5 Codex" : "",
+    })
+    expect(explicit).toEqual({
+      agent: "Review agent",
+      model: "OpenAI / GPT-5 Codex",
+      skills: "2 skills",
+      skillNames: ["superpowers:test-driven-development", "frontend-testing"],
+      completionKey: "session.goal.template.completionShell",
+      completion: "Shell command",
+      title: "Review agent; OpenAI / GPT-5 Codex; superpowers:test-driven-development, frontend-testing; Shell command",
+    })
+
+    const savedPins = chainStepRuntimeLabels({
+      step: {
+        agent: " saved-agent ",
+        model: "anthropic:claude-opus-4",
+        skills: [" saved-skill "],
+        command: "",
+      },
+      sessionAgentLabel: "Primary agent",
+      sessionModelLabel: "Session model",
+      noPinnedSkillsLabel: "No pinned skills",
+      skillCountLabel: (count) => `${count} skills`,
+      completionLabel: (key) =>
+        key === "session.goal.template.completionShell" ? "Shell command" : "Completion marker",
+      resolveAgentLabel: () => "",
+      resolveModelLabel: () => "",
+    })
+    expect(savedPins).toEqual({
+      agent: "saved-agent",
+      model: "anthropic / claude-opus-4",
+      skills: "saved-skill",
+      skillNames: ["saved-skill"],
+      completionKey: "session.goal.template.completionMarker",
+      completion: "Completion marker",
+      title: "saved-agent; anthropic / claude-opus-4; saved-skill; Completion marker",
+    })
+
+    const sessionDefaults = chainStepRuntimeLabels({
+      step: { command: "   ", skills: [] },
+      sessionAgentLabel: "Primary agent",
+      sessionModelLabel: "Session model",
+      noPinnedSkillsLabel: "No pinned skills",
+      skillCountLabel: (count) => `${count} skills`,
+      completionLabel: (key) =>
+        key === "session.goal.template.completionShell" ? "Shell command" : "Completion marker",
+    })
+    expect(sessionDefaults).toEqual({
+      agent: "Primary agent",
+      model: "Session model",
+      skills: "No pinned skills",
+      skillNames: [],
+      completionKey: "session.goal.template.completionMarker",
+      completion: "Completion marker",
+      title: "Primary agent; Session model; No pinned skills; Completion marker",
+    })
+  })
+
   test("classifies action editor controls with operator-visible disabled reasons", async () => {
     const { actionEditorControlState } = await load()
     const customTemplate = { builtin: false }

@@ -876,6 +876,62 @@ export function completionRuleTranslationKey(input: { command?: string | null })
     : "session.goal.template.completionMarker"
 }
 
+export interface ChainStepRuntimeLabels {
+  agent: string
+  model: string
+  skills: string
+  skillNames: string[]
+  completionKey: ReturnType<typeof completionRuleTranslationKey>
+  completion: string
+  title: string
+}
+
+export interface ChainStepRuntimeLabelsInput {
+  step: Pick<GoalChainDraftStep, "agent" | "model" | "skills" | "command">
+  sessionAgentLabel: string
+  sessionModelLabel: string
+  noPinnedSkillsLabel: string
+  skillCountLabel: (count: number) => string
+  completionLabel: (key: ReturnType<typeof completionRuleTranslationKey>) => string
+  resolveAgentLabel?: (agent: string) => string
+  resolveModelLabel?: (model: GoalPinnedModel) => string
+}
+
+export function chainStepRuntimeLabels(input: ChainStepRuntimeLabelsInput): ChainStepRuntimeLabels {
+  const cleanSessionAgent = cleanText(input.sessionAgentLabel).trim()
+  const cleanSessionModel = cleanText(input.sessionModelLabel).trim()
+  const noPinnedSkills = cleanText(input.noPinnedSkillsLabel).trim()
+  const agent = agentNameForRuntime(input.step.agent)
+  const agentLabel = agent
+    ? cleanText(input.resolveAgentLabel?.(agent)).trim() || agent
+    : cleanSessionAgent
+  const model = pinnedModelForRuntime(input.step.model)
+  const modelLabel = model
+    ? cleanText(input.resolveModelLabel?.(model)).trim() || `${model.providerID} / ${model.modelID}`
+    : cleanSessionModel
+  const skillNames = (input.step.skills ?? [])
+    .map((skill) => cleanText(skill).trim().slice(0, MAX_STEP_SKILL_LEN))
+    .filter(Boolean)
+  const skills =
+    skillNames.length === 0
+      ? noPinnedSkills
+      : skillNames.length === 1
+        ? skillNames[0]
+        : cleanText(input.skillCountLabel(skillNames.length)).trim() || `${skillNames.length} skills`
+  const titleSkills = skillNames.length > 0 ? skillNames.join(", ") : noPinnedSkills
+  const completionKey = completionRuleTranslationKey(input.step)
+  const completion = cleanText(input.completionLabel(completionKey)).trim()
+  return {
+    agent: agentLabel,
+    model: modelLabel,
+    skills,
+    skillNames,
+    completionKey,
+    completion,
+    title: `${agentLabel}; ${modelLabel}; ${titleSkills}; ${completion}`,
+  }
+}
+
 /**
  * Resolve a chain step's condition for execution. When the operator has typed a
  * run-level objective, it fills the `{scope}` slot in the step's raw template
