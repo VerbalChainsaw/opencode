@@ -23,6 +23,7 @@ import {
   chainStartPayload,
   chainStepVisibleAction,
   chainStepVisibleSourceForState,
+  DEFAULT_TEMPLATE_BUTTONS,
   type GoalActionDraftState,
   type GoalChainDraftStep,
 } from "./goal-panel-pure";
@@ -258,6 +259,13 @@ describe("AG-P0-04: selectRunnableChainSteps with explicit draft provenance", ()
 });
 
 describe("chain orchestration payload contracts", () => {
+  test("default action variables use operator-facing labels instead of raw scope terminology", () => {
+    for (const template of DEFAULT_TEMPLATE_BUTTONS) {
+      expect(template.variables?.scope?.description).toBeDefined();
+      expect(template.variables?.scope?.description).not.toBe("Scope");
+    }
+  });
+
   test("action draft saves runtime routing pins and limits into the reusable action", () => {
     const draft: GoalActionDraftState = {
       sourceID: "debug",

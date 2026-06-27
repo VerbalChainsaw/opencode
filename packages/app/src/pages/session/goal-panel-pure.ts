@@ -299,7 +299,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Create a concise implementation plan for {scope}. Identify the files, sequence, risks, and verification needed before changing code.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current coding request" } },
+    variables: { scope: { description: "Work target", default: "the current coding request" } },
     category: "Planning",
     tone: "violet",
     elevation: "raised",
@@ -312,7 +312,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Implement {scope} using the repository's existing patterns. Keep edits scoped, update nearby tests, and preserve unrelated work.",
     constraints: { maxTurns: 8, maxTimeMinutes: 30 },
-    variables: { scope: { description: "Scope", default: "the planned coding change" } },
+    variables: { scope: { description: "Work target", default: "the planned coding change" } },
     category: "Building",
     tone: "blue",
     elevation: "raised",
@@ -325,7 +325,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Debug {scope}. Reproduce the failure, capture evidence, isolate the root cause, add a regression test where practical, and implement the smallest fix.",
     constraints: { maxTurns: 8, maxTimeMinutes: 30 },
-    variables: { scope: { description: "Scope", default: "the reported failure" } },
+    variables: { scope: { description: "Failure target", default: "the reported failure" } },
     category: "Debugging",
     tone: "orange",
     elevation: "raised",
@@ -338,7 +338,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Run the relevant behavior tests for {scope}. Reproduce failures, fix the underlying issue, and re-run the focused test until it is clean.",
     constraints: { maxTurns: 5, maxTimeMinutes: 20 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
+    variables: { scope: { description: "Test target", default: "the current change" } },
     category: "Testing",
     tone: "emerald",
     elevation: "flat",
@@ -351,7 +351,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Validate {scope}. Run the relevant tests, typechecks, builds, or UI checks; inspect failures; and fix regressions until the verification set is clean.",
     constraints: { maxTurns: 4, maxTimeMinutes: 15 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
+    variables: { scope: { description: "Verification target", default: "the current change" } },
     category: "Testing",
     tone: "sky",
     elevation: "flat",
@@ -364,7 +364,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Review {scope}. Inspect the diff for bugs, missing tests, regressions, security issues, and operator-confusing behavior. Report concrete findings before changing code.",
     constraints: { maxTurns: 4, maxTimeMinutes: 15 },
-    variables: { scope: { description: "Scope", default: "the current diff" } },
+    variables: { scope: { description: "Review target", default: "the current diff" } },
     category: "Review",
     tone: "fuchsia",
     elevation: "flat",
@@ -377,7 +377,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Update documentation for {scope}. Keep it concise, accurate to the implementation, and focused on commands, operator behavior, and remaining risks.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
+    variables: { scope: { description: "Documentation target", default: "the current change" } },
     category: "Documentation",
     tone: "sky",
     elevation: "flat",
@@ -390,7 +390,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Trace the wiring for {scope}. For each visible control, identify the handler, deterministic state write, model-turn boundary, error path, and verification evidence.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current UI flow" } },
+    variables: { scope: { description: "Flow target", default: "the current UI flow" } },
     category: "Review",
     tone: "blue",
     elevation: "flat",
@@ -403,7 +403,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Adversarially scan {scope}. Exercise invalid inputs, stale state, missing files, repeated clicks, interrupted turns, and upstream/downstream regressions; harden the code where needed.",
     constraints: { maxTurns: 4, maxTimeMinutes: 15 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
+    variables: { scope: { description: "Scan target", default: "the current change" } },
     category: "Review",
     tone: "fuchsia",
     elevation: "raised",
@@ -416,7 +416,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Typecheck {scope}. Find the repository's relevant typecheck command, run it, fix type errors without broad refactors, and re-run until clean.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
+    variables: { scope: { description: "Typecheck target", default: "the current change" } },
     category: "Testing",
     tone: "emerald",
     elevation: "flat",
@@ -429,7 +429,7 @@ export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [
     condition:
       "Prepare a commit for {scope}. Review the diff, ensure verification has passed, stage only relevant files, and write a concise conventional commit message.",
     constraints: { maxTurns: 3, maxTimeMinutes: 10 },
-    variables: { scope: { description: "Scope", default: "the current change" } },
+    variables: { scope: { description: "Commit target", default: "the current change" } },
     category: "Custom",
     tone: "violet",
     elevation: "flat",

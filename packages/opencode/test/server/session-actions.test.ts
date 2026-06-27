@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, mock } from "bun:test"
 import { Effect, Layer } from "effect"
+import { BackgroundJob } from "@/background/job"
 import { Session as SessionNs } from "@/session/session"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(SessionNs.defaultLayer, httpApiLayer))
+const it = testEffect(Layer.mergeAll(SessionNs.defaultLayer, BackgroundJob.defaultLayer, httpApiLayer))
 
 afterEach(async () => {
   mock.restore()
@@ -84,6 +85,47 @@ describe("session action routes", () => {
 
         expect(res.status).toBe(200)
         expect(yield* res.json).toBe(true)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "abort route cancels descendant background subagent jobs",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const jobs = yield* BackgroundJob.Service
+        const parent = yield* Effect.acquireRelease(SessionNs.use.create({ title: "parent" }), (created) =>
+          SessionNs.use.remove(created.id).pipe(Effect.ignore),
+        )
+        const child = yield* Effect.acquireRelease(
+          SessionNs.use.create({ parentID: parent.id, title: "child" }),
+          (created) => SessionNs.use.remove(created.id).pipe(Effect.ignore),
+        )
+        const grandchild = yield* Effect.acquireRelease(
+          SessionNs.use.create({ parentID: child.id, title: "grandchild" }),
+          (created) => SessionNs.use.remove(created.id).pipe(Effect.ignore),
+        )
+
+        yield* jobs.start({
+          id: child.id,
+          type: "task",
+          metadata: { parentSessionId: parent.id, sessionId: child.id },
+          run: Effect.never,
+        })
+        yield* jobs.start({
+          id: grandchild.id,
+          type: "task",
+          metadata: { parentSessionId: child.id, sessionId: grandchild.id },
+          run: Effect.never,
+        })
+
+        const res = yield* requestInDirectory(`/session/${parent.id}/abort`, test.directory, { method: "POST" })
+
+        expect(res.status).toBe(200)
+        expect(yield* res.json).toBe(true)
+        expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
+        expect((yield* jobs.get(grandchild.id))?.status).toBe("cancelled")
       }),
     { git: true },
   )
