@@ -653,6 +653,24 @@ export function templateDraftFromButton(
   }
 }
 
+export function actionEditorDraftFromTemplate(
+  template: Pick<GoalTemplateButton, "condition" | "command" | "variables"> | undefined,
+  vars: Record<string, string> = {},
+): { prompt: string; command: string } {
+  if (!template) {
+    return { prompt: "", command: "" }
+  }
+
+  const draft = templateDraftFromButton(template, {
+    ...templateVariableDefaults(template),
+    ...vars,
+  })
+  return {
+    prompt: draft.condition,
+    command: draft.command,
+  }
+}
+
 export function referencedTemplateVariables(condition: string, command: string) {
   const out = new Set<string>()
   for (const text of [condition, command]) {

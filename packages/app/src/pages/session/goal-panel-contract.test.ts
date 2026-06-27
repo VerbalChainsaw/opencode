@@ -467,6 +467,28 @@ describe("templateButtonsFromSnapshot (dynamic quick-start template buttons)", (
     })
   })
 
+  test("seeds action editor drafts with resolved template variables", async () => {
+    const { actionEditorDraftFromTemplate } = await load()
+    const template = {
+      id: "debug-scope",
+      label: "Debug scope",
+      builtin: true,
+      condition: "Debug {scope}. Reproduce, isolate, and fix.",
+      command: "bun test --filter {scope}",
+      variables: { scope: { description: "Scope", default: "the reported failure" } },
+    }
+
+    expect(actionEditorDraftFromTemplate(template)).toEqual({
+      prompt: "Debug the reported failure. Reproduce, isolate, and fix.",
+      command: "bun test --filter the reported failure",
+    })
+    expect(actionEditorDraftFromTemplate(template, { scope: "the desktop goal dock" })).toEqual({
+      prompt: "Debug the desktop goal dock. Reproduce, isolate, and fix.",
+      command: "bun test --filter the desktop goal dock",
+    })
+    expect(actionEditorDraftFromTemplate(undefined)).toEqual({ prompt: "", command: "" })
+  })
+
   test("builds action preset drafts with only variables still referenced by condition or command", async () => {
     const { actionDraftTemplateFromState, referencedTemplateVariables } = await load()
     expect([...referencedTemplateVariables("Deploy {branch} from {scope}", "npm test -- --branch {branch}")]).toEqual([

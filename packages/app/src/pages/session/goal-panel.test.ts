@@ -947,6 +947,11 @@ describe("goal panel mission-control contracts", () => {
     expect(draftSeedStart).toBeGreaterThan(-1)
     expect(draftSeedEnd).toBeGreaterThan(draftSeedStart)
     const draftSeed = src.slice(draftSeedStart, draftSeedEnd)
+    expect(draftSeed).toContain("actionEditorDraftFromTemplate(template, vars)")
+    expect(draftSeed).toContain("prompt: draft.prompt")
+    expect(draftSeed).toContain("command: draft.command")
+    expect(draftSeed).not.toContain("prompt: template?.condition")
+    expect(draftSeed).not.toContain("command: template?.command")
     expect(draftSeed).not.toContain("setNewCommand(draft.command)")
   })
 

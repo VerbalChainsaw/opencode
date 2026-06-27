@@ -50,6 +50,7 @@ import type { GoalState } from "./goal-panel-pure"
 // consumers; this import makes them available as in-scope identifiers.
 import {
   actionEditorControlState,
+  actionEditorDraftFromTemplate,
   actionDraftTemplateFromState,
   actionIDFromLabel,
   agentNameForRuntime,
@@ -2028,14 +2029,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       .filter(Boolean)
       .join(" / ")
   }
-  const seedActionDraft = (template: GoalTemplateButton | undefined) => {
+  const seedActionDraft = (template: GoalTemplateButton | undefined, vars: Record<string, string> = {}) => {
     const c = template?.constraints
+    const draft = actionEditorDraftFromTemplate(template, vars)
     setActionDraft({
       sourceID: template?.id ?? "",
       id: template ? (template.builtin ? `${template.id}-custom` : template.id) : uniqueTemplateID("custom-action"),
       label: template?.label ?? "",
-      prompt: template?.condition ?? "",
-      command: template?.command ?? "",
+      prompt: draft.prompt,
+      command: draft.command,
       turns: typeof c?.maxTurns === "number" ? c.maxTurns : 5,
       minutes: typeof c?.maxTimeMinutes === "number" ? c.maxTimeMinutes : 20,
       category: template ? inferActionCategory(template) : "Custom",
@@ -2049,8 +2051,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const selectActionForView = (template: GoalTemplateButton) => {
     setEditingChainStepID(null)
     setSelectedTemplateID(template.id)
-    setTemplateVars(templateVariableDefaults(template))
-    seedActionDraft(template)
+    const vars = templateVariableDefaults(template)
+    setTemplateVars(vars)
+    seedActionDraft(template, vars)
   }
   createEffect(() => {
     const list = filteredTemplates()
@@ -2226,8 +2229,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (!template) {
       setSelectedTemplateID(null)
       setTemplateVars({})
+      seedActionDraft(undefined)
+      return
     }
-    seedActionDraft(template)
+    const vars = templateVariableDefaults(template)
+    setSelectedTemplateID(template.id)
+    setTemplateVars(vars)
+    seedActionDraft(template, vars)
   }
   const editTemplateDraft = (template: GoalTemplateButton) => {
     openActionEditor(template)
