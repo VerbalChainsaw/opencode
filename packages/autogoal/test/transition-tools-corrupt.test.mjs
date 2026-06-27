@@ -135,3 +135,44 @@ test("goal_restart surfaces corrupt goal state instead of reporting no active go
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("goal_webhook surfaces corrupt goal state from ctx.directory instead of reporting no active goal", async () => {
+  const serverDir = freshDir();
+  const ctxDir = freshDir();
+  try {
+    const plugin = await server({ client: makeClient(), directory: serverDir });
+    plantCorruptState(ctxDir);
+
+    const result = await plugin.tool.goal_webhook.execute(
+      { url: "https://example.test/autogoal", on: ["achieved"] },
+      { directory: ctxDir, sessionID: "ses_webhook_corrupt", agent: "build" },
+    );
+
+    assert.match(
+      String(result),
+      /goal-state\.json\.corrupt/i,
+      `goal_webhook should name the quarantined ctx.directory artifact, got: ${String(result)}`,
+    );
+    assert.doesNotMatch(
+      String(result),
+      /No active goal/i,
+      "goal_webhook must not collapse corrupt state into no-goal",
+    );
+
+    assert.equal(
+      existsSync(join(ctxDir, ".opencode", ".goal-state.json")),
+      false,
+      "goal_webhook should quarantine the corrupt ctx.directory state file",
+    );
+    const corruptArtifacts = readdirSync(join(ctxDir, ".opencode")).filter((name) => name.includes(".corrupt."));
+    assert.ok(corruptArtifacts.length > 0, "goal_webhook should leave a forensic corrupt artifact in ctx.directory");
+    assert.equal(
+      existsSync(join(serverDir, ".opencode", ".goal-state.json")),
+      false,
+      "goal_webhook must not read or write state in the server factory directory for this tool call",
+    );
+  } finally {
+    rmSync(serverDir, { recursive: true, force: true });
+    rmSync(ctxDir, { recursive: true, force: true });
+  }
+});

@@ -1152,8 +1152,8 @@ export const server: Plugin = async ({ client, directory }) => {
       .catch((err) => log("error", "notify (session message) failed", { error: String(err) }));
   }
 
-  function corruptStateNotice(reason: string): string {
-    const newest = listCorruptArtifacts(directory)[0];
+  function corruptStateNotice(reason: string, targetDirectory: string = directory): string {
+    const newest = listCorruptArtifacts(targetDirectory)[0];
     return (
       `goal state file was corrupt (${reason})` +
       `${newest ? ` and was quarantined as ${newest}` : ""}. Set a new goal after reviewing the quarantined artifact.`
@@ -2366,7 +2366,11 @@ export const server: Plugin = async ({ client, directory }) => {
           // steering note. (R5 was the only remaining unmuted race after
           // the tool-handler wrappers in clear/pause/resume.)
           return await withStateLock(ctx.directory, () => {
-            const state = readGoalState(ctx.directory);
+            const stateResult = readGoalStateResult(ctx.directory);
+            if (stateResult.kind === "corrupt") {
+              return `Cannot configure webhook for the goal because the ${corruptStateNotice(stateResult.reason, ctx.directory)}`;
+            }
+            const state = stateResult.kind === "ok" ? stateResult.value : null;
             if (!state || (state.status !== "active" && state.status !== "paused")) {
               return "No active goal to configure webhook for.";
             }
