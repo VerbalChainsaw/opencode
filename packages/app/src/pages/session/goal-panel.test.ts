@@ -793,6 +793,9 @@ describe("goal panel mission-control contracts", () => {
     expect(library).toBeTruthy()
     const librarySrc = library![0]
     expect(librarySrc).toContain('data-component="goal-method-category-tabs"')
+    expect(librarySrc).toContain("grid-cols-[repeat(auto-fit,minmax(54px,1fr))]")
+    expect(librarySrc).toContain('aria-pressed={templateCategory() === category}')
+    expect(librarySrc).toContain("title={category}")
     expect(librarySrc).toContain('data-component="goal-method-prompt-preview"')
     expect(librarySrc).toContain("grid min-h-[30px] min-w-0 grid-cols-[minmax(0,1fr)_24px_24px]")
     expect(librarySrc).toContain("class=\"grid w-full min-w-0 grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)_8px]")
@@ -843,6 +846,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("numericHighlightStyle")
     expect(src).toContain("goal-number-highlight")
     expect(src).toContain("inline-flex min-w-0 items-center justify-center truncate rounded-md border px-2")
+    expect(src).not.toMatch(/\brounded(?:\s|")/)
     expect(src).toContain('"background-color": "rgba(59, 130, 246, 0.14)"')
     expect(src).toContain('"border-color": "rgba(96, 165, 250, 0.34)"')
     expect(src).toContain('"background-color": "rgba(239, 68, 68, 0.12)"')

@@ -29,21 +29,37 @@ final result: passed
 - Electron screenshot before rail fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-audit-live.png`
 - Electron screenshot after rail fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-audit-rail-bounded.png`
 - Electron screenshot after radius consistency fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-radius-consistency.png`
+- Electron screenshot after category/text-fit fix: `C:\Users\zerop\AppData\Local\Temp\opencode-electron-goal-category-fit-20260627.png`
 - Root cause fixed in this pass: the right Actions rail was an unbounded grid. Electron measured `goal-method-library-rail` at 1151px tall in a 900px window, pushing the editor below the visible Goal workspace. The rail is now viewport-bounded at 756px in the same Electron window, with the library and editor scrolling internally.
 - Visual consistency defect fixed in this pass: live Electron computed `goal-method-row` at `0px` border radius while adjacent editor/status cells computed at `6px`. Bordered Goal controls now use explicit radius tokens (`rounded-sm`, `rounded-md`, or `rounded-lg`) instead of the generic `rounded` fallback.
+- Text-fit defect fixed in this pass: the Actions category strip forced eight cells in one row and clipped `Custom` to `Cust...` at 1440x900. The strip now uses auto-fit columns; Electron measured every category tab at 55px wide, 24px tall, `6px` radius, and `clipped: false`.
+
+**Chain stop audit evidence**
+- Desktop Stop/Pause path: `packages/app/src/pages/session/goal-panel-actions.ts` collects `session.children`, aborts children before parent, executes `clear`/`pause`, then aborts the tree again so late child turns cannot keep driving the parent.
+- Desktop bridge path: `packages/opencode/src/server/routes/instance/httpapi/handlers/experimental.ts` routes `clear`, `pause`, and `chain` through `runGoalControlStateFile`; this is the deterministic bridge used by `/experimental/goal/control/goal_control`.
+- Chain cancellation path: `packages/autogoal/src/control-state.ts` deletes `.opencode/.goal-chain.json` after a successful Desktop bridge `clear`, unless a matching handoff must preserve it for claim.
+- Late evaluation guard: `packages/autogoal/src/server.ts` re-reads the goal under `withStateLock` and requires the same goal id plus `status === "active"` before marking achieved or advancing a chain.
+- Chain advance guard: `packages/autogoal/src/goal-chain.ts` refuses to advance when the current state is `cleared` or no longer belongs to the chain.
+- Regression coverage: `packages/autogoal/test/control-state-bridge.test.mjs` covers "bridge: clear cancels the active chain artifact so a stopped run cannot revive"; `packages/autogoal/test/goal-chain.test.mjs` covers `advanceGoalChain` refusing a cleared chain state.
 
 **Expanded UX punch list to keep auditing**
 - Missing affordances: every button/control needs an obvious purpose through label, icon, title, disabled reason, or nearby state.
 - Live orchestration visibility: the running view needs clear "current step / exact state right now" context for active, paused, stalled, terminal, and child-session states.
+- Operator instructions and context: screens need enough inline context to explain what the current surface does, what the next safe action is, and why blocked/busy controls are unavailable.
+- Current-step prominence: the running chain view should expose the active step, model/agent target, limits/budget, child-session status, elapsed time, and last update without making the operator hunt through the transcript.
 - Feature completeness: test whether an operator reasonably expects a visible control/status/history surface and whether it is missing, hidden, or only implied by code.
+- Control justification: each button, menu, badge, panel, and display surface should answer "why is this here?" through visible value, clear labeling, or removal/consolidation.
 - Text fit: labels, button copy, row text, select values, and helper copy must fit or truncate cleanly without overlapping adjacent controls.
+- Lettering and justification: inspect text alignment, line-height, wrapping, and capitalization inside every cell, button, status badge, and dense row at desktop and narrow dock widths.
 - Visual consistency: normalize panel radii, outlines, row shading, warning fills, and action colors so the Goal surface reads as one system.
+- Color semantics: status, danger, warning, success, active, and muted states should use consistent tones and outlines across Home, Session, Goal, and runtime surfaces.
 - Interaction consistency: verify add/edit/delete/save/start/stop/pause/restart/steer/handoff controls do not silently no-op and expose the correct disabled/busy state.
 - Motion and status change communication: add restrained transitions where they make state changes easier to follow, with reduced-motion safety.
+- Status/context surfaces: consider richer, compact status windows for queue state, current action, handoff/steer state, and recent orchestration events when those states are otherwise invisible.
 - Accessibility checks: keyboard reachability, focus rings, target sizes, aria labels, progress/status regions, and non-color status cues.
 
 **Open UI follow-up candidates**
 - Audit small-height Electron geometry after the bounded rail fix to ensure the editor fields remain reachable through internal scrolling.
 - Inspect remaining rounded-xl internal surfaces for whether they should be normalized to the 8px Goal console radius.
-- Review action-library category tabs and dense rows for minimum target size and whether icon-only add/edit controls need stronger tooltips.
+- Review dense action rows for whether icon-only add/edit controls need stronger tooltips beyond their current titles and aria labels.
 - Run a live chain with an actual active step to visually confirm the Current Step strip, pause/stop/restart controls, and stalled-state copy under real runtime state.

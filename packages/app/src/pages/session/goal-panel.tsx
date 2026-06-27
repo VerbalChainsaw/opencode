@@ -3413,7 +3413,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
               </span>
               <button
                 type="button"
-                class="rounded px-1.5 py-0.5 text-[10px] text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
+                class="rounded-md px-1.5 py-0.5 text-[10px] text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
                 onClick={() => setShortcutHelpOpen(false)}
               >
                 Esc
@@ -3624,7 +3624,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <Show when={!confirmingReset()}>
                           <button
                             type="button"
-                            class="h-5 shrink-0 rounded px-1.5 text-[9px] font-semibold text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
+                            class="h-5 shrink-0 rounded-md px-1.5 text-[9px] font-semibold text-text-weaker transition hover:bg-background-base/40 hover:text-text-weak"
                             title={language.t("session.goal.report.copy")}
                             onClick={copyGoalReport}
                           >
@@ -3658,7 +3658,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     <button
                       type="button"
                       aria-label={language.t("session.goal.action.cancel")}
-                      class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold text-red-200/70 transition hover:bg-red-400/15 hover:text-red-100"
+                      class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-red-200/70 transition hover:bg-red-400/15 hover:text-red-100"
                       onClick={() => setControlError(null)}
                     >
                       ×
@@ -5384,14 +5384,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                     </div>
                     <div
                       data-component="goal-method-category-tabs"
-                      class="grid min-w-0 grid-cols-8 gap-0.5"
+                      class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(54px,1fr))] gap-0.5"
                     >
                       <For each={ACTION_CATEGORIES}>
                         {(category) => (
                           <button
                             type="button"
-                            class="h-5 min-w-0 rounded px-1 text-center text-[10px] font-semibold leading-none hover:brightness-110"
+                            class="h-6 min-w-0 truncate rounded-md px-1.5 text-center text-[10px] font-semibold leading-tight hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-strong"
                             style={actionCategoryPillStyle(category, templateCategory() === category)}
+                            title={category}
+                            aria-label={category}
+                            aria-pressed={templateCategory() === category}
                             onClick={() => setTemplateCategory(category)}
                           >
                             {actionCategoryShortLabel(category)}
@@ -5638,7 +5641,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               aria-label={language.t("session.goal.template.pinnedAgent")}
                               title={language.t("session.goal.template.pinnedAgent")}
                               onChange={(event) => setActionDraft("agent", event.currentTarget.value)}
-                              class="h-5 min-w-0 truncate rounded bg-transparent px-1 text-11-medium font-semibold text-indigo-100/90 outline-none transition disabled:opacity-30"
+                              class="h-5 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-indigo-100/90 outline-none transition disabled:opacity-30"
                             >
                               <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultAgent")}</option>
                               <For each={agentOptionsForDraft()}>
@@ -5667,7 +5670,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               aria-label={language.t("session.goal.template.pinnedModel")}
                               title={language.t("session.goal.template.pinnedModel")}
                               onChange={(event) => setActionDraft("model", event.currentTarget.value)}
-                              class="h-5 min-w-0 truncate rounded bg-transparent px-1 text-11-medium font-semibold text-sky-100/90 outline-none transition disabled:opacity-30"
+                              class="h-5 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-sky-100/90 outline-none transition disabled:opacity-30"
                             >
                               <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultModel")}</option>
                               <For each={modelOptionsForDraft()}>
