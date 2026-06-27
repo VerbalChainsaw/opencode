@@ -2378,6 +2378,33 @@ describe("stopGoalRun", () => {
       warning: "Goal cleared, but this OpenCode client cannot abort the active turn.",
     })
   })
+
+  test("still aborts the session tree when goal clear fails", async () => {
+    const children = mock(async (args: { sessionID: string; directory?: string }) => {
+      if (args.sessionID === "session-1") return { data: [{ id: "child-1" }] }
+      return { data: [] }
+    })
+    const aborted: Array<{ sessionID: string; directory?: string }> = []
+    const abort = mock(async (args: { sessionID: string; directory?: string }) => {
+      aborted.push(args)
+    })
+
+    const result = await stopGoalRun(
+      {
+        session: { abort, children },
+      },
+      { sessionID: "session-1", directory: "C:\\repo\\project", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: "native goal control bridge is unavailable; active session tree aborted",
+    })
+    expect(aborted).toEqual([
+      { sessionID: "child-1", directory: "C:\\repo\\project" },
+      { sessionID: "session-1", directory: "C:\\repo\\project" },
+    ])
+  })
 })
 
 describe("pauseGoalRun", () => {
@@ -2437,6 +2464,23 @@ describe("pauseGoalRun", () => {
       ok: true,
       warning: "Goal paused, but this OpenCode client cannot abort the active turn.",
     })
+  })
+
+  test("still aborts the active turn when goal pause fails", async () => {
+    const abort = mock(async () => undefined)
+
+    const result = await pauseGoalRun(
+      {
+        session: { abort },
+      },
+      { sessionID: "session-1", abortActiveTurn: true },
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: "native goal control bridge is unavailable; active session tree aborted",
+    })
+    expect(abort).toHaveBeenCalledWith({ sessionID: "session-1" })
   })
 })
 

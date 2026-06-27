@@ -324,7 +324,14 @@ export async function stopGoalRun(
     directory: input.directory,
     workspace: input.workspace,
   })
-  if (!result.ok) return result
+  if (!result.ok) {
+    if (!input.abortActiveTurn) return result
+    const abortResult = await abortActiveSessionTree(client, input, "Goal cleared")
+    return {
+      ok: false,
+      error: abortResult.warning ? `${result.error}; ${abortResult.warning}` : `${result.error}; active session tree aborted`,
+    }
+  }
   if (!input.abortActiveTurn) return result
   return abortActiveSessionTree(client, input, "Goal cleared")
 }
@@ -364,7 +371,14 @@ export async function pauseGoalRun(
     directory: input.directory,
     workspace: input.workspace,
   })
-  if (!result.ok) return result
+  if (!result.ok) {
+    if (!input.abortActiveTurn) return result
+    const abortResult = await abortActiveSessionTree(client, input, "Goal paused")
+    return {
+      ok: false,
+      error: abortResult.warning ? `${result.error}; ${abortResult.warning}` : `${result.error}; active session tree aborted`,
+    }
+  }
   if (!input.abortActiveTurn) return result
   return abortActiveSessionTree(client, input, "Goal paused")
 }
