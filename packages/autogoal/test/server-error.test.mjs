@@ -611,6 +611,24 @@ describe("session.error handler (defect B-3b)", () => {
     assert.equal("skills" in spies.prompts[0].body, false);
   });
 
+  it("compaction context includes the active chain step so resumed work keeps chain position", async () => {
+    const create = createGoalChain(
+      dir,
+      [
+        { condition: "finish setup" },
+        { condition: "run the production verification" },
+      ],
+      { sessionId: "test-session" },
+    );
+    assert.equal(create.ok, true);
+
+    const output = { context: [] };
+    await plugin["experimental.session.compacting"]({ sessionID: "test-session" }, output);
+
+    const contextText = output.context.join("\n");
+    assert.match(contextText, /Chain step 1\/2: "finish setup"/);
+  });
+
   it("a second session.error after the first is a no-op (idempotency)", async () => {
     await plugin.tool.set_goal.execute(
       { condition: "do the thing", command: process.platform === "win32" ? "exit 0" : "true" },

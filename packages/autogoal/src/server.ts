@@ -2690,9 +2690,20 @@ export const server: Plugin = async ({ client, directory }) => {
       const steerLine = safeSteer
         ? `Latest user hint: ${safeSteer}\n`
         : "";
+      const chainResult = readGoalChainResult(directory);
+      let chainLine = "";
+      if (chainResult.kind === "ok" && chainResult.value.current >= 0 && chainResult.value.current < chainResult.value.steps.length) {
+        const step = chainResult.value.steps[chainResult.value.current]!;
+        chainLine = `Chain step ${chainResult.value.current + 1}/${chainResult.value.steps.length}: "${sanitizeForPrompt(step.condition).slice(0, 200)}"\n`;
+      } else if (chainResult.kind === "corrupt") {
+        log("error", "skipping compaction chain context: goal chain file is corrupt", {
+          reason: chainResult.reason,
+        });
+      }
       output.context.push(
         `\n## ACTIVE GOAL\nCondition: ${safeCondition}\nStatus: ${state.status}\n` +
         `Progress: ${state.turnsEvaluated}/${state.constraints.maxTurns} turns\n` +
+        chainLine +
         steerLine
       );
     },
