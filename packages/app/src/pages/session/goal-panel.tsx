@@ -524,7 +524,7 @@ function goalCommandButtonStyle(variant: "primary" | "secondary" | "ghost", tone
 
 function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
   const base =
-    "goal-inline-command-button flex h-6 items-center justify-center rounded-md border px-1 text-center text-11-medium font-semibold leading-none transition-all focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
+    "goal-inline-command-button flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md border px-1 text-center text-11-medium font-semibold leading-none transition-all focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
   if (tone === "add") {
     return `${base} goal-inline-command-add w-6 border-emerald-300/32 bg-emerald-500/10 text-emerald-100 hover:border-emerald-200/58 hover:bg-emerald-500/18 focus-visible:ring-emerald-200/60`
   }
@@ -4920,7 +4920,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 data-density="compact-chain-row"
                                 data-run-state={stepRunState(i())}
                                 data-editing={editingChainStepID() === step.id ? "true" : "false"}
-                                class={`group grid min-w-0 grid-cols-[24px_32px_minmax(96px,1fr)_minmax(56px,68px)_minmax(128px,148px)_96px] items-center gap-1 rounded-lg border px-1.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
+                                class={`group grid min-w-0 grid-cols-[24px_32px_minmax(0,1fr)] items-center gap-x-1 gap-y-1 rounded-lg border px-1.5 py-2 transition hover:brightness-110 ${actionSurfaceClass(step)}`}
                                 classList={{
                                   "ring-2 ring-sky-300/70 shadow-[0_0_24px_rgba(56,189,248,0.22)] brightness-110":
                                     editingChainStepID() === step.id,
@@ -4937,7 +4937,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               >
                                 <span
                                   data-component="goal-chain-run-rail"
-                                  class="relative flex h-9 items-center justify-center"
+                                  class="relative row-span-2 flex h-full min-h-9 items-center justify-center"
                                   aria-hidden
                                 >
                                   <span
@@ -4961,13 +4961,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 </span>
                                 <span
                                   data-component="goal-chain-step-icon"
-                                  class="flex h-8 w-8 items-center justify-center rounded-md border shadow-[0_6px_12px_rgba(0,0,0,0.14)]"
+                                  class="row-span-2 flex h-8 w-8 items-center justify-center rounded-md border shadow-[0_6px_12px_rgba(0,0,0,0.14)]"
                                   style={chainStepBadgeStyle(step)}
                                   aria-hidden
                                 >
                                   <IconV2 name={actionIconName(step)} size="small" />
                                 </span>
-                                <div class="flex min-w-0 flex-col" title={stepRuntimeTitle(step)}>
+                                <div class="flex min-w-0 flex-col self-center" title={stepRuntimeTitle(step)}>
                                   <div class="truncate text-13-medium font-semibold text-text-base">{step.label}</div>
                                   <Show when={cleanText(stepConditionPreview(step)) !== step.label}>
                                     <div
@@ -4978,104 +4978,106 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     </div>
                                   </Show>
                                 </div>
-                                <span
-                                  class="flex h-8 min-w-0 items-center justify-center truncate rounded-md border px-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
-                                  style={chainStepSoftStyle(step)}
-                                  title={inferActionCategory(step)}
-                                >
-                                  {actionCategoryShortLabel(inferActionCategory(step))}
-                                </span>
-                                <span data-component="goal-chain-step-budget" class="grid min-w-0 grid-cols-[minmax(58px,1fr)_minmax(58px,1fr)] gap-1">
-                                  <label
-                                    class="grid h-6 grid-cols-[30px_minmax(26px,1fr)] items-center gap-1"
+                                <div data-component="goal-chain-step-meta" class="col-start-3 flex min-w-0 flex-wrap items-center gap-1">
+                                  <span
+                                    class="flex h-6 max-w-[88px] min-w-[52px] items-center justify-center truncate rounded-md border px-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                                    style={chainStepSoftStyle(step)}
+                                    title={inferActionCategory(step)}
                                   >
-                                    <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
-                                    <input
-                                      aria-label={language.t("session.goal.chainBuilder.stepTurnsAria", { label: step.label })}
-                                      type="number"
-                                      min="1"
-                                      value={String(step.maxTurns)}
+                                    {actionCategoryShortLabel(inferActionCategory(step))}
+                                  </span>
+                                  <span data-component="goal-chain-step-budget" class="grid w-[126px] shrink-0 grid-cols-[minmax(58px,1fr)_minmax(58px,1fr)] gap-1">
+                                    <label
+                                      class="grid h-6 grid-cols-[30px_minmax(26px,1fr)] items-center gap-1"
+                                    >
+                                      <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
+                                      <input
+                                        aria-label={language.t("session.goal.chainBuilder.stepTurnsAria", { label: step.label })}
+                                        type="number"
+                                        min="1"
+                                        value={String(step.maxTurns)}
+                                        disabled={busy() !== null || !visibleChainRowsAreDraft()}
+                                        onInput={(event) =>
+                                          updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
+                                        }
+                                        class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                      />
+                                    </label>
+                                    <label
+                                      class="grid h-6 grid-cols-[22px_minmax(30px,1fr)] items-center gap-1"
+                                    >
+                                      <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
+                                      <input
+                                        aria-label={language.t("session.goal.chainBuilder.stepMinutesAria", { label: step.label })}
+                                        type="number"
+                                        min="1"
+                                        value={String(step.maxTimeMinutes)}
+                                        disabled={busy() !== null || !visibleChainRowsAreDraft()}
+                                        onInput={(event) =>
+                                          updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
+                                        }
+                                        class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                      />
+                                    </label>
+                                  </span>
+                                  <span data-component="goal-chain-step-actions" class="flex min-w-[108px] shrink-0 items-center justify-end gap-1">
+                                    <button
+                                      type="button"
+                                      aria-label={language.t("session.goal.chainBuilder.stepEditAria", { label: step.label })}
+                                      title={language.t("session.goal.template.editRunStep")}
+                                      class={inlineCommandButtonClass("edit")}
+                                      style={inlineCommandButtonStyle("edit")}
                                       disabled={busy() !== null || !visibleChainRowsAreDraft()}
-                                      onInput={(event) =>
-                                        updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
+                                      onClick={() => editChainStepDraft(step)}
+                                    >
+                                      <IconV2 name="edit" size="small" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={language.t("session.goal.chainBuilder.moveUp")}
+                                      title={language.t("session.goal.chainBuilder.moveUp")}
+                                      class={inlineCommandButtonClass("move")}
+                                      style={inlineCommandButtonStyle("move")}
+                                      disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === 0}
+                                      onClick={() => moveDraftStep(i(), i() - 1)}
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={language.t("session.goal.chainBuilder.moveDown")}
+                                      title={language.t("session.goal.chainBuilder.moveDown")}
+                                      class={inlineCommandButtonClass("move")}
+                                      style={inlineCommandButtonStyle("move")}
+                                      disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === visibleStepCount() - 1}
+                                      onClick={() => moveDraftStep(i(), i() + 1)}
+                                    >
+                                      ↓
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={chainStepRemoveLabel(i())}
+                                      title={chainStepRemoveLabel(i())}
+                                      class={inlineCommandButtonClass("remove")}
+                                      style={inlineCommandButtonStyle("remove")}
+                                      disabled={chainStepRemoveDisabled(i())}
+                                      // AG-P1-05 — pass the visible source
+                                      // explicitly so the pure selector
+                                      // decides the action kind instead
+                                      // of `liveGoal()` being used as a
+                                      // proxy inside removeVisibleStep.
+                                      onClick={() =>
+                                        removeVisibleStep(
+                                          step,
+                                          i(),
+                                          visibleChainStepSource(),
+                                        )
                                       }
-                                      class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
-                                    />
-                                  </label>
-                                  <label
-                                    class="grid h-6 grid-cols-[22px_minmax(30px,1fr)] items-center gap-1"
-                                  >
-                                    <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
-                                    <input
-                                      aria-label={language.t("session.goal.chainBuilder.stepMinutesAria", { label: step.label })}
-                                      type="number"
-                                      min="1"
-                                      value={String(step.maxTimeMinutes)}
-                                      disabled={busy() !== null || !visibleChainRowsAreDraft()}
-                                      onInput={(event) =>
-                                        updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
-                                      }
-                                      class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
-                                    />
-                                  </label>
-                                </span>
-                                <span data-component="goal-chain-step-actions" class="flex min-w-[96px] shrink-0 items-center justify-end gap-1">
-                                  <button
-                                    type="button"
-                                    aria-label={language.t("session.goal.chainBuilder.stepEditAria", { label: step.label })}
-                                    title={language.t("session.goal.template.editRunStep")}
-                                    class={inlineCommandButtonClass("edit")}
-                                    style={inlineCommandButtonStyle("edit")}
-                                    disabled={busy() !== null || !visibleChainRowsAreDraft()}
-                                    onClick={() => editChainStepDraft(step)}
-                                  >
-                                    <IconV2 name="edit" size="small" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label={language.t("session.goal.chainBuilder.moveUp")}
-                                    title={language.t("session.goal.chainBuilder.moveUp")}
-                                    class={inlineCommandButtonClass("move")}
-                                    style={inlineCommandButtonStyle("move")}
-                                    disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === 0}
-                                    onClick={() => moveDraftStep(i(), i() - 1)}
-                                  >
-                                    ↑
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label={language.t("session.goal.chainBuilder.moveDown")}
-                                    title={language.t("session.goal.chainBuilder.moveDown")}
-                                    class={inlineCommandButtonClass("move")}
-                                    style={inlineCommandButtonStyle("move")}
-                                    disabled={busy() !== null || !visibleChainRowsAreDraft() || i() === visibleStepCount() - 1}
-                                    onClick={() => moveDraftStep(i(), i() + 1)}
-                                  >
-                                    ↓
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label={chainStepRemoveLabel(i())}
-                                    title={chainStepRemoveLabel(i())}
-                                    class={inlineCommandButtonClass("remove")}
-                                    style={inlineCommandButtonStyle("remove")}
-                                    disabled={chainStepRemoveDisabled(i())}
-                                    // AG-P1-05 — pass the visible source
-                                    // explicitly so the pure selector
-                                    // decides the action kind instead
-                                    // of `liveGoal()` being used as a
-                                    // proxy inside removeVisibleStep.
-                                    onClick={() =>
-                                      removeVisibleStep(
-                                        step,
-                                        i(),
-                                        visibleChainStepSource(),
-                                      )
-                                    }
-                                  >
-                                    ×
-                                  </button>
-                                </span>
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                </div>
                               </div>
                             )}
                           </For>
