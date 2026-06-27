@@ -524,7 +524,7 @@ function goalCommandButtonStyle(variant: "primary" | "secondary" | "ghost", tone
 
 function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
   const base =
-    "goal-inline-command-button flex h-[22px] items-center justify-center rounded-md border px-1 text-center text-11-medium font-semibold leading-none transition-all focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
+    "goal-inline-command-button flex h-6 items-center justify-center rounded-md border px-1 text-center text-11-medium font-semibold leading-none transition-all focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
   if (tone === "add") {
     return `${base} goal-inline-command-add w-6 border-emerald-300/32 bg-emerald-500/10 text-emerald-100 hover:border-emerald-200/58 hover:bg-emerald-500/18 focus-visible:ring-emerald-200/60`
   }
@@ -532,7 +532,7 @@ function inlineCommandButtonClass(tone: "add" | "edit" | "move" | "remove") {
     return `${base} goal-inline-command-remove w-6 border-orange-300/48 bg-orange-500/14 text-orange-100 hover:border-orange-200/72 hover:bg-orange-500/22 focus-visible:ring-orange-300/58`
   }
   if (tone === "move") {
-    return `${base} goal-inline-command-move w-[22px] border-border-base bg-background-base text-text-weak hover:border-border-strong hover:bg-white/[0.06] hover:text-text-base focus-visible:ring-border-strong`
+    return `${base} goal-inline-command-move w-6 border-border-base bg-background-base text-text-weak hover:border-border-strong hover:bg-white/[0.06] hover:text-text-base focus-visible:ring-border-strong`
   }
   return `${base} goal-inline-command-edit w-6 border-sky-300/30 bg-sky-500/8 text-sky-100 hover:border-sky-200/55 hover:bg-sky-500/16 focus-visible:ring-sky-300/55`
 }
@@ -3810,6 +3810,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       disabled={busy() !== null || !props.sessionID}
                       placeholder={language.t("session.goal.chainBuilder.objectivePlaceholder")}
                       title={language.t("session.goal.chainBuilder.objectiveHint")}
+                      aria-label={language.t("session.goal.chainBuilder.objective")}
                       class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-text-base outline-none placeholder:text-sky-100/30 disabled:opacity-40"
                     />
                   </div>
@@ -3831,6 +3832,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         onKeyDown={(e) => { if (e.key === "Enter" && !primaryRunDisabled()) void startGoalOrChain() }}
                         disabled={busy() !== null || !props.sessionID}
                         placeholder={language.t("session.goal.create.commandPlaceholder")}
+                        aria-label={language.t("session.goal.create.command")}
                         class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-sky-50 outline-none placeholder:text-sky-100/32 disabled:opacity-40"
                       />
                     </div>
@@ -4743,6 +4745,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     label={language.t("session.goal.action.steer")}
                                     hideLabel
                                     placeholder={language.t("session.goal.steer.placeholder")}
+                                    aria-label={language.t("session.goal.action.steer")}
                                     disabled={busy() !== null}
                                     class="min-w-0 [grid-column:1/-1]"
                                   />
@@ -4780,6 +4783,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     label={language.t("session.goal.action.handoff")}
                                     hideLabel
                                     placeholder={language.t("session.goal.handoff.placeholder")}
+                                    aria-label={language.t("session.goal.action.handoff")}
                                     disabled={busy() !== null}
                                     class="min-w-0 [grid-column:1/-1]"
                                   />
@@ -5413,6 +5417,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         label={language.t("session.goal.template.search")}
                         hideLabel
                         placeholder={language.t("session.goal.template.searchPlaceholder")}
+                        aria-label={language.t("session.goal.template.search")}
                         disabled={busy() !== null}
                         class="w-full"
                       />
@@ -5834,6 +5839,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             onChange={(value) => setActionDraft("label", value)}
                             label={language.t("session.goal.template.label")}
                             placeholder={language.t("session.goal.template.labelPlaceholder")}
+                            aria-label={language.t("session.goal.template.label")}
                             disabled={busy() !== null || !props.sessionID}
                             class="w-full"
                           />
@@ -5841,6 +5847,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             value={actionDraft.prompt}
                             onChange={(value) => setActionDraft("prompt", value)}
                             label={language.t("session.goal.template.prompt")}
+                            aria-label={language.t("session.goal.template.prompt")}
                             multiline
                             disabled={busy() !== null || !props.sessionID}
                             class="w-full"
@@ -5850,6 +5857,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             onChange={(value) => setActionDraft("command", value)}
                             label={language.t("session.goal.template.command")}
                             placeholder={language.t("session.goal.create.commandPlaceholder")}
+                            aria-label={language.t("session.goal.template.command")}
                             disabled={busy() !== null || !props.sessionID}
                             class="w-full"
                           />

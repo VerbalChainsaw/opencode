@@ -852,7 +852,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('"background-color": "rgba(239, 68, 68, 0.12)"')
     expect(src).toContain('"border-color": "rgba(248, 113, 113, 0.38)"')
     expect(src).toContain('"background-color": "rgba(16, 185, 129, 0.12)"')
+    expect(src).toContain("goal-inline-command-button flex h-6")
+    expect(src).not.toContain("goal-inline-command-button flex h-[22px]")
+    expect(src).not.toContain("goal-inline-command-move w-[22px]")
     expect(src).toContain("goal-inline-command-remove w-6 border-orange-300/48")
+    expect(src).toContain("goal-inline-command-move w-6 border-border-base")
     expect(src).toContain('"background-color": "rgba(249, 115, 22, 0.16)"')
     expect(src).toContain("function actionEditorPanelStyle")
     expect(src).toContain("rgba(148, 163, 184, 0.24)")
@@ -1328,6 +1332,29 @@ describe("goal panel mission-control contracts", () => {
     expect(removeVisible).toContain("if (!liveGoal() && !terminalGoal())")
     expect(removeVisible).not.toContain("if (!liveGoal())")
     expect(removeVisible).toContain("return void removeLiveChainStep(action.index)")
+  })
+
+  test("goal text fields expose localized accessible names", async () => {
+    const src = await goalPanelSource()
+    const targetFieldStart = src.indexOf('data-component="goal-chain-target-field"')
+    const standaloneCommandStart = src.indexOf('data-component="goal-standalone-command-field"')
+    const actionEditorStart = src.indexOf('data-component="goal-action-editor-fields"')
+    expect(targetFieldStart).toBeGreaterThan(-1)
+    expect(standaloneCommandStart).toBeGreaterThan(targetFieldStart)
+    expect(actionEditorStart).toBeGreaterThan(standaloneCommandStart)
+
+    const targetField = src.slice(targetFieldStart, standaloneCommandStart)
+    const standaloneCommand = src.slice(standaloneCommandStart, src.indexOf('data-component="goal-global-budget"', standaloneCommandStart))
+    const actionEditor = src.slice(actionEditorStart, src.indexOf("</section>", actionEditorStart))
+
+    expect(targetField).toContain('aria-label={language.t("session.goal.chainBuilder.objective")}')
+    expect(standaloneCommand).toContain('aria-label={language.t("session.goal.create.command")}')
+    expect(src).toContain('aria-label={language.t("session.goal.action.steer")}')
+    expect(src).toContain('aria-label={language.t("session.goal.action.handoff")}')
+    expect(src).toContain('aria-label={language.t("session.goal.template.search")}')
+    expect(actionEditor).toContain('aria-label={language.t("session.goal.template.label")}')
+    expect(actionEditor).toContain('aria-label={language.t("session.goal.template.prompt")}')
+    expect(actionEditor).toContain('aria-label={language.t("session.goal.template.command")}')
   })
 
   test("live run-order delete permits deleting a done step when the run is terminal (v0.7.3)", async () => {
