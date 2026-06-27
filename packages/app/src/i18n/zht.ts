@@ -525,6 +525,7 @@ export const dict = {
   "home.actions.openGoal": "開啟目標",
   "home.actions.openGoal.disabled": "工作階段有活動目標時可用。請先新增或恢復工作階段並設定目標。",
   "home.actions.openProject": "開啟專案",
+  "home.goals.empty": "目前沒有活動目標。請新增或恢復工作階段並設定目標。",
   "home.attention.title": "需要處理",
   "home.attention.empty": "目前沒有待處理提醒。",
   "home.attention.clear": "清除 {{reason}}",

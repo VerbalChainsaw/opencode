@@ -373,9 +373,10 @@ function HomeDesign() {
   function openGoalsDialog() {
     const snapshot = activeGoalRecords()
     dialog.show(() => (
-      <Dialog title={language.t("session.goal.history.title")}>
+      <Dialog title={language.t("home.metrics.activeGoals")}>
         <GoalsDialogBody
           records={snapshot}
+          language={language}
           onSelect={(goal) => {
             openGoalRecord(goal)
             dialog.close()
@@ -630,7 +631,7 @@ function HomeDesign() {
                 loading={goalLoad.isLoading && goalLoad.data === undefined}
                 detail={language.t("home.metrics.activeGoals.detail")}
                 icon="status"
-                disabled={activeGoalCount() === 0 || (goalLoad.isLoading && goalLoad.data === undefined)}
+                disabled={goalLoad.isLoading && goalLoad.data === undefined}
                 onClick={() => openGoalsDialog()}
               />
               <HomeMetricCard
@@ -972,6 +973,7 @@ function ProjectsDialogBody(props: {
 
 function GoalsDialogBody(props: {
   records: HomeGoalRecord[]
+  language: ReturnType<typeof useLanguage>
   onSelect: (goal: HomeGoalRecord) => void
 }) {
   return (
@@ -980,7 +982,7 @@ function GoalsDialogBody(props: {
         when={props.records.length > 0}
         fallback={
           <div class="px-2 py-6 text-center text-v2-text-text-muted text-13-regular">
-            No active goals right now.
+            {props.language.t("home.goals.empty")}
           </div>
         }
       >

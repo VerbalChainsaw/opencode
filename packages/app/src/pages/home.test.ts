@@ -244,6 +244,27 @@ describe("home mission-control contract", () => {
     expect(activeMetric![0]).not.toContain("sessionTitle")
   })
 
+  test("Active Goals dialog uses localized purpose and empty-state copy", async () => {
+    const src = await home()
+    const goalsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
+    expect(goalsCard).toBeTruthy()
+    expect(goalsCard![0]).toContain("onClick={() => openGoalsDialog()}")
+    expect(goalsCard![0]).toContain("disabled={goalLoad.isLoading && goalLoad.data === undefined}")
+    expect(goalsCard![0]).not.toContain("activeGoalCount() === 0")
+
+    const launcher = src.match(/function openGoalsDialog\(\)\s*\{([\s\S]*?)\n  \}/)
+    expect(launcher).toBeTruthy()
+    expect(launcher![1]).toContain('title={language.t("home.metrics.activeGoals")}')
+    expect(launcher![1]).toContain("language={language}")
+    expect(launcher![1]).not.toContain("session.goal.history.title")
+
+    const dialogBody = src.match(/function GoalsDialogBody[\s\S]*?\n}\n\nfunction AttentionDialogBody/)
+    expect(dialogBody).toBeTruthy()
+    expect(dialogBody![0]).toContain("language: ReturnType<typeof useLanguage>")
+    expect(dialogBody![0]).toContain('props.language.t("home.goals.empty")')
+    expect(dialogBody![0]).not.toContain("No active goals right now.")
+  })
+
   test("Needs Attention dialog exposes reasoned attention records", async () => {
     const src = await home()
     const dialogBody = src.match(/function AttentionDialogBody[\s\S]*?\n}\n\nfunction HomeProjectColumn/)

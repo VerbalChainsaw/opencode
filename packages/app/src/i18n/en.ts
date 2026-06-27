@@ -613,6 +613,7 @@ export const dict = {
   "home.actions.openGoal": "Open Goal",
   "home.actions.openGoal.disabled": "Appears when a session has an active goal. Start or resume a session to set one.",
   "home.actions.openProject": "Open Project",
+  "home.goals.empty": "No active goals right now. Start or resume a session to set one.",
   "home.attention.title": "Needs Attention",
   "home.attention.empty": "No outstanding alerts right now.",
   "home.attention.clear": "Clear {{reason}}",
