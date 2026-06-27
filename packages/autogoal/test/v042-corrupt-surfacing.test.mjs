@@ -73,6 +73,17 @@ test("bare /goal on corrupt state → corrupt-state (same as view)", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("history on corrupt state → corrupt-state, not no history", () => {
+  const dir = freshDir();
+  try {
+    plantCorruptState(dir);
+    const res = dispatchGoalCommandStructured(dir, "history");
+    assert.equal(res.kind, "corrupt-state");
+    assert.match(res.message, /corrupt/i);
+    assert.equal(corruptArtifactsOnDisk(dir).length, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("view AFTER quarantine → no-goal, but message still mentions the artifact", () => {
   const dir = freshDir();
   try {

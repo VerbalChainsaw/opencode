@@ -46,7 +46,7 @@ import {
   type CorruptReason,
 } from "./goal-state.js";
 import { BUILTIN_TEMPLATES, type GoalTemplate, resolveTemplateVars, discoverTemplates, exportTemplate as exportTemplateFn, importTemplate as importTemplateFn, deleteTemplate as deleteTemplateFn } from "./templates.js";
-import { readGoalChain, createGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, MAX_CHAIN_SIZE, CHAIN_FILE, type GoalChainStep } from "./goal-chain.js";
+import { readGoalChain, readGoalChainResult, createGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, MAX_CHAIN_SIZE, CHAIN_FILE, type GoalChainStep } from "./goal-chain.js";
 import { readGoalArchive } from "./goal-archive.js";
 import { readGoalHistorySnapshot } from "./goal-history.js";
 import { SESSION_EVENTS_FILE } from "./session-events.js";
@@ -297,6 +297,10 @@ function corruptNotice(directory: string): string | null {
   const arts = listCorruptArtifacts(directory);
   if (arts.length === 0) return null;
   return `Note: ${arts.length} quarantined corrupt file${arts.length === 1 ? "" : "s"} in .opencode/ (newest: ${arts[0]}). Delete to dismiss this notice.`;
+}
+
+function newestCorruptArtifact(directory: string, prefix: string): string | undefined {
+  return listCorruptArtifacts(directory).find((name) => name.startsWith(prefix));
 }
 
 function removeWorkspaceFile(directory: string, relativePath: string): boolean {
@@ -564,8 +568,15 @@ export function dispatchGoalCommandStructured(
   }
 
   if (action === "history") {
-    const state = readGoalState(directory);
-    const hist = state?.evaluationHistory ?? [];
+    const stateResult = readGoalStateResult(directory);
+    if (stateResult.kind === "corrupt") {
+      const newest = newestCorruptArtifact(directory, ".goal-state.json.corrupt.");
+      return {
+        kind: "corrupt-state",
+        message: `Goal state file was corrupt (${corruptReasonLabel(stateResult.reason)})${newest ? ` and was quarantined as ${newest}` : ""}. Review the quarantined artifact before reading evaluation history.`,
+      };
+    }
+    const hist = stateResult.kind === "ok" ? stateResult.value.evaluationHistory : [];
     if (!hist.length) return { kind: "no-goal", message: "No evaluation history for the current goal." };
     const rows = hist
       .slice(-10)
@@ -800,8 +811,16 @@ export function dispatchGoalCommandStructured(
     }
 
     // Default: show chain status
-    const chain = readGoalChain(directory);
-    if (!chain) return { kind: "no-goal", message: "No active chain." };
+    const chainResult = readGoalChainResult(directory);
+    if (chainResult.kind === "corrupt") {
+      const newest = newestCorruptArtifact(directory, ".goal-chain.json.corrupt.");
+      return {
+        kind: "corrupt-state",
+        message: `Goal chain file was corrupt (${corruptReasonLabel(chainResult.reason)})${newest ? ` and was quarantined as ${newest}` : ""}. Review the quarantined artifact before starting a new chain.`,
+      };
+    }
+    if (chainResult.kind === "absent") return { kind: "no-goal", message: "No active chain." };
+    const chain = chainResult.value;
     const lines = [
       `Chain: ${chain.id.slice(0, 8)} · ${chain.steps.length} steps · current: ${chain.current + 1}/${chain.steps.length}`,
       chain.onComplete === "loop" ? `Mode: loop (cycle ${chain.cycles + 1}${chain.maxCycles > 0 ? `/${chain.maxCycles}` : ""})` : "Mode: stop on completion",

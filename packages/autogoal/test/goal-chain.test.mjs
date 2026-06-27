@@ -12,6 +12,7 @@ function cleanDir(d) { try { rmSync(d, { recursive: true, force: true }); } catc
 
 const { createGoalChain, readGoalChain, readGoalChainResult, advanceGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, validateGoalChain, CHAIN_FILE, MAX_CHAIN_SIZE } = await import("../dist/goal-chain.js");
 const { readGoalState, writeGoalStateAtomic, transitionGoal, setGoal, setGoalFields, createHandoff, claimHandoff } = await import("../dist/goal-state.js");
+const { dispatchGoalCommandStructured } = await import("../dist/command.js");
 
 describe("createGoalChain", () => {
   it("writes chain file and sets step 0 as active goal", () => {
@@ -781,6 +782,21 @@ describe("C-2: readGoalChainResult tri-state reader", () => {
       }
       assert.equal(existsSync(chainPath), false,
         "oversized chain file must be renamed");
+    } finally { cleanDir(dir); }
+  });
+
+  it("bare /goal chain on corrupt chain → corrupt-state, not no active chain", () => {
+    const dir = freshDir();
+    try {
+      const chainPath = join(dir, CHAIN_FILE);
+      mkdirSync(join(dir, ".opencode"), { recursive: true });
+      writeFileSync(chainPath, "{not valid json", "utf-8");
+      const res = dispatchGoalCommandStructured(dir, "chain");
+      assert.equal(res.kind, "corrupt-state");
+      assert.match(res.message, /corrupt/i);
+      assert.equal(existsSync(chainPath), false);
+      const entries = readdirSync(join(dir, ".opencode"));
+      assert.ok(entries.find((e) => e.startsWith(".goal-chain.json.corrupt.")));
     } finally { cleanDir(dir); }
   });
 });
