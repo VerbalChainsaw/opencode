@@ -3403,7 +3403,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           onClick={() => setShortcutHelpOpen(false)}
         >
           <div
-            class="w-72 rounded-xl border p-4"
+            class="w-72 rounded-lg border p-4"
             style={{ "background-color": "rgba(15, 23, 42, 0.95)", "border-color": "rgba(148, 163, 184, 0.2)" }}
             onClick={(e: MouseEvent) => e.stopPropagation()}
           >
@@ -5269,7 +5269,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         role="listbox"
                         aria-label={language.t("session.goal.recentRuns")}
                         tabindex={0}
-                        class="max-h-72 overflow-y-auto rounded-xl border border-border-base bg-background-base"
+                        class="max-h-72 overflow-y-auto rounded-lg border border-border-base bg-background-base"
                         onKeyDown={handleHistoryListboxKeyDown}
                       >
                         <For each={archive()}>
@@ -5311,7 +5311,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
 
                       <Show when={selectedHistoryRun()}>
                         {(run) => (
-                          <div class="min-w-0 rounded-2xl border border-border-base bg-background-base p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                          <div class="min-w-0 rounded-lg border border-border-base bg-background-base p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                             <div class="flex items-start justify-between gap-3">
                               <div class="min-w-0">
                                 <div class="flex min-w-0 items-center gap-2">
@@ -5368,7 +5368,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                             </div>
 
                             <Show when={run().detail.latestReason}>
-                              <div class="mt-3 rounded-xl border border-border-base bg-background-stronger px-3 py-2.5">
+                              <div class="mt-3 rounded-md border border-border-base bg-background-stronger px-3 py-2.5">
                                 <div class="text-[10px] font-medium uppercase tracking-[0.12em] text-text-weaker">
                                   {language.t("session.goal.history.latestReason")}
                                 </div>

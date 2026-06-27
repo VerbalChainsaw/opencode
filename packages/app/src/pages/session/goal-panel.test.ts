@@ -918,6 +918,8 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("Always shows the outcome of the most recent run.")
     expect(src).not.toContain("Manage reusable actions and selected details.")
     expect(src).not.toContain("Shows the ordered list of actions that will run.")
+    expect(src).not.toContain("rounded-xl")
+    expect(src).not.toContain("rounded-2xl")
   })
 
   test("history is a collapsed secondary section behind the workflow builder", async () => {
