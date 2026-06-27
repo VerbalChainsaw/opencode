@@ -242,6 +242,25 @@ test("setGoalFields: structured input (the tools' path) builds the right state",
   }
 });
 
+test("setGoalFields: rejects constraints above documented upper bounds", () => {
+  const cases = [
+    { maxTurns: CONSTRAINT_BOUNDS.maxTurns + 1 },
+    { maxMinutes: CONSTRAINT_BOUNDS.maxMinutes + 1 },
+    { maxTokens: CONSTRAINT_BOUNDS.maxTokens + 1 },
+  ];
+  for (const fields of cases) {
+    const dir = freshDir();
+    try {
+      const res = setGoalFields(dir, { condition: "all tests pass", ...fields }, { now: 1 });
+      assert.equal(res.ok, false);
+      assert.equal(res.reason, "invalid-value");
+      assert.equal(existsSync(join(dir, ".opencode/.goal-state.json")), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("setGoalFields: empty condition rejected, surrounding quotes unwrapped", () => {
   const dir = freshDir();
   try {
@@ -371,6 +390,22 @@ test("validateGoalState: rejects constraints: {} (the cycle-0 silent-infinite-lo
     metadata: { setBy: "user" },
   };
   assert.equal(validateGoalState(s), false);
+});
+
+test("validateGoalState: rejects constraints above documented upper bounds", () => {
+  const base = {
+    version: 1, id: "abc", condition: "x", status: "active",
+    createdAt: 1, startedAt: 1, completedAt: null, pausedAt: null, resumedAt: null,
+    turnsEvaluated: 0, tokensUsed: 0, lastEvaluation: null, evaluationHistory: [],
+    constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
+    metadata: { setBy: "user" },
+  };
+  assert.equal(validateGoalState({ ...base, constraints: { ...base.constraints, maxTurns: CONSTRAINT_BOUNDS.maxTurns + 1 } }), false);
+  assert.equal(
+    validateGoalState({ ...base, constraints: { ...base.constraints, maxTimeMinutes: CONSTRAINT_BOUNDS.maxMinutes + 1 } }),
+    false,
+  );
+  assert.equal(validateGoalState({ ...base, constraints: { ...base.constraints, maxTokens: CONSTRAINT_BOUNDS.maxTokens + 1 } }), false);
 });
 
 test("validateGoalState: rejects command as array (silent coercion bug in execAsync)", () => {

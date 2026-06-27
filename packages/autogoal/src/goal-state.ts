@@ -258,9 +258,9 @@ export function validateGoalState(state: any): state is GoalState {
   // the loose `typeof === "object"` check and caused silent infinite loops
   // because `state.constraints.maxTurns` was `undefined`.
   if (!isPlainObject(state.constraints)) return false;
-  if (!isFiniteNumber(state.constraints.maxTurns) || state.constraints.maxTurns < CONSTRAINT_BOUNDS.minTurns) return false;
-  if (!isFiniteNumber(state.constraints.maxTimeMinutes) || state.constraints.maxTimeMinutes < CONSTRAINT_BOUNDS.minMinutes) return false;
-  if (!isFiniteNumber(state.constraints.maxTokens) || state.constraints.maxTokens < CONSTRAINT_BOUNDS.minTokens) return false;
+  if (!isFiniteNumber(state.constraints.maxTurns) || state.constraints.maxTurns < CONSTRAINT_BOUNDS.minTurns || state.constraints.maxTurns > CONSTRAINT_BOUNDS.maxTurns) return false;
+  if (!isFiniteNumber(state.constraints.maxTimeMinutes) || state.constraints.maxTimeMinutes < CONSTRAINT_BOUNDS.minMinutes || state.constraints.maxTimeMinutes > CONSTRAINT_BOUNDS.maxMinutes) return false;
+  if (!isFiniteNumber(state.constraints.maxTokens) || state.constraints.maxTokens < CONSTRAINT_BOUNDS.minTokens || state.constraints.maxTokens > CONSTRAINT_BOUNDS.maxTokens) return false;
   // metadata: loose by design. `setBy` is the only field read at runtime;
   // unknown keys are tolerated for forward-compat but stripped by
   // `sanitizeMetadata` on any untrusted-source path (claim/restart). A
@@ -842,6 +842,8 @@ export type SetResult =
  */
 function persistGoal(directory: string, parsed: ParsedGoal, setBy: "user" | "template" | "chain", now: number): SetResult {
   {
+    const constraintError = validateGoalConstraints(parsed.constraints);
+    if (constraintError) return { ok: false, reason: "invalid-value", error: constraintError };
     // v0.4.1 (C-2) — consume the new tri-state ReadResult. The
     // replacement-decision logic ("was there an active/paused goal whose
     // condition we should report as `replaced`?") only applies on `ok`.
@@ -887,6 +889,31 @@ function persistGoal(directory: string, parsed: ParsedGoal, setBy: "user" | "tem
     }
     return { ok: true, replaced, state };
   }
+}
+
+function validateGoalConstraints(constraints: GoalConstraints): string | null {
+  if (
+    !Number.isFinite(constraints.maxTurns) ||
+    constraints.maxTurns < CONSTRAINT_BOUNDS.minTurns ||
+    constraints.maxTurns > CONSTRAINT_BOUNDS.maxTurns
+  ) {
+    return `maxTurns must be in [${CONSTRAINT_BOUNDS.minTurns}, ${CONSTRAINT_BOUNDS.maxTurns}].`;
+  }
+  if (
+    !Number.isFinite(constraints.maxTimeMinutes) ||
+    constraints.maxTimeMinutes < CONSTRAINT_BOUNDS.minMinutes ||
+    constraints.maxTimeMinutes > CONSTRAINT_BOUNDS.maxMinutes
+  ) {
+    return `maxTimeMinutes must be in [${CONSTRAINT_BOUNDS.minMinutes}, ${CONSTRAINT_BOUNDS.maxMinutes}].`;
+  }
+  if (
+    !Number.isFinite(constraints.maxTokens) ||
+    constraints.maxTokens < CONSTRAINT_BOUNDS.minTokens ||
+    constraints.maxTokens > CONSTRAINT_BOUNDS.maxTokens
+  ) {
+    return `maxTokens must be in [${CONSTRAINT_BOUNDS.minTokens}, ${CONSTRAINT_BOUNDS.maxTokens}].`;
+  }
+  return null;
 }
 
 /** Parse a raw `/goal set` string + persist. `seed` carries template defaults. */

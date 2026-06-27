@@ -624,8 +624,8 @@ async function setActiveChainGoal(directory: string, chain: GoalControlChain, no
     lastEvaluation: null,
     evaluationHistory: [],
     constraints: {
-      maxTurns: clampPositiveInteger(step.maxTurns, DEFAULT_CONSTRAINTS.maxTurns),
-      maxTimeMinutes: clampPositiveInteger(step.maxMinutes, DEFAULT_CONSTRAINTS.maxTimeMinutes),
+      maxTurns: clampPositiveInteger(step.maxTurns, DEFAULT_CONSTRAINTS.maxTurns, CONSTRAINT_BOUNDS.maxTurns),
+      maxTimeMinutes: clampPositiveInteger(step.maxMinutes, DEFAULT_CONSTRAINTS.maxTimeMinutes, CONSTRAINT_BOUNDS.maxMinutes),
       maxTokens: DEFAULT_CONSTRAINTS.maxTokens,
     },
     metadata: {
@@ -1070,8 +1070,9 @@ function readPositiveInteger(value: unknown) {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
-function clampPositiveInteger(value: unknown, fallback: number) {
-  return readPositiveInteger(value) ?? fallback
+function clampPositiveInteger(value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER) {
+  const parsed = readPositiveInteger(value)
+  return parsed !== undefined && parsed <= max ? parsed : fallback
 }
 
 function isTemplateCategory(value: unknown): value is TemplateCategory {

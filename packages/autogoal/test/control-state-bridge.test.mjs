@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 import { runGoalControlStateFile } from "../dist/control-state.js";
 import { readGoalChain, advanceGoalChain } from "../dist/goal-chain.js";
-import { readGoalState } from "../dist/goal-state.js";
+import { CONSTRAINT_BOUNDS, DEFAULT_CONSTRAINTS, readGoalState } from "../dist/goal-state.js";
 
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "opengoal-bridge-"));
@@ -259,6 +259,29 @@ test("bridge: set bounds an over-length condition to 4000 chars", async () => {
     await runGoalControlStateFile(dir, `set "${huge}"`, Date.now());
     const state = JSON.parse(readFileSync(join(dir, ".opencode", ".goal-state.json"), "utf-8"));
     assert.equal(state.condition.length, 4000);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bridge: chain start-json falls back from above-bound step budgets to defaults", async () => {
+  const dir = freshDir();
+  try {
+    const payload = JSON.stringify({
+      steps: [
+        {
+          condition: "Plan",
+          maxTurns: CONSTRAINT_BOUNDS.maxTurns + 1,
+          maxMinutes: CONSTRAINT_BOUNDS.maxMinutes + 1,
+        },
+        { condition: "Build" },
+      ],
+    });
+    await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
+
+    const state = readGoalState(dir);
+    assert.equal(state.constraints.maxTurns, DEFAULT_CONSTRAINTS.maxTurns);
+    assert.equal(state.constraints.maxTimeMinutes, DEFAULT_CONSTRAINTS.maxTimeMinutes);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
