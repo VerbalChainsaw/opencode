@@ -1281,13 +1281,13 @@ function HomeProjectRow(props: {
         </Show>
       </button>
       <div
-        class="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/project:opacity-100 focus-within:opacity-100 data-[menu=true]:opacity-100"
+        class="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity group-hover/project:opacity-100 focus-within:opacity-100 data-[menu=true]:opacity-100"
         data-menu={state.menuOpen}
       >
         <IconButtonV2
           data-action="home-project-new-session"
           variant="ghost-muted"
-          size="small"
+          size="large"
           icon={<IconV2 name="edit" />}
           aria-label={props.language.t("command.session.new")}
           onClick={() => props.openNewSession(props.server, props.project.worktree)}
@@ -1303,7 +1303,7 @@ function HomeProjectRow(props: {
             as={IconButtonV2}
             data-action="home-project-menu"
             variant="ghost-muted"
-            size="small"
+            size="large"
             icon={<IconV2 name="outline-dots" />}
             aria-label={props.language.t("common.moreOptions")}
           />

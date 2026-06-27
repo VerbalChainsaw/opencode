@@ -425,6 +425,15 @@ describe("home mission-control contract", () => {
     expect(src).toContain("props.unseenCount > 0")
   })
 
+  test("project row quick actions use readable large icon targets", async () => {
+    const src = await home()
+    const row = src.slice(src.indexOf("function HomeProjectRow"), src.indexOf("function HomeProjectAvatar"))
+    expect(row).toContain("gap-1 opacity-0")
+    expect(row).toMatch(/data-action="home-project-new-session"[\s\S]{0,220}size="large"/)
+    expect(row).toMatch(/data-action="home-project-menu"[\s\S]{0,260}size="large"/)
+    expect(row).not.toMatch(/data-action="home-project-(new-session|menu)"[\s\S]{0,260}size="small"/)
+  })
+
   test("home polish uses consistent rounded panels and neutral warning surfaces", async () => {
     const src = await home()
     expect(src).toContain('data-component="home-actions-panel" class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01')
