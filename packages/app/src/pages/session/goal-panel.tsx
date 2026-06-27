@@ -4187,10 +4187,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           >
                             <div
                               class="h-full rounded-full bg-emerald-300 transition-[width] motion-reduce:transition-none"
+                              classList={{
+                                "motion-safe:animate-[goal-pulse_2s_ease-in-out_infinite]": running.status === "active" && !liveRunStalled(),
+                              }}
                               style={{
                                 width: `${running.status === "achieved" ? 100 : progressPct()}%`,
                                 ...(running.status === "active" && !liveRunStalled() ? {
-                                  animation: "goal-pulse 2s ease-in-out infinite",
                                   "box-shadow": "0 0 6px rgba(110, 231, 183, 0.4)",
                                 } : {}),
                               }}
@@ -4418,7 +4420,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                         <div class="flex items-center gap-1.5">
                                           <div class="h-1.5 w-16 overflow-hidden rounded-full bg-background-base/70">
                                             <div
-                                              class="h-full rounded-full transition-[width]"
+                                              class="h-full rounded-full transition-[width] motion-reduce:transition-none"
                                               style={{ width: `${pct()}%`, "background-color": confidenceColor(pct()) }}
                                             />
                                           </div>

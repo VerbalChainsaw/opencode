@@ -882,6 +882,8 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("runningInlinePanelStyle")
     expect(src).toContain('role="progressbar"')
     expect(src).toContain("motion-reduce:transition-none")
+    expect(src).toContain('"motion-safe:animate-[goal-pulse_2s_ease-in-out_infinite]": running.status === "active" && !liveRunStalled()')
+    expect(src).not.toContain('animation: "goal-pulse 2s ease-in-out infinite"')
     expect(src).not.toContain("text-[38px]")
     expect(src).not.toContain("ticks used")
     expect(src).not.toContain("current item")
