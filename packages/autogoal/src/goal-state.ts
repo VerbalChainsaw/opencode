@@ -224,9 +224,9 @@ export function validateGoalState(state: any): state is GoalState {
   if (state.startedAt < 0) return false;
   // Optional-but-typed fields. The schema treats them as `T | null`; an absent
   // field reads back as `undefined` from JSON.parse and is acceptable.
-  if (state.completedAt !== null && state.completedAt !== undefined && !isFiniteNumber(state.completedAt)) return false;
-  if (state.pausedAt !== null && state.pausedAt !== undefined && !isFiniteNumber(state.pausedAt)) return false;
-  if (state.resumedAt !== null && state.resumedAt !== undefined && !isFiniteNumber(state.resumedAt)) return false;
+  if (state.completedAt !== null && state.completedAt !== undefined && (!isFiniteNumber(state.completedAt) || state.completedAt < 0)) return false;
+  if (state.pausedAt !== null && state.pausedAt !== undefined && (!isFiniteNumber(state.pausedAt) || state.pausedAt < 0)) return false;
+  if (state.resumedAt !== null && state.resumedAt !== undefined && (!isFiniteNumber(state.resumedAt) || state.resumedAt < 0)) return false;
   if (!isFiniteNumber(state.turnsEvaluated) || state.turnsEvaluated < 0) return false;
   if (!isFiniteNumber(state.tokensUsed) || state.tokensUsed < 0) return false;
   // `command` may be `string | null | undefined`. The runtime (server.ts:178)

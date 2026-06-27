@@ -410,6 +410,19 @@ test("validateGoalState: accepts command as string, null, or absent", () => {
   assert.equal(validateGoalState({ ...base, command: undefined }), true);
 });
 
+test("validateGoalState: rejects negative lifecycle timestamps that distort resume timing", () => {
+  const base = {
+    version: 1, id: "abc", condition: "x", status: "paused",
+    createdAt: 1, startedAt: 1, completedAt: null, pausedAt: 10, resumedAt: null,
+    turnsEvaluated: 0, tokensUsed: 0, lastEvaluation: null, evaluationHistory: [],
+    constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
+    metadata: { setBy: "user" },
+  };
+  assert.equal(validateGoalState({ ...base, pausedAt: -1 }), false);
+  assert.equal(validateGoalState({ ...base, resumedAt: -1 }), false);
+  assert.equal(validateGoalState({ ...base, completedAt: -1 }), false);
+});
+
 test("validateGoalState: rejects negative turnsEvaluated (cycle-0 TUI crash case)", () => {
   const s = {
     version: 1, id: "abc", condition: "x", status: "active",
@@ -756,4 +769,3 @@ test("C-2: readHandoffResult returns {kind:'absent'} for missing handoff, {kind:
     rmSync(dir, { recursive: true, force: true });
   }
 });
-

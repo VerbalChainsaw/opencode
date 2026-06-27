@@ -34,8 +34,11 @@ export interface GoalState {
   condition: string
   command?: string | null
   status: "active" | "paused" | "achieved" | "cleared"
+  createdAt?: number
   startedAt: number
   completedAt: number | null
+  pausedAt?: number | null
+  resumedAt?: number | null
   turnsEvaluated: number
   tokensUsed: number
   lastEvaluation: {
@@ -153,8 +156,11 @@ export function isGoalStateShape(v: unknown): v is GoalState {
   if (typeof s.status !== "string" || !GOAL_STATUSES.has(s.status)) return false
   if (!isFiniteNumberInRange(s.turnsEvaluated, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.tokensUsed, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (s.createdAt !== undefined && !isFiniteNumberInRange(s.createdAt, 0, Number.MAX_SAFE_INTEGER)) return false
   if (!isFiniteNumberInRange(s.startedAt, 0, Number.MAX_SAFE_INTEGER)) return false
   if (s.completedAt !== null && !isFiniteNumberInRange(s.completedAt, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (s.pausedAt !== undefined && s.pausedAt !== null && !isFiniteNumberInRange(s.pausedAt, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (s.resumedAt !== undefined && s.resumedAt !== null && !isFiniteNumberInRange(s.resumedAt, 0, Number.MAX_SAFE_INTEGER)) return false
   if (s.lastEvaluation !== null && !isLastEvaluationShape(s.lastEvaluation)) return false
   if (!Array.isArray(s.evaluationHistory) || s.evaluationHistory.length > 10) return false
   if (!s.evaluationHistory.every(isEvaluationShape)) return false

@@ -189,6 +189,21 @@ describe("isGoalStateShape (defensive shape guard for corrupted state files)", (
     expect(isGoalStateShape({ ...validMinimalState, completedAt: Number.NaN })).toBe(false)
   })
 
+  test("accepts optional lifecycle timestamps only as non-negative numbers or null", async () => {
+    const { isGoalStateShape } = await load()
+
+    expect(isGoalStateShape({ ...validMinimalState, createdAt: undefined })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, createdAt: 1_700_000_000_000 })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, pausedAt: null, resumedAt: null })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, pausedAt: 1_700_000_000_000, resumedAt: 1_700_000_030_000 })).toBe(true)
+    expect(isGoalStateShape({ ...validMinimalState, createdAt: "then" })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, createdAt: -1 })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, pausedAt: "paused" })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, pausedAt: -1 })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, resumedAt: "resumed" })).toBe(false)
+    expect(isGoalStateShape({ ...validMinimalState, resumedAt: -1 })).toBe(false)
+  })
+
   test("requires lastEvaluation to be null or a bounded evaluation object for safe evidence readouts", async () => {
     const { isGoalStateShape } = await load()
     const { lastEvaluation, ...missingLastEvaluation } = validMinimalState
