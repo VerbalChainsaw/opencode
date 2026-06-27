@@ -9,11 +9,13 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
+import { usePermission } from "@/context/permission"
 import { useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
+import { sessionPermissionRequest, sessionQuestionRequest } from "./composer/session-request-tree"
 
 import type { JSX } from "solid-js"
 
@@ -80,6 +82,7 @@ import {
   GOAL_TEMPLATE_TONES,
   actionCategoryShortLabel,
   handoffPanelMode,
+  goalInterruptionWarningKey,
   isGoalPinnedModel,
   steerDraftDisposition,
   templateModelFromSnapshot,
@@ -96,6 +99,7 @@ import {
   type GoalTemplateElevation,
   type GoalTemplateModel,
   type GoalTemplateTone,
+  type GoalPendingPromptKind,
   type SkillPickerDisabledReason,
   // AG-P1-05 — pure visible-source routing for chain row actions.
   chainStepVisibleAction,
@@ -1547,8 +1551,30 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const models = useModels()
   const sdk = useSDK() as unknown as GoalActionClient
   const sync = useSync()
+  const permission = usePermission()
   const navigate = useNavigate()
   const state = () => goalStateForSession(props.goal.store.state, props.sessionID)
+  const pendingPermissionRequest = createMemo(() =>
+    sessionPermissionRequest(sync.data.session ?? [], sync.data.permission ?? {}, props.sessionID, (item) => {
+      return !permission.autoResponds(item, sdk.directory)
+    }),
+  )
+  const pendingQuestionRequest = createMemo(() =>
+    sessionQuestionRequest(sync.data.session ?? [], sync.data.question ?? {}, props.sessionID),
+  )
+  const pendingPromptKind = createMemo<GoalPendingPromptKind>(() => {
+    if (pendingPermissionRequest()) return "permission"
+    if (pendingQuestionRequest()) return "question"
+    return null
+  })
+  const interruptionWarningText = (action: "pause" | "stop") => {
+    const key = goalInterruptionWarningKey({ action, pendingPrompt: pendingPromptKind() })
+    return key ? language.t(key) : null
+  }
+  const goalControlMessage = (...messages: Array<string | null | undefined>) => {
+    const clean = messages.map((message) => cleanText(message).trim()).filter(Boolean)
+    return clean.length > 0 ? [...new Set(clean)].join(" ") : null
+  }
 
   const [busy, setBusy] = createSignal<GoalAction | "set" | "steer" | "budget" | "step" | "template" | "chain" | "fresh" | null>(null)
   // Optimistic pause/resume: the instant the user clicks, we record the status
@@ -1863,13 +1889,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy("pause")
+    const pendingPromptWarning = interruptionWarningText("pause")
     const result = await pauseGoalRun(sdk.client, {
       sessionID,
       directory: sdk.directory,
       abortActiveTurn: true,
     })
     if (result.ok) {
-      setControlError("warning" in result && typeof result.warning === "string" ? result.warning : null)
+      setControlError(goalControlMessage("warning" in result && typeof result.warning === "string" ? result.warning : null, pendingPromptWarning))
     } else {
       setControlError(result.error)
     }
@@ -1885,13 +1912,14 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
     setBusy("clear")
+    const pendingPromptWarning = interruptionWarningText("stop")
     const result = await stopGoalRun(sdk.client, {
       sessionID,
       directory: sdk.directory,
       abortActiveTurn: true,
     })
     if (result.ok) {
-      setControlError("warning" in result && typeof result.warning === "string" ? result.warning : null)
+      setControlError(goalControlMessage("warning" in result && typeof result.warning === "string" ? result.warning : null, pendingPromptWarning))
     } else {
       setControlError(result.error)
     }

@@ -1218,6 +1218,19 @@ export function steerDraftDisposition(input: {
   return "clear"
 }
 
+export type GoalInterruptionAction = "pause" | "stop"
+export type GoalPendingPromptKind = "permission" | "question" | null
+
+export function goalInterruptionWarningKey(input: {
+  action: GoalInterruptionAction
+  pendingPrompt: GoalPendingPromptKind
+}): string | null {
+  if (!input.pendingPrompt) return null
+  const action = input.action === "pause" ? "pause" : "stop"
+  const prompt = input.pendingPrompt === "permission" ? "Permission" : "Question"
+  return `session.goal.interrupt.${action}${prompt}`
+}
+
 function workspaceFileContent(raw: unknown): string | null {
   return typeof raw === "string"
     ? raw

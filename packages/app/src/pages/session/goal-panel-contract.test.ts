@@ -1427,3 +1427,23 @@ describe("steerDraftDisposition (prompt admission failure)", () => {
     expect(steerDraftDisposition({ commandSaved: false, promptAttempted: true, promptAdmitted: false })).toBe("retain")
   })
 })
+
+describe("goalInterruptionWarningKey (pending prompt visibility)", () => {
+  test("warns when hard pause or stop interrupts a run with pending prompts", async () => {
+    const { goalInterruptionWarningKey } = await load()
+
+    expect(goalInterruptionWarningKey({ action: "pause", pendingPrompt: "permission" })).toBe(
+      "session.goal.interrupt.pausePermission",
+    )
+    expect(goalInterruptionWarningKey({ action: "stop", pendingPrompt: "permission" })).toBe(
+      "session.goal.interrupt.stopPermission",
+    )
+    expect(goalInterruptionWarningKey({ action: "pause", pendingPrompt: "question" })).toBe(
+      "session.goal.interrupt.pauseQuestion",
+    )
+    expect(goalInterruptionWarningKey({ action: "stop", pendingPrompt: "question" })).toBe(
+      "session.goal.interrupt.stopQuestion",
+    )
+    expect(goalInterruptionWarningKey({ action: "stop", pendingPrompt: null })).toBeNull()
+  })
+})

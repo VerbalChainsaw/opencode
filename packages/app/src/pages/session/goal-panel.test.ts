@@ -303,6 +303,29 @@ describe("goal panel mission-control contracts", () => {
     expect(pauseGoal![0]).not.toContain("abortActiveTurn: sync.data.session_working(sessionID)")
   })
 
+  test("hard pause and stop surface pending permission/question prompt warnings", async () => {
+    const src = await goalPanelSource()
+
+    expect(src).toContain("usePermission")
+    expect(src).toContain("sessionPermissionRequest")
+    expect(src).toContain("sessionQuestionRequest")
+    expect(src).toContain("goalInterruptionWarningKey")
+    expect(src).toContain("pendingPromptKind")
+    expect(src).toContain("goalControlMessage")
+
+    const pauseGoal = src.match(/const pauseGoal = async \(\) => \{[\s\S]*?\n  \}/)
+    expect(pauseGoal).toBeTruthy()
+    expect(pauseGoal![0]).toContain('interruptionWarningText("pause")')
+    expect(pauseGoal![0]).toContain("goalControlMessage")
+
+    const stopGoal = src.match(/const stopGoal = async \(\) => \{[\s\S]*?\n  \}/)
+    expect(stopGoal).toBeTruthy()
+    expect(stopGoal![0]).toContain('interruptionWarningText("stop")')
+    expect(stopGoal![0]).toContain("goalControlMessage")
+
+    expect(src).toContain("language.t(key)")
+  })
+
   test("run controls expose restart as a first-class lifecycle action", async () => {
     const src = await goalPanelSource()
     expect(src).toContain("session.goal.action.restart")
@@ -2917,6 +2940,11 @@ describe("useGoal hook", () => {
     mock.module("@/context/models", () => ({
       useModels: () => ({
         list: () => [],
+      }),
+    }))
+    mock.module("@/context/permission", () => ({
+      usePermission: () => ({
+        autoResponds: () => false,
       }),
     }))
     mock.module("@/context/sdk", () => ({
