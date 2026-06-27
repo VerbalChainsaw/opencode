@@ -1358,6 +1358,40 @@ describe("goal panel mission-control contracts", () => {
     expect(actionEditor).toContain('aria-label={language.t("session.goal.template.command")}')
   })
 
+  test("goal editable controls keep a 24px visual floor", async () => {
+    const src = await goalPanelSource()
+    const targetFieldStart = src.indexOf('data-component="goal-chain-target-field"')
+    const standaloneCommandStart = src.indexOf('data-component="goal-standalone-command-field"')
+    const globalBudgetStart = src.indexOf('data-component="goal-global-budget"')
+    const actionRoutingStart = src.indexOf('data-component="goal-action-editor-routing"')
+    const actionEditorFieldsStart = src.indexOf('data-component="goal-action-editor-fields"')
+    expect(targetFieldStart).toBeGreaterThan(-1)
+    expect(standaloneCommandStart).toBeGreaterThan(targetFieldStart)
+    expect(globalBudgetStart).toBeGreaterThan(standaloneCommandStart)
+    expect(actionRoutingStart).toBeGreaterThan(globalBudgetStart)
+    expect(actionEditorFieldsStart).toBeGreaterThan(actionRoutingStart)
+
+    const targetField = src.slice(targetFieldStart, standaloneCommandStart)
+    const standaloneCommand = src.slice(standaloneCommandStart, globalBudgetStart)
+    const globalBudget = src.slice(globalBudgetStart, src.indexOf('data-component="goal-chain-running-status"', globalBudgetStart))
+    const actionRouting = src.slice(actionRoutingStart, actionEditorFieldsStart)
+
+    expect(targetField).toContain("class=\"h-6 min-w-0 bg-transparent")
+    expect(targetField).not.toContain("class=\"h-5 min-w-0 bg-transparent")
+    expect(standaloneCommand).toContain("class=\"h-6 min-w-0 bg-transparent")
+    expect(standaloneCommand).not.toContain("class=\"h-5 min-w-0 bg-transparent")
+    expect(globalBudget).toContain("class=\"h-6 w-11 rounded-md border border-sky-200/14")
+    expect(globalBudget).not.toContain("class=\"h-5 w-11 rounded-md border border-sky-200/14")
+    expect(actionRouting).toContain("class=\"h-6 min-w-0 truncate rounded-md bg-transparent")
+    expect(actionRouting).toContain("class=\"flex h-6 min-w-0 items-center gap-1 rounded-full")
+    expect(actionRouting).toContain("class=\"h-6 min-w-0 flex-1 bg-transparent")
+    expect(actionRouting).toContain("class=\"h-6 min-w-0 truncate bg-transparent")
+    expect(actionRouting).not.toContain("class=\"h-5 min-w-0 truncate rounded-md bg-transparent")
+    expect(actionRouting).not.toContain("class=\"flex h-5 min-w-0 items-center gap-1 rounded-full")
+    expect(actionRouting).not.toContain("class=\"h-5 min-w-0 flex-1 bg-transparent")
+    expect(actionRouting).not.toContain("class=\"h-5 min-w-0 truncate bg-transparent")
+  })
+
   test("live run-order delete permits deleting a done step when the run is terminal (v0.7.3)", async () => {
     // v0.7.3 / audit June 2026: the original guard at
     // `removeLiveChainStep` blocked deletion of `index <= runningStepIndex()`

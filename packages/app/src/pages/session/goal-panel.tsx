@@ -3811,7 +3811,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       placeholder={language.t("session.goal.chainBuilder.objectivePlaceholder")}
                       title={language.t("session.goal.chainBuilder.objectiveHint")}
                       aria-label={language.t("session.goal.chainBuilder.objective")}
-                      class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-text-base outline-none placeholder:text-sky-100/30 disabled:opacity-40"
+                      class="h-6 min-w-0 bg-transparent px-1 text-11-medium text-text-base outline-none placeholder:text-sky-100/30 disabled:opacity-40"
                     />
                   </div>
                   <Show when={!hasRunnableChain()}>
@@ -3833,7 +3833,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         disabled={busy() !== null || !props.sessionID}
                         placeholder={language.t("session.goal.create.commandPlaceholder")}
                         aria-label={language.t("session.goal.create.command")}
-                        class="h-5 min-w-0 bg-transparent px-1 text-11-medium text-sky-50 outline-none placeholder:text-sky-100/32 disabled:opacity-40"
+                        class="h-6 min-w-0 bg-transparent px-1 text-11-medium text-sky-50 outline-none placeholder:text-sky-100/32 disabled:opacity-40"
                       />
                     </div>
                   </Show>
@@ -3879,7 +3879,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterTurns())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTurns", event.currentTarget.value)}
-                        class="h-5 w-11 rounded-md border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                        class="h-6 w-11 rounded-md border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                       />
                       <span class="min-w-0 truncate text-[9px] font-semibold text-sky-100/45">
                         {language.t("session.goal.chainBuilder.stat.turnsHint")}
@@ -3905,7 +3905,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         value={String(masterMinutes())}
                         disabled={busy() !== null || !!liveGoal()}
                         onInput={(event) => updateMasterBudget("maxTimeMinutes", event.currentTarget.value)}
-                        class="h-5 w-11 rounded-md border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                        class="h-6 w-11 rounded-md border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                       />
                       <span class="min-w-0 truncate text-[9px] font-semibold text-sky-100/45">
                         {language.t("session.goal.chainBuilder.stat.timeHint")}
@@ -3924,7 +3924,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                       <span class="min-w-[48px] text-[9px] font-semibold uppercase tracking-[0.08em] text-sky-100/70">
                         {language.t("session.goal.chainBuilder.stat.actions")}
                       </span>
-                      <span class="flex h-5 w-11 items-center justify-center rounded-md border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base">
+                      <span class="flex h-6 w-11 items-center justify-center rounded-md border border-sky-200/14 bg-sky-950/16 px-1 text-center text-12-bold tabular-nums text-text-base">
                         {visibleStepCount()}
                       </span>
                       <span class="min-w-0 truncate text-[9px] font-semibold text-sky-100/45">
@@ -4999,7 +4999,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
                                       }
-                                      class="h-5 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                      class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                                     />
                                   </label>
                                   <label
@@ -5015,7 +5015,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                       onInput={(event) =>
                                         updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
                                       }
-                                      class="h-5 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                      class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
                                     />
                                   </label>
                                 </span>
@@ -5646,7 +5646,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               aria-label={language.t("session.goal.template.pinnedAgent")}
                               title={language.t("session.goal.template.pinnedAgent")}
                               onChange={(event) => setActionDraft("agent", event.currentTarget.value)}
-                              class="h-5 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-indigo-100/90 outline-none transition disabled:opacity-30"
+                              class="h-6 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-indigo-100/90 outline-none transition disabled:opacity-30"
                             >
                               <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultAgent")}</option>
                               <For each={agentOptionsForDraft()}>
@@ -5675,7 +5675,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               aria-label={language.t("session.goal.template.pinnedModel")}
                               title={language.t("session.goal.template.pinnedModel")}
                               onChange={(event) => setActionDraft("model", event.currentTarget.value)}
-                              class="h-5 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-sky-100/90 outline-none transition disabled:opacity-30"
+                              class="h-6 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-sky-100/90 outline-none transition disabled:opacity-30"
                             >
                               <option value="" class="bg-background-base text-text-weak">{language.t("session.goal.template.sessionDefaultModel")}</option>
                               <For each={modelOptionsForDraft()}>
@@ -5696,7 +5696,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               {language.t("session.goal.template.constraints")}
                             </span>
                             <div
-                              class="flex h-5 min-w-0 items-center gap-1 rounded-full border px-1.5"
+                              class="flex h-6 min-w-0 items-center gap-1 rounded-full border px-1.5"
                               style={{
                                 "background-color": "rgba(59, 130, 246, 0.045)",
                                 "border-color": "rgba(96, 165, 250, 0.12)",
@@ -5717,12 +5717,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     if (!Number.isFinite(value)) return
                                     setActionDraft("turns", Math.max(1, value))
                                   }}
-                                  class="h-5 min-w-0 flex-1 bg-transparent p-0 text-right text-11-medium font-bold tabular-nums text-blue-50/84 outline-none disabled:opacity-40"
+                                  class="h-6 min-w-0 flex-1 bg-transparent p-0 text-right text-11-medium font-bold tabular-nums text-blue-50/84 outline-none disabled:opacity-40"
                                 />
                               </label>
                             </div>
                             <div
-                              class="flex h-5 min-w-0 items-center gap-1 rounded-full border px-1.5"
+                              class="flex h-6 min-w-0 items-center gap-1 rounded-full border px-1.5"
                               style={{
                                 "background-color": "rgba(20, 184, 166, 0.045)",
                                 "border-color": "rgba(45, 212, 191, 0.12)",
@@ -5743,7 +5743,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                     if (!Number.isFinite(value)) return
                                     setActionDraft("minutes", Math.max(1, value))
                                   }}
-                                  class="h-5 min-w-0 flex-1 bg-transparent p-0 text-right text-11-medium font-bold tabular-nums text-teal-50/84 outline-none disabled:opacity-40"
+                                  class="h-6 min-w-0 flex-1 bg-transparent p-0 text-right text-11-medium font-bold tabular-nums text-teal-50/84 outline-none disabled:opacity-40"
                                 />
                               </label>
                             </div>
@@ -5766,7 +5766,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                 if (name) toggleActionSkill(name)
                                 event.currentTarget.value = ""
                               }}
-                              class="h-5 min-w-0 truncate bg-transparent text-[10px] font-semibold text-emerald-100/82 outline-none transition disabled:opacity-35"
+                              class="h-6 min-w-0 truncate bg-transparent text-[10px] font-semibold text-emerald-100/82 outline-none transition disabled:opacity-35"
                               title={skillPickerReasonText(addSkillControl().reason) || language.t("session.goal.template.addSkill")}
                               aria-label={language.t("session.goal.template.addSkill")}
                             >
