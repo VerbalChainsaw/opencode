@@ -101,3 +101,37 @@ test("goal_status surfaces corrupt goal state instead of reporting no active goa
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("goal_restart surfaces corrupt goal state instead of reporting no active goal", async () => {
+  const dir = freshDir();
+  try {
+    const plugin = await server({ client: makeClient(), directory: dir });
+    plantCorruptState(dir);
+
+    const result = await plugin.tool.goal_restart.execute(
+      {},
+      { directory: dir, sessionID: "ses_restart_corrupt", agent: "build" },
+    );
+
+    assert.match(
+      String(result),
+      /corrupt|quarantined|goal-state\.json\.corrupt/i,
+      `goal_restart should surface the corrupt state, got: ${String(result)}`,
+    );
+    assert.doesNotMatch(
+      String(result),
+      /No active goal/i,
+      "goal_restart must not collapse corrupt state into no-goal",
+    );
+
+    assert.equal(
+      existsSync(join(dir, ".opencode", ".goal-state.json")),
+      false,
+      "goal_restart should quarantine the corrupt state file",
+    );
+    const corruptArtifacts = readdirSync(join(dir, ".opencode")).filter((name) => name.includes(".corrupt."));
+    assert.ok(corruptArtifacts.length > 0, "goal_restart should leave a forensic corrupt artifact");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

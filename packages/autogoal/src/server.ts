@@ -1160,7 +1160,7 @@ export const server: Plugin = async ({ client, directory }) => {
     );
   }
 
-  function readStateForTransitionTool(action: "clear" | "pause" | "resume"): { state: GoalState | null; corruptMessage: string | null } {
+  function readStateForTransitionTool(action: "clear" | "pause" | "resume" | "restart"): { state: GoalState | null; corruptMessage: string | null } {
     const result = readGoalStateResult(directory);
     if (result.kind === "corrupt") {
       return {
@@ -2296,7 +2296,9 @@ export const server: Plugin = async ({ client, directory }) => {
         async execute(_args, ctx) {
           // Capture the pre-transition status so the webhook payload
           // can carry the correct `previousStatus` (any → active).
-          const before = readGoalState(ctx.directory);
+          const beforeRead = readStateForTransitionTool("restart");
+          if (beforeRead.corruptMessage) return beforeRead.corruptMessage;
+          const before = beforeRead.state;
           const previousStatus = before ? before.status : null;
           const res = restartGoal(ctx.directory);
           if (!res.ok) {
