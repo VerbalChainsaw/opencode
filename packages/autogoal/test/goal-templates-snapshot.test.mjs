@@ -64,6 +64,12 @@ test("buildTemplatesSnapshot: includes the shipped default action pack with frie
   assert.equal(byId["wire-check"].category, "Review");
   assert.equal(byId["adversarial-scan"].tone, "fuchsia");
   assert.equal(byId["adversarial-scan"].elevation, "raised");
+  assert.equal(byId["plan"].variables?.scope?.description, "Work target");
+  assert.equal(byId["debug"].variables?.scope?.description, "Failure target");
+  assert.equal(byId["wire-check"].variables?.scope?.description, "Flow target");
+  for (const template of snap.templates.filter((item) => item.builtin && item.condition.includes("{scope}"))) {
+    assert.notEqual(template.variables?.scope?.description, "Scope", `${template.id} exposes raw Scope label`);
+  }
 });
 
 test("buildTemplatesSnapshot: surfaces a valid user template as a non-builtin button", () => {

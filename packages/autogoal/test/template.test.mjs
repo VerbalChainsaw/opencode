@@ -255,6 +255,25 @@ describe("discoverTemplates", () => {
         assert.ok(names.includes(id), `missing method builtin ${id} in ${names.join(",")}`);
       }
       // Prompt methods carry a {scope} variable and no verify command.
+      const expectedScopeLabels = new Map([
+        ["plan", "Work target"],
+        ["build", "Work target"],
+        ["debug", "Failure target"],
+        ["test", "Test target"],
+        ["validate", "Verification target"],
+        ["review", "Review target"],
+        ["docs", "Documentation target"],
+        ["wire-check", "Flow target"],
+        ["adversarial-scan", "Scan target"],
+        ["typecheck", "Typecheck target"],
+        ["commit", "Commit target"],
+      ]);
+      for (const [id, label] of expectedScopeLabels) {
+        const template = exportTemplate(dir, id);
+        assert.ok(template, `${id} template should export`);
+        assert.equal(template.variables?.scope?.description, label);
+        assert.notEqual(template.variables?.scope?.description, "Scope");
+      }
       const plan = exportTemplate(dir, "plan");
       assert.ok(plan, "plan template should export");
       assert.equal(plan.command, undefined);
