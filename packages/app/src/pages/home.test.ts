@@ -481,6 +481,17 @@ describe("home mission-control contract", () => {
     expect(src).toContain("props.unseenCount > 0")
   })
 
+  test("LegacyHome renders persisted opened projects instead of a five-item backend recency slice", async () => {
+    const src = await home()
+    const legacy = src.slice(src.indexOf("function LegacyHome"))
+    expect(legacy).toContain("mergeHomeProjectLists")
+    expect(legacy).toContain("ctx?.projects.list()")
+    expect(legacy).toContain('language.t("home.projects")')
+    expect(legacy).not.toContain(".slice(0, 5)")
+    expect(legacy).not.toContain('language.t("home.recentProjects")')
+    expect(legacy).not.toContain("sync.data.project.length > 0")
+  })
+
   test("project row quick actions use readable large icon targets", async () => {
     const src = await home()
     const row = src.slice(src.indexOf("function HomeProjectRow"), src.indexOf("function HomeProjectAvatar"))

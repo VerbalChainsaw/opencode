@@ -1741,12 +1741,16 @@ function LegacyHome() {
   const server = useServer()
   const language = useLanguage()
   const homedir = createMemo(() => sync.data.path.home)
-  const recent = createMemo(() => {
-    return sync.data.project
-      .slice()
-      .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
-      .slice(0, 5)
+  const currentServerCtx = createMemo(() => {
+    const current = server.current
+    if (!current) return
+    return global.createServerCtx(current)
   })
+  const projects = createMemo(() => {
+    const ctx = currentServerCtx()
+    return mergeHomeProjectLists(ctx?.projects.list() ?? [], ctx?.sync.data.project ?? sync.data.project)
+  })
+  const projectSync = () => currentServerCtx()?.sync ?? sync
 
   const serverDotClass = createMemo(() => {
     const healthy = global.servers.health[server.key]?.healthy
@@ -1802,16 +1806,16 @@ function LegacyHome() {
         {server.name}
       </Button>
       <Switch>
-        <Match when={sync.data.project.length > 0}>
+        <Match when={projects().length > 0}>
           <div class="mt-20 w-full flex flex-col gap-4">
             <div class="flex gap-2 items-center justify-between pl-3">
-              <div class="text-14-medium text-text-strong">{language.t("home.recentProjects")}</div>
+              <div class="text-14-medium text-text-strong">{language.t("home.projects")}</div>
               <Button icon="folder-add-left" size="normal" class="pl-2 pr-3" onClick={chooseProject}>
                 {language.t("command.project.open")}
               </Button>
             </div>
             <ul class="flex flex-col gap-2">
-              <For each={recent()}>
+              <For each={projects()}>
                 {(project) => (
                   <Button
                     size="large"
@@ -1820,16 +1824,18 @@ function LegacyHome() {
                     onClick={() => openProject(server.current!, project.worktree)}
                   >
                     {project.worktree.replace(homedir(), "~")}
-                    <div class="text-14-regular text-text-weak">
-                      {DateTime.fromMillis(project.time.updated ?? project.time.created).toRelative()}
-                    </div>
+                    <Show when={project.time?.updated ?? project.time?.created}>
+                      {(time) => (
+                        <div class="text-14-regular text-text-weak">{DateTime.fromMillis(time()).toRelative()}</div>
+                      )}
+                    </Show>
                   </Button>
                 )}
               </For>
             </ul>
           </div>
         </Match>
-        <Match when={!sync.ready}>
+        <Match when={!projectSync().ready}>
           <div class="mt-30 mx-auto flex flex-col items-center gap-3">
             <div class="text-12-regular text-text-weak">{language.t("common.loading")}</div>
             <Button class="px-3" onClick={chooseProject}>
