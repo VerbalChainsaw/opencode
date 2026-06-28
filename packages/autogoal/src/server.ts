@@ -1166,6 +1166,7 @@ export const server: Plugin = async ({ client, directory }) => {
 
   async function pauseActiveChainForUnavailableState(sessionId: string, reason: string, extra?: Record<string, unknown>) {
     const safeReason = sanitizeForPrompt(reason).slice(0, 200);
+    let pausedForWebhook: GoalState | null = null;
     log("error", "skipping nudge: active goal chain state unavailable", { sessionId, reason: safeReason, ...extra });
     await withStateLock(directory, async () => {
       const fresh = readGoalState(directory);
@@ -1183,6 +1184,7 @@ export const server: Plugin = async ({ client, directory }) => {
             evaluatorType: "deterministic",
           };
           writeGoalStateAtomic(directory, paused);
+          pausedForWebhook = paused;
         }
       }
       return undefined;
@@ -1190,6 +1192,7 @@ export const server: Plugin = async ({ client, directory }) => {
       log("error", "failed to pause active goal after chain state failure", { sessionId, error: String(err), reason: safeReason });
     });
     await notify(sessionId, "Goal chain paused", safeReason, "error");
+    if (pausedForWebhook) fireWebhook(pausedForWebhook, "active");
   }
 
   function corruptStateNotice(reason: string, targetDirectory: string = directory): string {

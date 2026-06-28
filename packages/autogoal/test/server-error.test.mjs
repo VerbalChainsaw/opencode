@@ -647,6 +647,32 @@ describe("session.error handler (defect B-3b)", () => {
     );
   });
 
+  it("session.idle fires the paused webhook when a corrupt active chain is paused", async () => {
+    const create = createGoalChain(
+      dir,
+      [
+        { condition: "do webhook-visible action" },
+        { condition: "do later action" },
+      ],
+      {
+        sessionId: "test-session",
+        webhook: { url: receiver.url, on: ["paused"], allowLocal: true },
+      },
+    );
+    assert.equal(create.ok, true);
+    plantCorruptChain(dir);
+    receiver.reset();
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    await waitForPosts(receiver.received, 1);
+    assert.equal(receiver.received.length, 1, "corrupt-chain pause should fire one paused webhook");
+    assert.equal(receiver.received[0].json.status, "paused");
+    assert.equal(receiver.received[0].json.previousStatus, "active");
+  });
+
   it("compaction context includes the active chain step so resumed work keeps chain position", async () => {
     const create = createGoalChain(
       dir,
