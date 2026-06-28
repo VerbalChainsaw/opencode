@@ -71,6 +71,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
 import { abortWorkingSessionTurn } from "@/utils/session-abort"
+import { syncSessionOrIgnoreNotFound } from "@/utils/session-sync"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 
 const emptyUserMessages: UserMessage[] = []
@@ -679,11 +680,7 @@ export default function Page() {
         }, 0)
       })
 
-      return sync.session.sync(id).catch((error) => {
-        const status = (error as { cause?: { status?: unknown } })?.cause?.status
-        if (status === 404) return undefined
-        throw error
-      })
+      return syncSessionOrIgnoreNotFound(id, (sessionID) => sync.session.sync(sessionID))
     },
   )
 

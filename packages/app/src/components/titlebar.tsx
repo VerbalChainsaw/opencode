@@ -48,6 +48,7 @@ import { useGlobal } from "@/context/global"
 import { decode64 } from "@/utils/base64"
 import { ServerConnection, useServer } from "@/context/server"
 import { tabHref, useTabs, type Tab } from "@/context/tabs"
+import { syncSessionOrIgnoreNotFound } from "@/utils/session-sync"
 
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 36
@@ -713,7 +714,9 @@ function TabNavItem(props: {
       return [props.sessionId, ctx] as const
     },
     async ([sessionId, dirSyncCtx]) => {
-      await dirSyncCtx.session.sync(sessionId).catch(() => {})
+      await syncSessionOrIgnoreNotFound(sessionId, (id) => dirSyncCtx.session.sync(id)).catch((error) => {
+        console.warn("[titlebar] failed to sync session tab metadata", { sessionId, error })
+      })
       return dirSyncCtx.session.get(sessionId)
     },
     { initialValue: props.sessionId ? dirSyncCtx()?.session.get(props.sessionId) : undefined },

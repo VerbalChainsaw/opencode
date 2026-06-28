@@ -8,6 +8,7 @@ import { LocalProvider } from "@/context/local"
 import { SDKProvider } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
+import { syncSessionOrIgnoreNotFound } from "@/utils/session-sync"
 import { Schema } from "effect"
 
 export function DirectoryDataProvider(props: ParentProps<{ directory: string; draftID?: string }>) {
@@ -28,7 +29,7 @@ export function DirectoryDataProvider(props: ParentProps<{ directory: string; dr
 
   createResource(
     () => params.id,
-    (id) => sync.session.sync(id).catch(() => {}),
+    (id) => syncSessionOrIgnoreNotFound(id, (sessionID) => sync.session.sync(sessionID)),
   )
 
   return (
