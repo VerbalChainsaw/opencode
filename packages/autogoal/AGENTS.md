@@ -35,7 +35,7 @@ the checks by hand.
 | `src/` | TypeScript source (server plugin, CLI, TUI, GUI adapter, blocks). |
 | `test/` | `node --test` regression suite. All tests must remain green. |
 | `specs/` | Authoritative AutoGoal specifications. Read before non-trivial work. |
-| `docs/` | Design notes and architecture context. Secondary to `specs/`. |
+| `docs/` | Vision, design notes, and architecture context. Secondary to `specs/`. |
 | `dist/` | `tsc` build output. Tests import from here; rebuild after source edits. |
 | `package.json` | Test command: `npm test` (typecheck → build → `node --test`). |
 

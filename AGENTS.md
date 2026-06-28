@@ -59,6 +59,7 @@ In `packages/autogoal/specs/` (canonical, this repo only):
 - `README.md` — directory purpose and retirement notice
 
 In `packages/autogoal/docs/` (design notes, secondary):
+- `VISION.md` — product vision, enhancement themes, upgrade path
 - `SPEC.md` — reconstructed product requirements and acceptance matrix
 - `TRACEABILITY.md` — requirement-to-test/source traceability
 - `gui-integration.md` — Desktop GUI integration contract for AutoGoal state and controls
