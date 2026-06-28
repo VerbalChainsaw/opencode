@@ -67,7 +67,10 @@ export function shouldRestoreOpenProject(
   pending: ReadonlySet<string> = new Set(),
 ) {
   const key = pathKey(directory)
-  return known.has(key) || pending.has(key)
+  // The server project table is metadata, not deletion authority. Home can add
+  // a local folder before the backend has a project row for it, so keep
+  // explicit user-opened directories visible and merge backend metadata later.
+  return key.length > 0 || known.has(key) || pending.has(key)
 }
 
 export function staleOpenProjectDirectories(

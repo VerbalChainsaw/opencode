@@ -77,7 +77,7 @@ describe("pruneSessionKeys", () => {
 })
 
 describe("layout project restore helpers", () => {
-  test("detects stale persisted projects outside the server project list", () => {
+  test("uses the backend project list for known project matching without pruning local-only projects", () => {
     const known = knownProjectDirectoryKeys([
       {
         worktree: "C:\\Repos\\active",
@@ -87,13 +87,13 @@ describe("layout project restore helpers", () => {
 
     expect(shouldRestoreOpenProject("C:/Repos/active", known)).toBe(true)
     expect(shouldRestoreOpenProject("C:/Repos/active-workspace", known)).toBe(true)
-    expect(shouldRestoreOpenProject("C:/Repos/deleted", known)).toBe(false)
+    expect(shouldRestoreOpenProject("C:/Repos/local-only", known)).toBe(true)
     expect(
-      staleOpenProjectDirectories([{ worktree: "C:/Repos/active" }, { worktree: "C:/Repos/deleted" }], known),
-    ).toEqual(["C:/Repos/deleted"])
+      staleOpenProjectDirectories([{ worktree: "C:/Repos/active" }, { worktree: "C:/Repos/local-only" }], known),
+    ).toEqual([])
     expect(
-      restorableOpenProjects([{ worktree: "C:/Repos/active" }, { worktree: "C:/Repos/deleted" }], known),
-    ).toEqual([{ worktree: "C:/Repos/active" }])
+      restorableOpenProjects([{ worktree: "C:/Repos/active" }, { worktree: "C:/Repos/local-only" }], known),
+    ).toEqual([{ worktree: "C:/Repos/active" }, { worktree: "C:/Repos/local-only" }])
   })
 
   test("keeps a manually opened project pending until the server reports it", () => {
@@ -102,5 +102,14 @@ describe("layout project restore helpers", () => {
 
     expect(shouldRestoreOpenProject("C:/Repos/new", known, pending)).toBe(true)
     expect(staleOpenProjectDirectories([{ worktree: "C:/Repos/new" }], known, pending)).toEqual([])
+  })
+
+  test("keeps explicitly opened local projects even when backend metadata has not discovered them", () => {
+    const known = knownProjectDirectoryKeys([{ worktree: "C:/Repos/known" }])
+    const opened = [{ worktree: "C:/Repos/local-only" }]
+
+    expect(shouldRestoreOpenProject("C:/Repos/local-only", known)).toBe(true)
+    expect(staleOpenProjectDirectories(opened, known)).toEqual([])
+    expect(restorableOpenProjects(opened, known)).toEqual(opened)
   })
 })
