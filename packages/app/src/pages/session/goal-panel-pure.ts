@@ -603,6 +603,172 @@ export function templateModelFromSnapshot(value: unknown): GoalTemplateModel | u
   return providerID && modelID ? { providerID, modelID } : undefined
 }
 
+export interface RuntimeChainStep {
+  condition: string
+  command?: string | null
+  maxTurns?: number
+  maxMinutes?: number
+  maxTimeMinutes?: number
+  category?: GoalTemplateCategory
+  tone?: GoalTemplateTone
+  elevation?: GoalTemplateElevation
+  agent?: string
+  skills?: string[]
+  model?: GoalTemplateModel
+}
+
+export interface RuntimeChainData {
+  id: string
+  steps: RuntimeChainStep[]
+  current: number
+}
+
+const MAX_RUNTIME_CHAIN_STEPS = 50
+const VALID_RUNTIME_CHAIN_STATUSES = new Set(["active", "paused", "achieved", "cleared"])
+const VALID_RUNTIME_VERIFICATION_TYPES = new Set(["shell", "http", "file", "marker"])
+const VALID_RUNTIME_CHAIN_SET_BY = new Set(["user", "template", "chain"])
+const VALID_RUNTIME_ON_COMPLETE = new Set(["stop", "loop"])
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function isIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= min && value <= max
+}
+
+function runtimeStepStringMetadata(
+  step: Record<string, unknown>,
+  field: "category" | "tone" | "elevation",
+): string | null | undefined {
+  const value = step[field]
+  if (value === undefined) return undefined
+  if (typeof value !== "string" || value.length > 80) return null
+  return value
+}
+
+function runtimeSkillsFromSnapshot(value: unknown): string[] | null | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length > MAX_TEMPLATE_SKILLS) return null
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of value) {
+    if (typeof item !== "string") return null
+    const skill = cleanText(item).trim()
+    if (!skill || skill.length > MAX_STEP_SKILL_LEN || seen.has(skill)) return null
+    seen.add(skill)
+    out.push(skill)
+  }
+  return out
+}
+
+function runtimeModelFromSnapshot(value: unknown): GoalTemplateModel | null | undefined {
+  if (value === undefined) return undefined
+  if (typeof value === "string") {
+    const model = cleanText(value).trim()
+    if (!model || value.length > MAX_STEP_MODEL_FIELD_LEN) return null
+    return model
+  }
+  if (!isPlainRecord(value)) return null
+  if (typeof value.providerID !== "string" || typeof value.modelID !== "string") return null
+  const providerID = cleanText(value.providerID).trim()
+  const modelID = cleanText(value.modelID).trim()
+  if (!providerID || !modelID) return null
+  if (value.providerID.length > MAX_STEP_MODEL_FIELD_LEN || value.modelID.length > MAX_STEP_MODEL_FIELD_LEN) return null
+  return { providerID, modelID }
+}
+
+function isRuntimeVerificationShape(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (!isPlainRecord(value) || typeof value.type !== "string" || !VALID_RUNTIME_VERIFICATION_TYPES.has(value.type)) {
+    return false
+  }
+  if (value.type === "shell" && typeof value.command !== "string") return false
+  if (value.type === "http" && typeof value.url !== "string") return false
+  if (value.type === "file" && typeof value.path !== "string") return false
+  return true
+}
+
+function isRuntimeChainWebhookShape(value: unknown): boolean {
+  if (value === undefined) return true
+  if (!isPlainRecord(value)) return false
+  if (typeof value.url !== "string" || !/^https?:\/\//.test(value.url) || /[\r\n]/.test(value.url)) return false
+  if (!Array.isArray(value.on)) return false
+  const validTargets = value.on.filter((status) => typeof status === "string" && VALID_RUNTIME_CHAIN_STATUSES.has(status))
+  if (validTargets.length === 0) return false
+  return value.allowLocal === undefined || typeof value.allowLocal === "boolean"
+}
+
+function isRuntimeChainMasterShape(value: unknown): boolean {
+  if (value === undefined) return true
+  if (!isPlainRecord(value)) return false
+  if (value.maxTurns !== undefined && !isIntegerInRange(value.maxTurns, 1, Number.MAX_SAFE_INTEGER)) return false
+  if (value.maxMinutes !== undefined && !isIntegerInRange(value.maxMinutes, 1, Number.MAX_SAFE_INTEGER)) return false
+  if (!isIntegerInRange(value.turnsUsed, 0, Number.MAX_SAFE_INTEGER)) return false
+  if (!isIntegerInRange(value.minutesUsed, 0, Number.MAX_SAFE_INTEGER)) return false
+  return true
+}
+
+function runtimeChainStepFromSnapshot(value: unknown): RuntimeChainStep | null {
+  if (!isPlainRecord(value)) return null
+  const condition = typeof value.condition === "string" ? cleanText(value.condition).trim() : ""
+  if (!condition) return null
+  if (value.command !== undefined && value.command !== null && typeof value.command !== "string") return null
+  if (value.maxTurns !== undefined && !isIntegerInRange(value.maxTurns, 1, Number.MAX_SAFE_INTEGER)) return null
+  if (value.maxMinutes !== undefined && !isIntegerInRange(value.maxMinutes, 1, Number.MAX_SAFE_INTEGER)) return null
+  if (value.maxTimeMinutes !== undefined && !isIntegerInRange(value.maxTimeMinutes, 1, Number.MAX_SAFE_INTEGER)) return null
+  if (!isRuntimeVerificationShape(value.verification)) return null
+
+  const category = runtimeStepStringMetadata(value, "category")
+  const tone = runtimeStepStringMetadata(value, "tone")
+  const elevation = runtimeStepStringMetadata(value, "elevation")
+  if (category === null || tone === null || elevation === null) return null
+
+  const agent = value.agent === undefined ? undefined : agentNameForRuntime(value.agent)
+  if (value.agent !== undefined && !agent) return null
+  const skills = runtimeSkillsFromSnapshot(value.skills)
+  if (skills === null) return null
+  const model = runtimeModelFromSnapshot(value.model)
+  if (model === null) return null
+
+  return {
+    condition,
+    command: typeof value.command === "string" ? cleanText(value.command) : null,
+    ...(value.maxTurns !== undefined ? { maxTurns: value.maxTurns } : {}),
+    ...(value.maxMinutes !== undefined
+      ? { maxTimeMinutes: value.maxMinutes }
+      : value.maxTimeMinutes !== undefined
+        ? { maxTimeMinutes: value.maxTimeMinutes }
+        : {}),
+    ...(category && (GOAL_TEMPLATE_CATEGORIES as readonly string[]).includes(category) ? { category: category as GoalTemplateCategory } : {}),
+    ...(tone && (GOAL_TEMPLATE_TONES as readonly string[]).includes(tone) ? { tone: tone as GoalTemplateTone } : {}),
+    ...(elevation && (GOAL_TEMPLATE_ELEVATIONS as readonly string[]).includes(elevation) ? { elevation: elevation as GoalTemplateElevation } : {}),
+    ...(agent ? { agent } : {}),
+    ...(skills && skills.length > 0 ? { skills } : {}),
+    ...(model ? { model } : {}),
+  }
+}
+
+export function parseRuntimeChainSnapshot(parsed: unknown): RuntimeChainData | null {
+  if (!isPlainRecord(parsed)) return null
+  if (parsed.version !== 1) return null
+  const id = typeof parsed.id === "string" ? cleanText(parsed.id).trim() : ""
+  if (!id) return null
+  if (!Array.isArray(parsed.steps) || parsed.steps.length === 0 || parsed.steps.length > MAX_RUNTIME_CHAIN_STEPS) return null
+  const steps = parsed.steps.map(runtimeChainStepFromSnapshot)
+  if (steps.some((step) => step === null)) return null
+  if (!isIntegerInRange(parsed.current, -1, steps.length - 1)) return null
+  if (!isIntegerInRange(parsed.cycles, 0, Number.MAX_SAFE_INTEGER)) return null
+  if (!isIntegerInRange(parsed.maxCycles, 0, Number.MAX_SAFE_INTEGER)) return null
+  if (typeof parsed.onComplete !== "string" || !VALID_RUNTIME_ON_COMPLETE.has(parsed.onComplete)) return null
+  if (!isPlainRecord(parsed.metadata)) return null
+  if (!isFiniteNumberInRange(parsed.metadata.createdAt, 0, Number.MAX_SAFE_INTEGER)) return null
+  if (typeof parsed.metadata.setBy !== "string" || !VALID_RUNTIME_CHAIN_SET_BY.has(parsed.metadata.setBy)) return null
+  if (!isRuntimeChainWebhookShape(parsed.webhook)) return null
+  if (!isRuntimeChainMasterShape(parsed.master)) return null
+  return { id, steps: steps as RuntimeChainStep[], current: parsed.current }
+}
+
 function templateToneFromSnapshot(value: unknown): GoalTemplateTone | undefined {
   return typeof value === "string" && (GOAL_TEMPLATE_TONES as readonly string[]).includes(value)
     ? (value as GoalTemplateTone)

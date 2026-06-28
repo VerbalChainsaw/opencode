@@ -67,6 +67,7 @@ import {
   chainStepVisibleSourceForState,
   resolveStepConditionWithObjective,
   cleanText,
+  parseRuntimeChainSnapshot,
   readHandoffFromSdk,
   readGoalFromSdk,
   removeVisibleDraftStep,
@@ -100,6 +101,8 @@ import {
   type GoalTemplateModel,
   type GoalTemplateTone,
   type GoalPendingPromptKind,
+  type RuntimeChainData,
+  type RuntimeChainStep,
   type SkillPickerDisabledReason,
   // AG-P1-05 — pure visible-source routing for chain row actions.
   chainStepVisibleAction,
@@ -352,24 +355,8 @@ async function readWorkspaceText(sdk: GoalActionClient, path: string): Promise<s
   }
 }
 
-export interface ChainStep {
-  condition: string
-  command?: string | null
-  maxTurns?: number
-  maxMinutes?: number
-  maxTimeMinutes?: number
-  category?: GoalTemplateCategory
-  tone?: GoalTemplateTone
-  elevation?: GoalTemplateElevation
-  agent?: string
-  skills?: string[]
-  model?: GoalTemplateModel
-}
-export interface ChainData {
-  id: string
-  steps: ChainStep[]
-  current: number
-}
+export type ChainStep = RuntimeChainStep
+export type ChainData = RuntimeChainData
 
 type ActionDraftState = {
   sourceID: string
@@ -393,46 +380,7 @@ async function readChain(sdk: GoalActionClient): Promise<ChainData | null> {
   const content = await readWorkspaceText(sdk, ".opencode/.goal-chain.json")
   if (!content) return null
   try {
-    const c = JSON.parse(content)
-    if (!c || !Array.isArray(c.steps) || c.steps.length === 0) return null
-    const rawSteps: unknown[] = c.steps
-    const validSteps = rawSteps.filter((s: unknown) => s && typeof (s as ChainStep).condition === "string")
-    if (validSteps.length < rawSteps.length) {
-      console.warn(
-        `[goal-panel] readChain dropped ${rawSteps.length - validSteps.length} of ${rawSteps.length} chain step(s) — missing or invalid "condition" field`,
-      )
-    }
-    const steps: ChainStep[] = (validSteps as ChainStep[]).map((s) => ({
-        condition: s.condition,
-        command: s.command ?? null,
-        ...(typeof (s as { maxTurns?: unknown }).maxTurns === "number"
-          ? { maxTurns: (s as { maxTurns: number }).maxTurns }
-          : {}),
-        ...(typeof s.maxMinutes === "number"
-          ? { maxTimeMinutes: s.maxMinutes }
-          : typeof (s as { maxTimeMinutes?: unknown }).maxTimeMinutes === "number"
-            ? { maxTimeMinutes: (s as { maxTimeMinutes: number }).maxTimeMinutes }
-            : {}),
-        ...((GOAL_TEMPLATE_CATEGORIES as readonly string[]).includes(s.category ?? "") ? { category: s.category } : {}),
-        ...((GOAL_TEMPLATE_TONES as readonly string[]).includes(s.tone ?? "") ? { tone: s.tone } : {}),
-        ...((GOAL_TEMPLATE_ELEVATIONS as readonly string[]).includes(s.elevation ?? "")
-          ? { elevation: s.elevation }
-          : {}),
-        ...(agentNameForRuntime(s.agent) ? { agent: agentNameForRuntime(s.agent) } : {}),
-        ...(Array.isArray(s.skills)
-          ? {
-              skills: [
-                ...new Set(s.skills.map((skill) => cleanText(skill).trim().slice(0, 80)).filter(Boolean)),
-              ].slice(0, 8),
-            }
-          : {}),
-        ...(templateModelFromSnapshot(s.model) ? { model: templateModelFromSnapshot(s.model) } : {}),
-      }))
-    if (steps.length === 0) return null
-    const id = typeof c.id === "string" && c.id.trim().length > 0 ? cleanText(c.id) : ""
-    if (!id) return null
-    const current = typeof c.current === "number" && Number.isFinite(c.current) ? c.current : 0
-    return { id, steps, current }
+    return parseRuntimeChainSnapshot(JSON.parse(content))
   } catch {
     return null
   }

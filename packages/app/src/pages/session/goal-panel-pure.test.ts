@@ -26,7 +26,91 @@ import {
   DEFAULT_TEMPLATE_BUTTONS,
   type GoalActionDraftState,
   type GoalChainDraftStep,
+  parseRuntimeChainSnapshot,
 } from "./goal-panel-pure";
+
+const runtimeChainSnapshot = (overrides: Record<string, unknown> = {}) => ({
+  version: 1,
+  id: "chain-1",
+  steps: [
+    {
+      condition: "Build the production slice",
+      command: "npm test",
+      maxTurns: 3,
+      maxMinutes: 5,
+      category: "Building",
+      tone: "blue",
+      elevation: "raised",
+      agent: "build",
+      skills: ["skill-one", "skill-two"],
+      model: { providerID: "openai", modelID: "gpt-5" },
+    },
+  ],
+  current: 0,
+  cycles: 0,
+  maxCycles: 10,
+  onComplete: "stop",
+  metadata: { createdAt: 1_700_000_000_000, setBy: "user" },
+  ...overrides,
+});
+
+describe("runtime chain snapshot parser", () => {
+  test("maps a valid runtime chain into renderer chain data", () => {
+    expect(parseRuntimeChainSnapshot(runtimeChainSnapshot())).toEqual({
+      id: "chain-1",
+      current: 0,
+      steps: [
+        {
+          condition: "Build the production slice",
+          command: "npm test",
+          maxTurns: 3,
+          maxTimeMinutes: 5,
+          category: "Building",
+          tone: "blue",
+          elevation: "raised",
+          agent: "build",
+          skills: ["skill-one", "skill-two"],
+          model: { providerID: "openai", modelID: "gpt-5" },
+        },
+      ],
+    });
+  });
+
+  test("rejects malformed snapshots instead of dropping invalid steps", () => {
+    expect(parseRuntimeChainSnapshot(runtimeChainSnapshot({
+      steps: [
+        { condition: "valid", maxTurns: 1, maxMinutes: 1 },
+        { command: "missing condition" },
+      ],
+    }))).toBeNull();
+  });
+
+  test("rejects fractional and out-of-range chain counters", () => {
+    for (const patch of [
+      { current: 0.5 },
+      { current: -2 },
+      { current: 1 },
+      { cycles: 1.25 },
+      { maxCycles: 2.5 },
+    ]) {
+      expect(parseRuntimeChainSnapshot(runtimeChainSnapshot(patch))).toBeNull();
+    }
+  });
+
+  test("rejects malformed per-step budgets and pins", () => {
+    for (const stepPatch of [
+      { maxTurns: 1.2 },
+      { maxMinutes: 0 },
+      { skills: ["dup", "dup"] },
+      { agent: "   " },
+      { model: { providerID: "", modelID: "gpt-5" } },
+    ]) {
+      expect(parseRuntimeChainSnapshot(runtimeChainSnapshot({
+        steps: [{ condition: "valid", ...stepPatch }],
+      }))).toBeNull();
+    }
+  });
+});
 
 describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
   test("1. draft row always edits the local draft, never the live chain", () => {

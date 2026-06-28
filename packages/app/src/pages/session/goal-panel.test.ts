@@ -1478,15 +1478,16 @@ describe("goal panel mission-control contracts", () => {
     expect(window).toMatch(/achieved|cleared/)
   })
 
-  test("live chain reader preserves model and skill pins for chained rows", async () => {
+  test("live chain reader delegates runtime snapshot validation to the pure parser", async () => {
     const src = await goalPanelSource()
     const readChainStart = src.indexOf("async function readChain")
     const readChainEnd = src.indexOf("const TEMPLATES_PATH", readChainStart)
     expect(readChainStart).toBeGreaterThan(-1)
     expect(readChainEnd).toBeGreaterThan(readChainStart)
     const readChain = src.slice(readChainStart, readChainEnd)
-    expect(readChain).toContain("s.skills.map")
-    expect(readChain).toContain("templateModelFromSnapshot(s.model)")
+    expect(readChain).toContain("parseRuntimeChainSnapshot(JSON.parse(content))")
+    expect(readChain).not.toContain("validSteps")
+    expect(readChain).not.toContain("dropped")
   })
 
   test("recent runs render as a vertical listbox, not wrapping pills", async () => {
