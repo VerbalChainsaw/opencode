@@ -71,6 +71,7 @@ import {
   readHandoffFromSdk,
   readGoalFromSdk,
   removeVisibleDraftStep,
+  runtimePinAvailability,
   selectRunnableChainSteps,
   skillPickerControlState,
   templateButtonsFromSnapshot,
@@ -1600,6 +1601,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   const [archive, setArchive] = createSignal<HistoryRun[]>([])
   const [availableSkills, setAvailableSkills] = createSignal<SkillOption[]>([])
+  const [skillsLoaded, setSkillsLoaded] = createSignal(false)
   const structuredHandoffPrompt = (pending: NonNullable<GoalHandoffStore["handoff"]>) => {
     const goal = pending.state
     return [
@@ -1755,6 +1757,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     void readAvailableSkills(sdk)
       .then((next) => {
         setAvailableSkills(next)
+        setSkillsLoaded(true)
       })
       .catch(ignoreRefreshError("refreshSkills"))
   const refreshHandoff = () => void readHandoffFromSdk(sdk as unknown as GoalSdkClient).then(setHandoff).catch(ignoreRefreshError("refreshHandoff"))
@@ -2227,6 +2230,27 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       },
       ...agentOptions(),
     ]
+  })
+  const runtimePinStatus = createMemo(() =>
+    runtimePinAvailability({
+      agent: actionDraft.agent,
+      model: actionDraft.model,
+      skills: actionDraft.skills,
+      availableAgents: agentOptions().map((option) => option.name),
+      availableModels: modelOptions().map((option) => option.key),
+      availableSkills: skillsLoaded() ? availableSkills().map((skill) => skill.name) : actionDraft.skills,
+    }),
+  )
+  const runtimePinStatusText = createMemo(() => {
+    const status = runtimePinStatus()
+    if (!status.hasIssue) return ""
+    const parts: string[] = []
+    if (status.staleAgent) parts.push(language.t("session.goal.template.unavailableAgentPin"))
+    if (status.staleModel) parts.push(language.t("session.goal.template.unavailableModelPin"))
+    if (status.staleSkills.length > 0) {
+      parts.push(language.t("session.goal.template.unavailableSkillPins", { skills: status.staleSkills.join(", ") }))
+    }
+    return language.t("session.goal.template.unavailablePins", { pins: parts.join(" · ") })
   })
   const modelLabelByKey = createMemo(() => new Map(modelOptionsForDraft().map((option) => [option.key, option.label])))
   const agentLabelByName = createMemo(() => new Map(agentOptionsForDraft().map((option) => [option.name, option.label])))
@@ -5779,7 +5803,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               value={actionDraft.agent}
                               disabled={busy() !== null || !props.sessionID}
                               aria-label={language.t("session.goal.template.pinnedAgent")}
-                              title={language.t("session.goal.template.pinnedAgent")}
+                              title={runtimePinStatus().staleAgent ? runtimePinStatusText() : language.t("session.goal.template.pinnedAgent")}
                               onChange={(event) => setActionDraft("agent", event.currentTarget.value)}
                               class="h-6 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-indigo-100/90 outline-none transition disabled:opacity-30"
                             >
@@ -5808,7 +5832,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               value={actionDraft.model}
                               disabled={busy() !== null || !props.sessionID}
                               aria-label={language.t("session.goal.template.pinnedModel")}
-                              title={language.t("session.goal.template.pinnedModel")}
+                              title={runtimePinStatus().staleModel ? runtimePinStatusText() : language.t("session.goal.template.pinnedModel")}
                               onChange={(event) => setActionDraft("model", event.currentTarget.value)}
                               class="h-6 min-w-0 truncate rounded-md bg-transparent px-1 text-11-medium font-semibold text-sky-100/90 outline-none transition disabled:opacity-30"
                             >
@@ -5948,6 +5972,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                               </Show>
                             </Show>
                           </div>
+                          <Show when={runtimePinStatusText()}>
+                            <div
+                              data-component="goal-action-editor-runtime-pin-status"
+                              class="rounded-md border border-amber-300/18 bg-amber-400/9 px-2 py-1 text-[10px] font-medium leading-4 text-amber-100/88"
+                              title={runtimePinStatusText()}
+                            >
+                              {runtimePinStatusText()}
+                            </div>
+                          </Show>
                         </div>
 
                         <div

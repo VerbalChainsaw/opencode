@@ -24,6 +24,7 @@ import {
   chainStepVisibleAction,
   chainStepVisibleSourceForState,
   DEFAULT_TEMPLATE_BUTTONS,
+  runtimePinAvailability,
   type GoalActionDraftState,
   type GoalChainDraftStep,
   parseRuntimeChainSnapshot,
@@ -837,6 +838,49 @@ describe("C3: createOrderedChainRefresh backpressure option", () => {
     await p2;
 
     refresh.dispose();
+  });
+});
+
+describe("runtime pin availability", () => {
+  test("does not warn for defaults or pins that are available", () => {
+    expect(runtimePinAvailability({
+      agent: "",
+      model: "",
+      skills: [],
+      availableAgents: ["build"],
+      availableModels: ["openai/gpt-5"],
+      availableSkills: ["playwright"],
+    })).toEqual({
+      staleAgent: false,
+      staleModel: false,
+      staleSkills: [],
+      hasIssue: false,
+    });
+
+    expect(runtimePinAvailability({
+      agent: "build",
+      model: "openai/gpt-5",
+      skills: ["playwright"],
+      availableAgents: ["build"],
+      availableModels: ["openai/gpt-5"],
+      availableSkills: ["playwright"],
+    }).hasIssue).toBe(false);
+  });
+
+  test("flags saved pins that are absent from the active runtime lists", () => {
+    expect(runtimePinAvailability({
+      agent: "legacy-agent",
+      model: "anthropic/claude-2",
+      skills: ["playwright", "old-skill", "old-skill"],
+      availableAgents: ["build"],
+      availableModels: ["openai/gpt-5"],
+      availableSkills: ["playwright"],
+    })).toEqual({
+      staleAgent: true,
+      staleModel: true,
+      staleSkills: ["old-skill"],
+      hasIssue: true,
+    });
   });
 });
 

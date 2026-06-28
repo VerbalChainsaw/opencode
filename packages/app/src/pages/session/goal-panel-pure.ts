@@ -341,6 +341,37 @@ export function skillPickerControlState(input: {
   return { disabled: false, reason: null }
 }
 
+function normalizedSet(values: readonly string[]) {
+  return new Set(values.map((value) => cleanText(value).trim()).filter(Boolean))
+}
+
+export function runtimePinAvailability(input: {
+  agent?: string
+  model?: string
+  skills?: readonly string[]
+  availableAgents?: readonly string[]
+  availableModels?: readonly string[]
+  availableSkills?: readonly string[]
+}) {
+  const agent = cleanText(input.agent).trim()
+  const model = cleanText(input.model).trim()
+  const skills = [...new Set((input.skills ?? []).map((skill) => cleanText(skill).trim()).filter(Boolean))]
+  const availableAgents = normalizedSet(input.availableAgents ?? [])
+  const availableModels = normalizedSet(input.availableModels ?? [])
+  const availableSkills = normalizedSet(input.availableSkills ?? [])
+
+  const staleAgent = !!agent && !availableAgents.has(agent)
+  const staleModel = !!model && !availableModels.has(model)
+  const staleSkills = skills.filter((skill) => !availableSkills.has(skill))
+
+  return {
+    staleAgent,
+    staleModel,
+    staleSkills,
+    hasIssue: staleAgent || staleModel || staleSkills.length > 0,
+  }
+}
+
 /** Built-in method prompts for the dock. These are deliberately general
  *  coding-method recipes, not project-specific commands like "npm test". */
 export const DEFAULT_TEMPLATE_BUTTONS: GoalTemplateButton[] = [

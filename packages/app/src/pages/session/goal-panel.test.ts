@@ -1392,6 +1392,26 @@ describe("goal panel mission-control contracts", () => {
     expect(actionEditor).toContain('aria-label={language.t("session.goal.template.command")}')
   })
 
+  test("action editor surfaces unavailable saved runtime pins", async () => {
+    const src = await goalPanelSource()
+    const actionRoutingStart = src.indexOf('data-component="goal-action-editor-routing"')
+    const actionEditorFieldsStart = src.indexOf('data-component="goal-action-editor-fields"')
+    expect(actionRoutingStart).toBeGreaterThan(-1)
+    expect(actionEditorFieldsStart).toBeGreaterThan(actionRoutingStart)
+    const actionRouting = src.slice(actionRoutingStart, actionEditorFieldsStart)
+
+    expect(src).toContain("runtimePinAvailability")
+    expect(src).toContain("runtimePinStatusText")
+    expect(src).toContain("session.goal.template.unavailablePins")
+    expect(src).toContain("session.goal.template.unavailableAgentPin")
+    expect(src).toContain("session.goal.template.unavailableModelPin")
+    expect(src).toContain("session.goal.template.unavailableSkillPins")
+    expect(actionRouting).toContain('data-component="goal-action-editor-runtime-pin-status"')
+    expect(actionRouting).toContain("title={runtimePinStatusText()}")
+    expect(actionRouting).toContain('title={runtimePinStatus().staleAgent ? runtimePinStatusText() : language.t("session.goal.template.pinnedAgent")}')
+    expect(actionRouting).toContain('title={runtimePinStatus().staleModel ? runtimePinStatusText() : language.t("session.goal.template.pinnedModel")}')
+  })
+
   test("goal editable controls keep a 24px visual floor", async () => {
     const src = await goalPanelSource()
     const targetFieldStart = src.indexOf('data-component="goal-chain-target-field"')
