@@ -513,7 +513,7 @@ export const dict = {
   "session.goal.history": "History",
   "session.goal.history.empty": "none yet",
   "session.goal.error.corrupt": "Could not read goal state",
-  "session.goal.error.corrupt.hint": "The goal state file may be corrupted. Run /goal clear in the chat to reset it.",
+  "session.goal.error.corrupt.hint": "The goal state file may be corrupted. Use the button below to reset it without leaving the side panel.",
   "session.goal.controlsHint": "Control from chat: /goal pause · /goal resume · /goal clear",
   "session.panel.reviewAndFiles": "Pregled i datoteke",
   "session.review.filesChanged": "Izmijenjeno {{count}} datoteka",

@@ -602,7 +602,7 @@ export const dict = {
   "session.goal.history.notMet": "not met",
   "session.goal.history.latestReason": "Latest reason",
   "session.goal.error.corrupt": "Could not read goal state",
-  "session.goal.error.corrupt.hint": "The goal state file may be corrupted. Run /goal clear in the chat to reset it.",
+  "session.goal.error.corrupt.hint": "目標狀態檔可能已損毀。使用下方按鈕可在不離開側邊面板的情況下重置。",
   "session.goal.error.corrupt.reset": "重置並重新讀取",
   "session.goal.controlsHint": "Control from chat: /goal pause · /goal resume · /goal clear",
   "session.goal.create.submit": "啟動目標",

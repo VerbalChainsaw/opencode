@@ -55,4 +55,13 @@ describe("i18n parity", () => {
       expect(missing, `${name} is missing GoalPanel keys: ${missing.join(", ")}`).toEqual([])
     }
   })
+
+  test("GoalPanel corrupt-state recovery copy points to the in-panel reset control", () => {
+    for (const locale of [en, ...locales]) {
+      const merged = mergeDictionaryWithFallback(en, locale)
+      expect(merged["session.goal.error.corrupt.reset"]).toBeDefined()
+      expect(merged["session.goal.error.corrupt.hint"]).toBeDefined()
+      expect(merged["session.goal.error.corrupt.hint"]).not.toMatch(/\/goal\s+clear|in the chat|chat to reset/i)
+    }
+  })
 })
