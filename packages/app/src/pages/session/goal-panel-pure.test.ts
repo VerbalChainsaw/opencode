@@ -839,3 +839,68 @@ describe("C3: createOrderedChainRefresh backpressure option", () => {
     refresh.dispose();
   });
 });
+
+import {
+  handoffAgeMs,
+  isHandoffStale,
+  formatHandoffAge,
+  handoffOriginLabel,
+  MAX_HANDOFF_AGE_MS,
+  HANDOFF_WARN_AGE_MS,
+} from "./goal-panel-pure";
+
+describe("handoff staleness guard (SunoSavvy incident)", () => {
+  const NOW = 1_782_621_146_968; // fixed reference
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  test("handoffAgeMs: parses ISO and returns positive age", () => {
+    expect(handoffAgeMs(iso(NOW - 3 * 86_400_000), NOW)).toBe(3 * 86_400_000);
+  });
+
+  test("handoffAgeMs: unparseable createdAt → null", () => {
+    expect(handoffAgeMs("not-a-date", NOW)).toBeNull();
+    expect(handoffAgeMs("", NOW)).toBeNull();
+  });
+
+  test("handoffAgeMs: future timestamp (clock skew) clamps to 0", () => {
+    expect(handoffAgeMs(iso(NOW + 60_000), NOW)).toBe(0);
+  });
+
+  test("isHandoffStale: 3-day-old handoff is stale (the incident case)", () => {
+    expect(isHandoffStale(iso(NOW - 3 * 86_400_000), NOW)).toBe(true);
+  });
+
+  test("isHandoffStale: a 10-minute-old handoff is NOT stale", () => {
+    expect(isHandoffStale(iso(NOW - 10 * 60_000), NOW)).toBe(false);
+  });
+
+  test("isHandoffStale: unparseable age is treated as stale (suspicious)", () => {
+    expect(isHandoffStale("garbage", NOW)).toBe(true);
+  });
+
+  test("isHandoffStale: exactly at the warn threshold is stale", () => {
+    expect(isHandoffStale(iso(NOW - HANDOFF_WARN_AGE_MS), NOW)).toBe(true);
+    expect(isHandoffStale(iso(NOW - (HANDOFF_WARN_AGE_MS - 1)), NOW)).toBe(false);
+  });
+
+  test("formatHandoffAge: human-readable buckets", () => {
+    expect(formatHandoffAge(iso(NOW - 30_000), NOW)).toBe("just now");
+    expect(formatHandoffAge(iso(NOW - 5 * 60_000), NOW)).toBe("5m ago");
+    expect(formatHandoffAge(iso(NOW - 3 * 3_600_000), NOW)).toBe("3h ago");
+    expect(formatHandoffAge(iso(NOW - 1 * 86_400_000), NOW)).toBe("1 day ago");
+    expect(formatHandoffAge(iso(NOW - 3 * 86_400_000), NOW)).toBe("3 days ago");
+    expect(formatHandoffAge("nope", NOW)).toBe("unknown age");
+  });
+
+  test("handoffOriginLabel: shortens a long session id, null when absent", () => {
+    expect(handoffOriginLabel({ metadata: { sessionId: "ses_107bcba1dffen0VQjFx4El1ryQ" } } as never)).toBe("ses_107bcba1d…");
+    expect(handoffOriginLabel({ metadata: {} } as never)).toBeNull();
+    expect(handoffOriginLabel(null)).toBeNull();
+  });
+
+  test("thresholds: boot expiry is generous (7d) vs warn (1d)", () => {
+    expect(MAX_HANDOFF_AGE_MS).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(HANDOFF_WARN_AGE_MS).toBe(24 * 60 * 60 * 1000);
+    expect(MAX_HANDOFF_AGE_MS).toBeGreaterThan(HANDOFF_WARN_AGE_MS);
+  });
+});

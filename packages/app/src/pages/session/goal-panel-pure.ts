@@ -1372,6 +1372,57 @@ export function handoffPanelMode(liveGoal: GoalState | null, store: GoalHandoffS
   return liveGoal ? "pending" : "claim"
 }
 
+// ── Handoff staleness (CENTER-AUDIT 2026-06-27, SunoSavvy incident) ──────────
+// A handoff is intentionally cross-session, but one left unclaimed for a long
+// time and then auto-presented as a one-click "Claim" in an unrelated new
+// session is the stale-handoff surprise that resumed an 8-step chain. The
+// renderer surfaces the age + origin and requires an explicit confirm at any
+// age; the plugin boot cleanup quarantines a handoff older than MAX.
+/** Boot-expiry threshold: a handoff older than this is quarantined at startup. */
+export const MAX_HANDOFF_AGE_MS = 7 * 24 * 60 * 60 * 1000
+/** Soft threshold: older than this, the claim panel shows an amber warning. */
+export const HANDOFF_WARN_AGE_MS = 24 * 60 * 60 * 1000
+
+/** Age of a handoff in ms, or null when createdAt is unparseable. Negative
+ *  (clock skew / future timestamp) clamps to 0. */
+export function handoffAgeMs(createdAt: string, now: number): number | null {
+  const created = Date.parse(createdAt)
+  if (!Number.isFinite(created)) return null
+  return Math.max(0, now - created)
+}
+
+/** True when the handoff is old enough to warrant a warning before claiming
+ *  (or its createdAt is unparseable — treat unknown age as suspicious). */
+export function isHandoffStale(createdAt: string, now: number, threshold = HANDOFF_WARN_AGE_MS): boolean {
+  const age = handoffAgeMs(createdAt, now)
+  if (age === null) return true
+  return age >= threshold
+}
+
+/** Human-readable handoff age, e.g. "just now", "5m ago", "3h ago",
+ *  "3 days ago". Returns "unknown age" when createdAt is unparseable. */
+export function formatHandoffAge(createdAt: string, now: number): string {
+  const age = handoffAgeMs(createdAt, now)
+  if (age === null) return "unknown age"
+  if (age < 60_000) return "just now"
+  const mins = Math.floor(age / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(age / 3_600_000)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(age / 86_400_000)
+  return days === 1 ? "1 day ago" : `${days} days ago`
+}
+
+/** Short, display-safe origin-session label for handoff provenance, e.g.
+ *  "ses_107bcba1…". Returns null when there's no session id. */
+export function handoffOriginLabel(state: GoalState | null | undefined): string | null {
+  const sid = (state as (GoalState & { metadata?: { sessionId?: unknown } }) | null | undefined)?.metadata?.sessionId
+  if (typeof sid !== "string") return null
+  const clean = cleanText(sid).trim()
+  if (!clean) return null
+  return clean.length > 14 ? `${clean.slice(0, 13)}…` : clean
+}
+
 export type SteerDraftDisposition = "retain" | "clear"
 
 export function steerDraftDisposition(input: {

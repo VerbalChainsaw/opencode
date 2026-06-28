@@ -83,6 +83,9 @@ import {
   GOAL_TEMPLATE_TONES,
   actionCategoryShortLabel,
   handoffPanelMode,
+  formatHandoffAge,
+  isHandoffStale,
+  handoffOriginLabel,
   goalInterruptionWarningKey,
   isGoalPinnedModel,
   steerDraftDisposition,
@@ -1541,6 +1544,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const [now, setNow] = createSignal(Date.now())
   const [controlError, setControlError] = createSignal<string | null>(null)
   const [confirmingClear, setConfirmingClear] = createSignal(false)
+  // Stale-handoff guard (SunoSavvy incident): claiming a handoff is a two-step
+  // confirm so a stale handoff cannot silently auto-claim into a new session.
+  const [confirmingClaim, setConfirmingClaim] = createSignal(false)
   const [newCommand, setNewCommand] = createSignal("")
   const [steerOpen, setSteerOpen] = createSignal(false)
   const [steerText, setSteerText] = createSignal("")
@@ -2633,6 +2639,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   //     null and the run is already in the history timeline.
   const liveGoal = createMemo(() => liveGoalOf(state()))
   const pendingHandoffMode = createMemo(() => handoffPanelMode(liveGoal(), handoff()))
+  // Reset the claim confirm whenever the handoff is no longer claimable
+  // (claimed elsewhere, cleared, or a live goal started) so the confirm
+  // never sticks across a state change.
+  createEffect(() => {
+    if (pendingHandoffMode() !== "claim") setConfirmingClaim(false)
+  })
   const terminalGoal = createMemo(() => terminalGoalOf(state()))
   const runnableChainSteps = () => {
     if (liveGoal()) return []
@@ -4898,11 +4910,39 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                         <div class="text-11-regular font-bold uppercase tracking-[0.08em] text-indigo-50">
                           {language.t("session.goal.handoff.pending")}
                         </div>
+                        {/* Provenance + age so a stale/foreign handoff is never
+                            mistaken for a fresh one. (SunoSavvy incident.) */}
+                        <div
+                          data-component="goal-handoff-provenance"
+                          class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] leading-4"
+                          classList={{
+                            "text-amber-200/90": isHandoffStale(pending().createdAt, now()),
+                            "text-indigo-100/60": !isHandoffStale(pending().createdAt, now()),
+                          }}
+                        >
+                          <span class="font-semibold tabular-nums">
+                            {isHandoffStale(pending().createdAt, now()) ? "⚠ " : ""}
+                            {language.t("session.goal.handoff.age", { age: formatHandoffAge(pending().createdAt, now()) })}
+                          </span>
+                          <Show when={handoffOriginLabel(pending().state)}>
+                            {(origin) => (
+                              <span class="truncate">{language.t("session.goal.handoff.fromSession", { session: origin() })}</span>
+                            )}
+                          </Show>
+                          <Show when={Number(pending().state.metadata?.chainTotal ?? 0) > 1}>
+                            <span>{language.t("session.goal.handoff.resumesChain", { total: String(Number(pending().state.metadata?.chainTotal ?? 0)) })}</span>
+                          </Show>
+                        </div>
                         <div class="mt-1 truncate text-12-regular text-indigo-100/78">
                           {cleanText(pending().state.condition)}
                         </div>
                         <Show when={pending().note}>
                           {(note) => <div class="mt-1 truncate text-11-regular text-indigo-100/62">{note()}</div>}
+                        </Show>
+                        <Show when={pendingHandoffMode() === "claim" && confirmingClaim() && isHandoffStale(pending().createdAt, now())}>
+                          <div class="mt-1 text-[10px] leading-4 text-amber-200/80">
+                            {language.t("session.goal.handoff.staleWarn")}
+                          </div>
                         </Show>
                       </div>
                       <Show
@@ -4913,14 +4953,39 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                           </div>
                         }
                       >
-                        <ActionButton
-                          label={language.t("session.goal.action.claim")}
-                          variant="primary"
-                          busy={busy() === "claim"}
-                          disabled={busy() !== null || !props.sessionID}
-                          class="h-8 shrink-0 px-3"
-                          onClick={() => void claimGoalHandoff()}
-                        />
+                        {/* Two-step confirm: a bare click never claims; the
+                            operator must confirm after seeing age + origin. */}
+                        <Show
+                          when={confirmingClaim()}
+                          fallback={
+                            <ActionButton
+                              label={language.t("session.goal.action.claim")}
+                              variant="primary"
+                              disabled={busy() !== null || !props.sessionID}
+                              class="h-8 shrink-0 px-3"
+                              onClick={() => setConfirmingClaim(true)}
+                            />
+                          }
+                        >
+                          <div class="flex shrink-0 items-center gap-1">
+                            <ActionButton
+                              label={language.t("session.goal.handoff.claimConfirm")}
+                              variant="primary"
+                              tone="danger"
+                              busy={busy() === "claim"}
+                              disabled={busy() !== null || !props.sessionID}
+                              class="h-8 shrink-0 px-3"
+                              onClick={() => void claimGoalHandoff()}
+                            />
+                            <ActionButton
+                              label={language.t("session.goal.action.cancel")}
+                              variant="ghost"
+                              disabled={busy() !== null}
+                              class="h-8 shrink-0 px-2.5"
+                              onClick={() => setConfirmingClaim(false)}
+                            />
+                          </div>
+                        </Show>
                       </Show>
                     </div>
                   </div>

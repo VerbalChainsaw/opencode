@@ -20,7 +20,7 @@ import { tool } from "./plugin-api.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve, relative, isAbsolute } from "node:path";
-import { readFileSync, statSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, statSync, unlinkSync, existsSync, renameSync } from "node:fs";
 import {
   readGoalStateResult,
   listCorruptArtifacts,
@@ -43,6 +43,9 @@ import {
   COMPLETE_RE,
   BLOCKED_RE,
   goalStatePath,
+  handoffPath,
+  readHandoffResult,
+  MAX_HANDOFF_AGE_MS,
   type GoalState,
   type GoalEvaluation,
   type GoalStatus,
@@ -1195,6 +1198,44 @@ export const server: Plugin = async ({ client, directory }) => {
     }
   } catch (err) {
     log("debug", "boot clear: chain check failed (non-fatal)", { error: String(err) });
+  }
+
+  // Handoff file: quarantine an unclaimed handoff older than MAX_HANDOFF_AGE_MS.
+  // A handoff is intentionally cross-session (hand a goal to a future session),
+  // so it is NOT removed merely for being from another session. But one left
+  // unclaimed for >7 days is abandoned; presenting it as a one-click "Claim" in
+  // an unrelated new session is the stale-handoff surprise that resumed an
+  // 8-step chain (SunoSavvy 2026-06-27). The renderer also age-gates the claim
+  // (formatHandoffAge + two-step confirm); this backstop stops a truly-
+  // abandoned handoff from lingering as claimable across app restarts. Quarantine
+  // (rename to .stale.<ts>) rather than delete, mirroring corrupt-file handling,
+  // so it is recoverable.
+  try {
+    const hp = handoffPath(directory);
+    if (existsSync(hp)) {
+      const h = readHandoffResult(directory);
+      if (h.kind === "ok") {
+        const createdMs = Date.parse(h.value.createdAt);
+        const ageMs = Number.isFinite(createdMs) ? Date.now() - createdMs : Number.POSITIVE_INFINITY;
+        // Quarantine when older than the threshold OR when createdAt is
+        // unparseable (unknown age is treated as suspicious, same as the
+        // renderer's isHandoffStale).
+        if (ageMs > MAX_HANDOFF_AGE_MS) {
+          try {
+            const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+            renameSync(hp, `${hp}.stale.${stamp}`);
+            log("info", "boot clear: quarantined stale handoff", {
+              ageDays: Number.isFinite(ageMs) ? Math.floor(ageMs / 86_400_000) : null,
+              createdAt: h.value.createdAt,
+            });
+          } catch (err) {
+            log("debug", "boot clear: handoff quarantine failed (non-fatal)", { error: String(err) });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    log("debug", "boot clear: handoff check failed (non-fatal)", { error: String(err) });
   }
 
   // ── User-facing notifications, frontend-agnostic ─────────────────────────

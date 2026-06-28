@@ -1618,6 +1618,13 @@ export function clearSteering(directory: string, now: number = Date.now()): { ok
 
 export const HANDOFF_FILE = ".opencode/.goal-handoff.json";
 
+/** Boot-expiry threshold for an unclaimed handoff. A handoff is intentionally
+ *  cross-session, but one left unclaimed this long is abandoned; the plugin
+ *  quarantines it at boot so it can't auto-present as claimable in an unrelated
+ *  new session. (CENTER-AUDIT 2026-06-27, SunoSavvy stale-handoff incident.)
+ *  Mirrors the renderer's MAX_HANDOFF_AGE_MS in goal-panel-pure.ts. */
+export const MAX_HANDOFF_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 export interface HandoffPayload {
   /** ISO-8601 timestamp of when the handoff was created. */
   createdAt: string;
