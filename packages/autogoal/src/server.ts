@@ -49,7 +49,7 @@ import {
   type GoalStatus,
   type Verification,
 } from "./goal-state.js";
-import { advanceGoalChain, advanceGoalChainAtomic, readGoalChain, readGoalChainResult, setChainWebhook, goalChainPath, type GoalPinnedModel } from "./goal-chain.js";
+import { advanceGoalChain, advanceGoalChainAtomic, readGoalChain, readGoalChainResult, setChainWebhook, goalChainPath, type GoalChain, type GoalPinnedModel } from "./goal-chain.js";
 import { dispatchGoalCommandStructured, goalInstructions, plainStatus, presentGoalCommandResult } from "./command.js";
 import { appendGoalArchive } from "./goal-archive.js";
 import { writeGoalHistorySnapshot } from "./goal-history.js";
@@ -873,8 +873,7 @@ export function sumSessionTokens(messages: unknown): number {
   return total;
 }
 
-function currentChainStepPinnedModel(directory: string): GoalPinnedModel | null {
-  const chain = readGoalChain(directory);
+function currentChainStepPinnedModelFromChain(chain: GoalChain | null): GoalPinnedModel | null {
   if (!chain || chain.current < 0 || chain.current >= chain.steps.length) return null;
   const raw = chain.steps[chain.current]?.model;
   if (!raw) return null;
@@ -906,8 +905,12 @@ function currentChainStepPinnedModel(directory: string): GoalPinnedModel | null 
   return null;
 }
 
-function currentChainStepPinnedSkills(directory: string): string[] {
+function currentChainStepPinnedModel(directory: string): GoalPinnedModel | null {
   const chain = readGoalChain(directory);
+  return currentChainStepPinnedModelFromChain(chain);
+}
+
+function currentChainStepPinnedSkillsFromChain(chain: GoalChain | null): string[] {
   if (!chain || chain.current < 0 || chain.current >= chain.steps.length) return [];
   const skills = chain.steps[chain.current]?.skills;
   if (!Array.isArray(skills)) return [];
@@ -923,11 +926,20 @@ function currentChainStepPinnedSkills(directory: string): string[] {
   return out;
 }
 
-function currentChainStepPinnedAgent(directory: string): string | null {
+function currentChainStepPinnedSkills(directory: string): string[] {
   const chain = readGoalChain(directory);
+  return currentChainStepPinnedSkillsFromChain(chain);
+}
+
+function currentChainStepPinnedAgentFromChain(chain: GoalChain | null): string | null {
   if (!chain || chain.current < 0 || chain.current >= chain.steps.length) return null;
   const agent = sanitizeForPrompt(chain.steps[chain.current]?.agent ?? "").trim().slice(0, 80);
   return agent || null;
+}
+
+function currentChainStepPinnedAgent(directory: string): string | null {
+  const chain = readGoalChain(directory);
+  return currentChainStepPinnedAgentFromChain(chain);
 }
 
 function pinnedSkillPromptSuffix(skills: string[]): string {
@@ -1150,6 +1162,34 @@ export const server: Plugin = async ({ client, directory }) => {
     await client.session
       .prompt({ path: { id: sessionId }, body: { noReply: true, parts: [{ type: "text", text: `🎯 [${title}] ${message}` }] } })
       .catch((err) => log("error", "notify (session message) failed", { error: String(err) }));
+  }
+
+  async function pauseActiveChainForUnavailableState(sessionId: string, reason: string, extra?: Record<string, unknown>) {
+    const safeReason = sanitizeForPrompt(reason).slice(0, 200);
+    log("error", "skipping nudge: active goal chain state unavailable", { sessionId, reason: safeReason, ...extra });
+    await withStateLock(directory, async () => {
+      const fresh = readGoalState(directory);
+      if (!fresh || fresh.status !== "active" || !fresh.metadata.chainId) return undefined;
+      const res = transitionGoal(directory, "pause");
+      if (res.ok) {
+        const paused = readGoalState(directory);
+        if (paused) {
+          paused.lastEvaluation = {
+            met: false,
+            blocked: true,
+            reason: safeReason,
+            confidence: 1.0,
+            timestamp: Date.now(),
+            evaluatorType: "deterministic",
+          };
+          writeGoalStateAtomic(directory, paused);
+        }
+      }
+      return undefined;
+    }).catch((err) => {
+      log("error", "failed to pause active goal after chain state failure", { sessionId, error: String(err), reason: safeReason });
+    });
+    await notify(sessionId, "Goal chain paused", safeReason, "error");
   }
 
   function corruptStateNotice(reason: string, targetDirectory: string = directory): string {
@@ -1846,9 +1886,38 @@ export const server: Plugin = async ({ client, directory }) => {
         log("debug", "skipping nudge: permission opened during evaluation", { sessionId });
         return;
       }
-      const pinnedModel = currentChainStepPinnedModel(directory);
-      const pinnedSkills = currentChainStepPinnedSkills(directory);
-      const pinnedAgent = currentChainStepPinnedAgent(directory) ?? snapshot.agentName;
+      let chainForNudge: GoalChain | null = null;
+      if (state.metadata.chainId) {
+        const chainResult = readGoalChainResult(directory);
+        if (chainResult.kind === "corrupt") {
+          await pauseActiveChainForUnavailableState(
+            sessionId,
+            `Goal chain file is corrupt (${chainResult.reason}); paused before continuing so the engine does not run a stale chain step.`,
+            { chainId: state.metadata.chainId, corruptReason: chainResult.reason },
+          );
+          return;
+        }
+        if (chainResult.kind === "absent") {
+          await pauseActiveChainForUnavailableState(
+            sessionId,
+            "Goal chain file is missing; paused before continuing so the engine does not run a stale chain step.",
+            { chainId: state.metadata.chainId },
+          );
+          return;
+        }
+        if (chainResult.value.id !== state.metadata.chainId) {
+          await pauseActiveChainForUnavailableState(
+            sessionId,
+            "Goal chain file does not match the active goal; paused before continuing so the engine does not run a stale chain step.",
+            { stateChainId: state.metadata.chainId, fileChainId: chainResult.value.id },
+          );
+          return;
+        }
+        chainForNudge = chainResult.value;
+      }
+      const pinnedModel = currentChainStepPinnedModelFromChain(chainForNudge);
+      const pinnedSkills = currentChainStepPinnedSkillsFromChain(chainForNudge);
+      const pinnedAgent = currentChainStepPinnedAgentFromChain(chainForNudge) ?? snapshot.agentName;
       // Include chain position so the agent knows which step it's on.
       // v0.7.2 — display as 1-based (chain.current + 1) so it matches
       // what `chainContext` says in the chain-advance prompt above and
@@ -1858,10 +1927,9 @@ export const server: Plugin = async ({ client, directory }) => {
       // 1-based. Mixing the two caused the model to read "chainStep: 0"
       // from the state and report "step 0/2" while the runner called
       // it "step 1/2".
-      const chain = readGoalChain(directory);
       const chainContext =
-        chain && chain.current >= 0 && chain.current < chain.steps.length
-          ? `\nChain step ${chain.current + 1}/${chain.steps.length}: "${sanitizeForPrompt(chain.steps[chain.current]!.condition).slice(0, 200)}"`
+        chainForNudge && chainForNudge.current >= 0 && chainForNudge.current < chainForNudge.steps.length
+          ? `\nChain step ${chainForNudge.current + 1}/${chainForNudge.steps.length}: "${sanitizeForPrompt(chainForNudge.steps[chainForNudge.current]!.condition).slice(0, 200)}"`
           : "";
       // Include turn count so the agent can self-pace against limits.
       const turnContext = ` (turn ${snapshot.turnsEvaluated}/${snapshot.maxTurns})`;

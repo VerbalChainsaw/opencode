@@ -89,6 +89,11 @@ function plantCorruptState(dir) {
   writeFileSync(join(dir, ".opencode", ".goal-state.json"), "{this is not json!");
 }
 
+function plantCorruptChain(dir) {
+  mkdirSync(join(dir, ".opencode"), { recursive: true });
+  writeFileSync(join(dir, ".opencode", ".goal-chain.json"), "{this chain is not json!");
+}
+
 /** Build a mock OpenCode client with spies on notify()'s two surfaces.
  *  - `toast` is what client.tui.showToast receives (TUI-rendered).
  *  - `prompts` is what client.session.prompt receives (the session
@@ -609,6 +614,37 @@ describe("session.error handler (defect B-3b)", () => {
       /Pinned skills for this OpenGoal action: frontend-design, playwright/
     );
     assert.equal("skills" in spies.prompts[0].body, false);
+  });
+
+  it("session.idle pauses instead of sending a continue nudge when the active chain file is corrupt", async () => {
+    const create = createGoalChain(
+      dir,
+      [
+        { condition: "do the first action" },
+        { condition: "do the second action" },
+      ],
+      { sessionId: "test-session" },
+    );
+    assert.equal(create.ok, true);
+    plantCorruptChain(dir);
+    spies.toast.length = 0;
+    spies.prompts.length = 0;
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    const final = readStateFileRaw(dir);
+    assert.equal(final.status, "paused");
+    assert.equal(final.lastEvaluation.blocked, true);
+    assert.match(final.lastEvaluation.reason, /goal chain file is corrupt/i);
+    assert.equal(spies.toast.length, 1, "expected a visible corrupt-chain notification");
+    assert.equal(spies.toast[0].variant, "error");
+    assert.equal(
+      spies.prompts.some((prompt) => prompt.body?.noReply !== true),
+      false,
+      "corrupt chain must not send a reply-driving continue prompt",
+    );
   });
 
   it("compaction context includes the active chain step so resumed work keeps chain position", async () => {
