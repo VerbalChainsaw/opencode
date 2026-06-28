@@ -988,6 +988,43 @@ describe("v0.7.2: chain advance issues a real model turn (shell case)", () => {
     );
     assert.equal("skills" in spies.prompts[2].body, false);
   });
+
+  it("pauses instead of queuing the next-step prompt when the chain file corrupts after advance", async () => {
+    const originalShowToast = client.tui.showToast;
+    let corruptedAfterAdvance = false;
+    client.tui.showToast = async (req) => {
+      await originalShowToast(req);
+      if (!corruptedAfterAdvance && req.body?.title === "Chain advanced") {
+        corruptedAfterAdvance = true;
+        plantCorruptChain(dir);
+      }
+    };
+
+    const create = createGoalChain(dir, [
+      {
+        condition: "achievable step",
+        verification: { type: "shell", command: process.platform === "win32" ? "exit 0" : "true" },
+      },
+      { condition: "follow-up step" },
+    ]);
+    assert.equal(create.ok, true);
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    assert.equal(corruptedAfterAdvance, true, "test hook should corrupt the chain after the advance status");
+    const stateAfter = readStateFileRaw(dir);
+    assert.equal(stateAfter.metadata.chainStep, 1);
+    assert.equal(stateAfter.status, "paused");
+    assert.equal(stateAfter.lastEvaluation.blocked, true);
+    assert.match(stateAfter.lastEvaluation.reason, /goal chain file is corrupt/i);
+    assert.equal(
+      spies.prompts.some((prompt) => prompt.body?.noReply !== true),
+      false,
+      "corrupt chain must not receive a reply-driving next-step prompt",
+    );
+  });
 });
 
 describe("session.idle skips nudge when a permission is open (defect coverage)", () => {

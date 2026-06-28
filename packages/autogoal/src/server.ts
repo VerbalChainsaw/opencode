@@ -49,7 +49,7 @@ import {
   type GoalStatus,
   type Verification,
 } from "./goal-state.js";
-import { advanceGoalChain, advanceGoalChainAtomic, readGoalChain, readGoalChainResult, setChainWebhook, goalChainPath, type GoalChain, type GoalPinnedModel } from "./goal-chain.js";
+import { advanceGoalChain, advanceGoalChainAtomic, readGoalChainResult, setChainWebhook, goalChainPath, type GoalChain, type GoalPinnedModel } from "./goal-chain.js";
 import { dispatchGoalCommandStructured, goalInstructions, plainStatus, presentGoalCommandResult } from "./command.js";
 import { appendGoalArchive } from "./goal-archive.js";
 import { writeGoalHistorySnapshot } from "./goal-history.js";
@@ -905,11 +905,6 @@ function currentChainStepPinnedModelFromChain(chain: GoalChain | null): GoalPinn
   return null;
 }
 
-function currentChainStepPinnedModel(directory: string): GoalPinnedModel | null {
-  const chain = readGoalChain(directory);
-  return currentChainStepPinnedModelFromChain(chain);
-}
-
 function currentChainStepPinnedSkillsFromChain(chain: GoalChain | null): string[] {
   if (!chain || chain.current < 0 || chain.current >= chain.steps.length) return [];
   const skills = chain.steps[chain.current]?.skills;
@@ -926,20 +921,10 @@ function currentChainStepPinnedSkillsFromChain(chain: GoalChain | null): string[
   return out;
 }
 
-function currentChainStepPinnedSkills(directory: string): string[] {
-  const chain = readGoalChain(directory);
-  return currentChainStepPinnedSkillsFromChain(chain);
-}
-
 function currentChainStepPinnedAgentFromChain(chain: GoalChain | null): string | null {
   if (!chain || chain.current < 0 || chain.current >= chain.steps.length) return null;
   const agent = sanitizeForPrompt(chain.steps[chain.current]?.agent ?? "").trim().slice(0, 80);
   return agent || null;
-}
-
-function currentChainStepPinnedAgent(directory: string): string | null {
-  const chain = readGoalChain(directory);
-  return currentChainStepPinnedAgentFromChain(chain);
 }
 
 function pinnedSkillPromptSuffix(skills: string[]): string {
@@ -1726,9 +1711,38 @@ export const server: Plugin = async ({ client, directory }) => {
             // nudge path below). A chain step that pins runtime settings
             // should keep the new step on the same configuration from its
             // first model turn, not only after a later retry/nudge.
-            const stepPinnedModel = currentChainStepPinnedModel(directory);
-            const stepPinnedSkills = currentChainStepPinnedSkills(directory);
-            const stepPinnedAgent = currentChainStepPinnedAgent(directory) ?? chainResult.state.metadata.agentName;
+            let chainForAdvancePrompt: GoalChain | null = null;
+            if (chainResult.state.metadata.chainId) {
+              const chainRead = readGoalChainResult(directory);
+              if (chainRead.kind === "corrupt") {
+                await pauseActiveChainForUnavailableState(
+                  sessionId,
+                  `Goal chain file is corrupt (${chainRead.reason}); paused before starting the next step so the engine does not run a stale chain step.`,
+                  { chainId: chainResult.state.metadata.chainId, corruptReason: chainRead.reason },
+                );
+                return;
+              }
+              if (chainRead.kind === "absent") {
+                await pauseActiveChainForUnavailableState(
+                  sessionId,
+                  "Goal chain file is missing; paused before starting the next step so the engine does not run a stale chain step.",
+                  { chainId: chainResult.state.metadata.chainId },
+                );
+                return;
+              }
+              if (chainRead.value.id !== chainResult.state.metadata.chainId) {
+                await pauseActiveChainForUnavailableState(
+                  sessionId,
+                  "Goal chain file does not match the active goal; paused before starting the next step so the engine does not run a stale chain step.",
+                  { stateChainId: chainResult.state.metadata.chainId, fileChainId: chainRead.value.id },
+                );
+                return;
+              }
+              chainForAdvancePrompt = chainRead.value;
+            }
+            const stepPinnedModel = currentChainStepPinnedModelFromChain(chainForAdvancePrompt);
+            const stepPinnedSkills = currentChainStepPinnedSkillsFromChain(chainForAdvancePrompt);
+            const stepPinnedAgent = currentChainStepPinnedAgentFromChain(chainForAdvancePrompt) ?? chainResult.state.metadata.agentName;
             // AG-P1-06 part 3 — the chain-advance prompt now routes
             // through the unified `deliverContinuation` dispatcher. Pre-fix,
             // a transient failure on this path (network blip, abort) was
