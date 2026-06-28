@@ -609,7 +609,7 @@ export const dict = {
   "session.goal.error.corrupt": "Could not read goal state",
   "session.goal.error.corrupt.hint": "目标状态文件可能已损坏。使用下方按钮可在不离开侧边面板的情况下重置。",
   "session.goal.error.corrupt.reset": "重置并重新读取",
-  "session.goal.controlsHint": "Control from chat: /goal pause · /goal resume · /goal clear",
+  "session.goal.controlsHint": "打开会话即可控制目标，也可使用聊天命令：/goal pause · /goal resume · /goal clear",
   "session.goal.create.submit": "启动目标",
   "session.goal.create.quickHint": "启动上方目标。",
   "session.goal.create.waiting": "等待输入",

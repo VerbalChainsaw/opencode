@@ -64,4 +64,12 @@ describe("i18n parity", () => {
       expect(merged["session.goal.error.corrupt.hint"]).not.toMatch(/\/goal\s+clear|in the chat|chat to reset/i)
     }
   })
+
+  test("GoalPanel control hint is GUI-first, not chat-only", () => {
+    for (const locale of [en, ...locales]) {
+      const merged = mergeDictionaryWithFallback(en, locale)
+      expect(merged["session.goal.controlsHint"]).toBeDefined()
+      expect(merged["session.goal.controlsHint"]).not.toMatch(/^Control from chat:/i)
+    }
+  })
 })
