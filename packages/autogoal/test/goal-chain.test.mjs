@@ -795,11 +795,11 @@ describe("Path (b): transitionGoal / setGoal preserve-or-discard chainId correct
   });
 });
 
-// ── Path (c): override guard — covered by the test above; add the
-// reset-then-advance recovery path.
+// ── Path (c): override guard — reset must not resurrect a stale chain over
+// an unrelated replacement goal.
 
-describe("Path (c-recovery): chain reset restores the chain after an override", () => {
-  it("override then chain reset succeeds and resumes step 0", () => {
+describe("Path (c): chain reset refuses to clobber an override", () => {
+  it("override then chain reset is rejected and preserves the replacement goal", () => {
     const dir = freshDir();
     try {
       createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
@@ -808,18 +808,16 @@ describe("Path (c-recovery): chain reset restores the chain after an override", 
       // advance refused.
       const adv1 = advanceGoalChain(dir);
       assert.equal(adv1.ok, false);
-      // chain reset → restores step 0 and re-attaches the chain.
+      // chain reset should not restore a stale chain over the unrelated goal.
       const reset = resetGoalChain(dir);
-      assert.equal(reset.ok, true);
+      assert.equal(reset.ok, false);
+      assert.match(reset.error, /overridden|interrupted/i);
+      const state = readGoalState(dir);
+      assert.equal(state.condition, "manual override");
+      assert.equal(state.metadata.chainId, undefined);
       const chain = readGoalChain(dir);
       assert.ok(chain);
-      assert.equal(reset.state.condition, "first");
-      assert.equal(reset.state.metadata.chainId, chain.id);
-      assert.equal(reset.state.metadata.chainStep, 0);
-      // Subsequent advance now works (chainId matches).
-      const adv2 = advanceGoalChain(dir);
-      assert.equal(adv2.ok, true);
-      assert.equal(adv2.state.condition, "second");
+      assert.equal(chain.current, 0);
     } finally { cleanDir(dir); }
   });
 });
@@ -1203,17 +1201,12 @@ describe("Path (g): chain display format", () => {
   });
 });
 
-// ── Defect: `chain reset` works even after a state override, `chain skip` does not ──
-// Pin the actual behavior:
-//   - `chain skip` delegates to `advanceGoalChain`, which checks the chainId guard.
-//     So a skip-after-override returns an error (the chain is interrupted).
-//   - `chain reset` does NOT check the guard — it's a force-op that ignores
-//     the state and re-attaches the chain. The spec treats reset as the
-//     recovery path for the override scenario.
-// These tests pin the asymmetry so a future refactor can't silently change
-// which side applies the guard.
+// ── Defect: stale chain operations after a state override ───────────────────
+// Every live chain operation must share the same ownership guard: the current
+// goal state has to belong to the chain file. Otherwise a stale chain artifact
+// can clobber or mutate state for an unrelated replacement goal.
 
-describe("force-ops: chain reset works after override; chain skip does not", () => {
+describe("stale chain ownership guards after override", () => {
   it("chain skip after set override is rejected (guard applies via advanceGoalChain)", () => {
     const dir = freshDir();
     try {
@@ -1227,18 +1220,43 @@ describe("force-ops: chain reset works after override; chain skip does not", () 
     } finally { cleanDir(dir); }
   });
 
-  it("chain reset after set override replaces the unrelated goal (force-op)", () => {
+  it("chain reset after set override is rejected and preserves the unrelated goal", () => {
     const dir = freshDir();
     try {
       createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
       setGoal(dir, "manual override");
+      const before = readGoalState(dir);
       const res = resetGoalChain(dir);
-      assert.equal(res.ok, true,
-        "chain reset is a force-op; the override guard does NOT apply");
-      assert.equal(res.state.condition, "first");
-      assert.equal(res.state.metadata.chainStep, 0);
+      assert.equal(res.ok, false,
+        "chain reset must not reattach a stale chain to an unrelated goal");
+      assert.match(res.error, /overridden|interrupted/i);
+      assert.deepEqual(readGoalState(dir), before);
     } finally { cleanDir(dir); }
   });
+
+  for (const [name, runOperation] of [
+    ["setChainWebhook", (dir) => setChainWebhook(dir, { url: "https://example.com/hook", on: ["achieved"] })],
+    ["addChainStep", (dir) => addChainStep(dir, "third")],
+    ["reorderChainStep", (dir) => reorderChainStep(dir, 0, 1)],
+    ["removeChainStep", (dir) => removeChainStep(dir, 1)],
+  ]) {
+    it(`${name} after set override is rejected and preserves state plus stale chain`, () => {
+      const dir = freshDir();
+      try {
+        createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+        setGoal(dir, "manual override");
+        const stateBefore = readGoalState(dir);
+        const chainBefore = readGoalChain(dir);
+
+        const res = runOperation(dir);
+
+        assert.equal(res.ok, false, `${name} must reject a stale chain artifact`);
+        assert.match(res.error, /overridden|interrupted/i);
+        assert.deepEqual(readGoalState(dir), stateBefore);
+        assert.deepEqual(readGoalChain(dir), chainBefore);
+      } finally { cleanDir(dir); }
+    });
+  }
 });
 
 // ── Defect E-2: validateGoalChain accepts malformed `step.verification` ────
@@ -1419,6 +1437,27 @@ describe("stop/cancel chain advance guards", () => {
       assert.equal(chain.current, 0, "failed advance must not move chain.current");
       assert.equal(readGoalState(dir).condition, "first", "failed advance must not activate the next step");
       assert.equal(readGoalState(dir).status, "cleared");
+    } finally { cleanDir(dir); }
+  });
+
+  it("resetGoalChain refuses to resurrect a cleared chain state", () => {
+    const dir = freshDir();
+    try {
+      const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+      assert.equal(create.ok, true);
+
+      const clear = transitionGoal(dir, "clear");
+      assert.equal(clear.ok, true, `precondition: clear should succeed; got: ${clear.error}`);
+      const before = readGoalState(dir);
+
+      const res = resetGoalChain(dir);
+
+      assert.equal(res.ok, false, "chain reset must not restart a user-stopped chain");
+      assert.match(res.error, /cleared|stopped|interrupted/i);
+      assert.deepEqual(readGoalState(dir), before);
+      const chain = readGoalChain(dir);
+      assert.ok(chain);
+      assert.equal(chain.current, 0, "failed reset must not move chain.current");
     } finally { cleanDir(dir); }
   });
 

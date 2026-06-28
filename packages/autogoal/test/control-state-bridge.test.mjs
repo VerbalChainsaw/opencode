@@ -7,10 +7,11 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { runGoalControlStateFile } from "../dist/control-state.js";
 import { readGoalChain, advanceGoalChain } from "../dist/goal-chain.js";
-import { CONSTRAINT_BOUNDS, DEFAULT_CONSTRAINTS, readGoalState } from "../dist/goal-state.js";
+import { CONSTRAINT_BOUNDS, DEFAULT_CONSTRAINTS, readGoalState, withStateLock } from "../dist/goal-state.js";
 
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "opengoal-bridge-"));
@@ -34,6 +35,51 @@ test("bridge: chain remove deletes a pending one-based step", async () => {
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bridge: state-file controls wait for the runtime state lock", async () => {
+  const cases = [
+    "clear",
+    "pause",
+    'chain add "Review"',
+    "chain move 2 3",
+    "chain remove 3",
+    `chain start-json ${JSON.stringify({ steps: [{ condition: "Fresh plan" }, { condition: "Fresh build" }] })}`,
+  ];
+
+  for (const command of cases) {
+    const dir = freshDir();
+    try {
+      const payload = JSON.stringify({
+        steps: [{ condition: "Plan" }, { condition: "Build" }, { condition: "Document" }],
+      });
+      await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
+
+      let release;
+      const releaseLock = new Promise((resolve) => { release = resolve; });
+      let lockStarted;
+      const lockStartedPromise = new Promise((resolve) => { lockStarted = resolve; });
+      const holder = withStateLock(dir, async () => {
+        lockStarted();
+        await releaseLock;
+      });
+      await lockStartedPromise;
+
+      const commandResult = runGoalControlStateFile(dir, command, Date.now());
+      const whileLocked = await Promise.race([
+        commandResult.then(() => "resolved"),
+        sleep(25).then(() => "pending"),
+      ]);
+
+      assert.equal(whileLocked, "pending", `${command} resolved while another state mutation held the lock`);
+      release();
+      const res = await commandResult;
+      assert.match(res.output, /Goal|Chain|Step|Sub-goal/i, `${command}: ${res.output}`);
+      await holder;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -131,7 +177,34 @@ test("bridge: chain remove refuses the currently-running step", async () => {
   try {
     const payload = JSON.stringify({ steps: [{ condition: "Plan" }, { condition: "Build" }] });
     await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
-    await assert.rejects(() => runGoalControlStateFile(dir, "chain remove 1", Date.now()), /currently running/i);
+    await assert.rejects(() => runGoalControlStateFile(dir, "chain remove 1", Date.now()), /pending future/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bridge: chain remove refuses completed live steps before the current step", async () => {
+  const dir = freshDir();
+  try {
+    const payload = JSON.stringify({ steps: [{ condition: "Plan" }, { condition: "Build" }, { condition: "Verify" }] });
+    await runGoalControlStateFile(dir, `chain start-json ${payload}`, Date.now());
+
+    const advanced = advanceGoalChain(dir);
+    assert.equal(advanced.ok, true, `precondition: advance should succeed; got ${advanced.error}`);
+    assert.equal(readGoalChain(dir).current, 1, "precondition: step 2 should be active");
+
+    await assert.rejects(
+      () => runGoalControlStateFile(dir, "chain remove 1", Date.now()),
+      /pending future/i,
+    );
+
+    const chain = readGoalChain(dir);
+    assert.deepEqual(
+      chain.steps.map((step) => step.condition),
+      ["Plan", "Build", "Verify"],
+      "failed removal must not rewrite live chain history",
+    );
+    assert.equal(readGoalState(dir).condition, "Build", "active step must remain Build");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -340,6 +413,16 @@ test("bridge: chain add refreshes the active state's chainTotal metadata", async
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("bridge: public GoalControlState metadata type declares stepMarkerAt", () => {
+  // Runtime GoalState.metadata declares stepMarkerAt and the chain runner uses
+  // it as the marker cutoff for resumed/advanced steps. The bridge re-exports
+  // its own public GoalControlState type; GUI/bridge consumers must see the
+  // field as a typed number instead of falling through the unknown index
+  // signature.
+  const dts = readFileSync(join(process.cwd(), "dist", "control-state.d.ts"), "utf-8");
+  assert.match(dts, /stepMarkerAt\?: number;/);
 });
 
 test("bridge: chain start-json defaults maxCycles to 10 (matches CLI)", async () => {

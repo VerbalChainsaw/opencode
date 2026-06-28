@@ -13,7 +13,7 @@
  *   1. Draft rows always edit local draft; they never reach the runtime chain.
  *   2. Live rows route to the live-pending remover, with the existing
  *      running/done guard preserved.
- *   3. Terminal-history rows never touch the live chain file.
+ *   3. Terminal-history rows never route as live pending rows.
  *   4. Disabled-state contract is exposed as `noop`.
  */
 
@@ -186,12 +186,12 @@ describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
     }
   });
 
-  test("2d. terminal achieved rows with a matching chain snapshot still route as live rows", () => {
+  test("2d. terminal achieved rows with a matching chain snapshot route as terminal history", () => {
     expect(chainStepVisibleSourceForState({
       hasLiveGoal: false,
       hasTerminalGoal: true,
       hasChainSnapshot: true,
-    })).toBe("live");
+    })).toBe("terminal-history");
     expect(chainStepVisibleSourceForState({
       hasLiveGoal: false,
       hasTerminalGoal: true,
@@ -226,7 +226,7 @@ describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
     })).toBe("live");
   });
 
-  test("3. terminal-history row never touches the live chain file", () => {
+  test("3. terminal-history row uses explicit terminal cleanup when no live run exists", () => {
     const action = chainStepVisibleAction({
       source: "terminal-history",
       stepID: "terminal-step-0",
@@ -234,10 +234,8 @@ describe("AG-P1-05: chainStepVisibleAction routes by visible source", () => {
       runningStepIndex: -1,
       liveRunStatus: null,
     });
-    // The action is a distinct dismiss-terminal command, NOT a remove.
-    // The tsx layer wires this to archive/reset; the runtime chain
-    // file is never touched.
-    expect(action).toEqual({ kind: "dismiss-terminal" });
+    // The action is a distinct terminal cleanup command, NOT a live-pending remove.
+    expect(action).toEqual({ kind: "remove-terminal-chain-step", index: 0 });
     expect(action.kind).not.toBe("remove-live-pending");
   });
 

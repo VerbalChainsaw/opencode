@@ -48,6 +48,12 @@ function corruptArtifactsOnDisk(dir) {
   }
 }
 
+function stripTsComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+}
+
 // ── Dispatcher: /goal view ──────────────────────────────────────────────────
 
 test("view on corrupt state → kind corrupt-state, message names the quarantined file", () => {
@@ -199,4 +205,18 @@ test("C-3: all atomic-write tmp names use randomUUID()", () => {
     assert.equal((src.match(oldPattern) ?? []).length, 0,
       `${name} should NOT use Date.now() for tmp suffix`);
   }
+});
+
+test("server runtime paths do not call deprecated readGoalState shim", () => {
+  const serverSrc = stripTsComments(readFileSync(join(here, "..", "src", "server.ts"), "utf-8"));
+  assert.doesNotMatch(
+    serverSrc,
+    /import\s*\{[^}]*\breadGoalState\b/,
+    "server.ts should not import the null-collapsing readGoalState shim",
+  );
+  assert.equal(
+    (serverSrc.match(/\breadGoalState\(/g) ?? []).length,
+    0,
+    "server.ts should use result-aware readers or primitive-returned state, not readGoalState()",
+  );
 });

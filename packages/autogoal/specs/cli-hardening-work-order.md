@@ -1,6 +1,6 @@
 > Status: Reference/work-order.
-> Canonical architecture: [../ARCHITECTURE.md](../ARCHITECTURE.md)
-> This file provides implementation detail subordinate to the canonical architecture tracker.
+> Canonical contract: [../docs/SPEC.md](../docs/SPEC.md)
+> This historical work order is subordinate to the current package contract.
 
 # Work order: CLI hardening — fix the prose-boundary architecture
 

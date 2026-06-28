@@ -6,8 +6,8 @@
  * software (CI scripts, cron jobs, shell aliases, other agents) can
  * drive the goal loop without going through OpenCode's plugin layer.
  *
- * The CLI is a thin wrapper around `dispatchGoalCommandStructured`
- * (plus `dispatchGoalCommand` for the `--command` argv-rebuilding
+ * The CLI is a thin wrapper around `dispatchGoalCommandStructuredAsync`
+ * (plus `dispatchGoalCommandStructured` for the template-import argv-rebuilding
  * path on `set`). It reads/writes the same state file at
  * `.opencode/.goal-state.json` (or `--dir <path>/.opencode/.goal-state.json`)
  * that the OpenCode TUI, sidebar, and server plugin use, so multiple
@@ -52,7 +52,7 @@
  * the exit code without parsing the text. The README has the table.
  */
 
-import { dispatchGoalCommandStructured, KIND_TO_EXIT } from "./command.js";
+import { dispatchGoalCommandStructured, dispatchGoalCommandStructuredAsync, KIND_TO_EXIT } from "./command.js";
 import { readGoalStateSafe, createGoalWatcher, presentGoalState, type GoalStateResult } from "./gui.js";
 import { readHandoffResult, listCorruptArtifacts, parsePositiveInt, readGoalStateResult } from "./goal-state.js";
 import { resolve, basename, extname } from "node:path";
@@ -311,7 +311,7 @@ function emitJson(payload: { ok: boolean; kind: string; exitCode: number; messag
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
-function main(): number {
+async function main(): Promise<number> {
   // v0.6.0 (F-6): bare `opencode-autogoal` in an interactive terminal launches
   // the TUI control center (lazygit-style). Non-TTY (CI/pipe) or `--help`/`help`
   // still prints help, so scripts and `| cat` are unaffected.
@@ -418,7 +418,7 @@ function main(): number {
   // exit-code decision (no prose-grepping), and the `message` field
   // is the user-facing text without the conversational relay wrapper
   // (the dispatcher already separates that into `agentExtras`).
-  const res = dispatchGoalCommandStructured(parsed.directory, dispatcherArg);
+  const res = await dispatchGoalCommandStructuredAsync(parsed.directory, dispatcherArg);
   // Defensive: if a future refactor adds a new kind without updating
   // KIND_TO_EXIT, the lookup returns undefined and process.exit(0)
   // would silently mask an internal bug. Fail closed with exit 3
@@ -850,7 +850,7 @@ function isCliEntry(metaUrl: string, argv1: string | undefined): boolean {
 
 // Only run when invoked as a script, not when imported by the test suite.
 if (isCliEntry(import.meta.url, process.argv[1])) {
-  const code = main();
+  const code = await main();
   // F-4: WATCH_KEEP_RUNNING means a watcher owns the event loop — its
   // timers / fs.watch handles keep the process alive until SIGINT.
   if (code !== WATCH_KEEP_RUNNING) {

@@ -418,6 +418,13 @@ test("restartGoal: happy path resets counters, keeps condition+constraints, new 
     assert.equal(res.ok, true);
     if (res.ok) {
       assert.notEqual(res.newId, oldId);
+      assert.equal(res.state.id, res.newId);
+      assert.equal(res.state.condition, "do the thing");
+      assert.equal(res.state.turnsEvaluated, 0);
+      assert.equal(res.state.tokensUsed, 0);
+      assert.equal(res.state.status, "active");
+      assert.equal(res.state.metadata.previousId, oldId);
+      assert.equal(res.state.metadata.restartedAt, 12345);
     }
     const after = readGoalState(dir);
     assert.notEqual(after.id, oldId);
@@ -429,6 +436,30 @@ test("restartGoal: happy path resets counters, keeps condition+constraints, new 
     assert.equal(after.status, "active");
     assert.equal(after.metadata.previousId, oldId);
     assert.equal(after.metadata.restartedAt, 12345);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("transitionGoal: ok results return the exact state written", () => {
+  const dir = freshDir();
+  try {
+    setGoal(dir, "do the thing");
+    const paused = transitionGoal(dir, "pause", 2000);
+    assert.equal(paused.ok, true);
+    assert.equal(paused.state.status, "paused");
+    assert.equal(paused.state.pausedAt, 2000);
+    assert.equal(paused.state.condition, "do the thing");
+
+    const resumed = transitionGoal(dir, "resume", 5000);
+    assert.equal(resumed.ok, true);
+    assert.equal(resumed.state.status, "active");
+    assert.equal(resumed.state.resumedAt, 5000);
+    assert.equal(resumed.state.condition, "do the thing");
+
+    const cleared = transitionGoal(dir, "clear", 8000);
+    assert.equal(cleared.ok, true);
+    assert.equal(cleared.state.status, "cleared");
+    assert.equal(cleared.state.completedAt, 8000);
+    assert.equal(cleared.state.condition, "do the thing");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

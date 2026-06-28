@@ -22,7 +22,6 @@ import { promisify } from "node:util";
 import { resolve, relative, isAbsolute } from "node:path";
 import { readFileSync, statSync, unlinkSync, existsSync } from "node:fs";
 import {
-  readGoalState,
   readGoalStateResult,
   listCorruptArtifacts,
   writeGoalStateAtomic,
@@ -50,7 +49,7 @@ import {
   type Verification,
 } from "./goal-state.js";
 import { advanceGoalChain, advanceGoalChainAtomic, readGoalChainResult, setChainWebhook, goalChainPath, type GoalChain, type GoalPinnedModel } from "./goal-chain.js";
-import { dispatchGoalCommandStructured, goalInstructions, plainStatus, presentGoalCommandResult } from "./command.js";
+import { dispatchGoalCommandStructuredAsync, goalInstructions, plainStatus, presentGoalCommandResult } from "./command.js";
 import { appendGoalArchive } from "./goal-archive.js";
 import { writeGoalHistorySnapshot } from "./goal-history.js";
 import { writeTemplatesSnapshot } from "./goal-templates-snapshot.js";
@@ -340,11 +339,12 @@ export function decideContinuationRetry(args: {
 // safely retrying, or visibly paused. 'Active but nothing is happening'
 // is not a legal state."
 
-export type ContinuationDeliveryStatus = "delivered" | "duplicate-suppressed" | "paused";
+export type ContinuationDeliveryStatus = "delivered" | "duplicate-suppressed" | "stale-suppressed" | "paused";
 
 export type ContinuationDeliveryOutcome =
   | { status: "delivered" }
   | { status: "duplicate-suppressed" }
+  | { status: "stale-suppressed" }
   | { status: "paused"; reason: string };
 
 export interface ContinuationDeliveryDeps {
@@ -366,6 +366,13 @@ export interface ContinuationDeliveryDeps {
   onWebhookFire(status: GoalStatus): Promise<void> | void;
   /** Reset the per-session failure counter. Called on every successful delivery. */
   onReset(): Promise<void> | void;
+  /**
+   * Best-effort cleanup when the prompt RPC succeeds but the target goal was
+   * cleared/replaced while the RPC was in flight. The prompt may already have
+   * admitted a new turn, so production call sites use this to abort the session
+   * after the late admission instead of marking the stale continuation delivered.
+   */
+  onStaleDelivery?(): Promise<void> | void;
 }
 
 /**
@@ -414,6 +421,8 @@ export async function deliverContinuation(
      * this for jittered backoff against flaky providers.
      */
     backoffMs?: (attempt: number) => number;
+    /** Return false when the delivery target is no longer the same active goal. */
+    shouldContinue?: () => boolean | Promise<boolean>;
     deps: ContinuationDeliveryDeps;
   },
 ): Promise<ContinuationDeliveryOutcome> {
@@ -447,7 +456,13 @@ export async function deliverContinuation(
     return { status: "duplicate-suppressed" };
   }
 
+  const shouldContinue = async () => opts.shouldContinue ? await opts.shouldContinue() : true;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (!(await shouldContinue())) {
+      return { status: "stale-suppressed" };
+    }
+
     // AG-P1-06 part 3 — handle a single failed attempt. The throw
     // path (throwing SDK or mocked client) and the result-shape
     // path (real SDK with ThrowOnError = false) both call this
@@ -542,8 +557,14 @@ export async function deliverContinuation(
       await handleFailure(err, attempt);
       if (pause.reason !== null) {
         const reason = pause.reason;
+        if (!(await shouldContinue())) {
+          return { status: "stale-suppressed" };
+        }
         await finalizePause(reason, pause.level);
         return { status: "paused", reason };
+      }
+      if (!(await shouldContinue())) {
+        return { status: "stale-suppressed" };
       }
       // v0.7.3 / scan 2026-06-25 (C2) — opt-in backoff between
       // attempts. Skipped when the backoff function is absent (the
@@ -567,8 +588,14 @@ export async function deliverContinuation(
       await handleFailure(err, attempt);
       if (pause.reason !== null) {
         const reason = pause.reason;
+        if (!(await shouldContinue())) {
+          return { status: "stale-suppressed" };
+        }
         await finalizePause(reason, pause.level);
         return { status: "paused", reason };
+      }
+      if (!(await shouldContinue())) {
+        return { status: "stale-suppressed" };
       }
       if (backoffMs && attempt < maxAttempts) {
         const ms = backoffMs(attempt + 1);
@@ -578,8 +605,15 @@ export async function deliverContinuation(
       }
       continue;
     }
-    // Success path.
-    opts.deps.onReset();
+    // Success path. Re-check freshness AFTER the prompt RPC returns: the user
+    // can click Stop/Clear while the request is in flight. If the prompt was
+    // admitted after that transition, run best-effort cleanup and do not poison
+    // the idempotency cache as a delivered continuation.
+    if (!(await shouldContinue())) {
+      await opts.deps.onStaleDelivery?.();
+      return { status: "stale-suppressed" };
+    }
+    await opts.deps.onReset();
     lastDeliveredKeyBySession.set(opts.sessionId, opts.idempotencyKey);
     return { status: "delivered" };
   }
@@ -587,6 +621,9 @@ export async function deliverContinuation(
   // Should be unreachable (the loop returns on the final attempt via
   // the exhausted decision). Defensive fallback.
   // v0.7.3 / scan 2026-06-25 (D-NEW-2) — await both for C4 ordering.
+  if (!(await shouldContinue())) {
+    return { status: "stale-suppressed" };
+  }
   await opts.deps.onPause("Continuation dispatcher: loop fell through");
   await opts.deps.onNotify(
     "Goal paused — continuation delivery failed",
@@ -1014,6 +1051,40 @@ export const server: Plugin = async ({ client, directory }) => {
     });
   }
 
+  function activeGoalStillCurrent(expectedGoalId: string, sessionId: string): boolean {
+    const result = readGoalStateResult(directory);
+    if (result.kind !== "ok") return false;
+    const current = result.value;
+    return current.id === expectedGoalId
+      && current.status === "active"
+      && goalBelongsToSession(current, sessionId);
+  }
+
+  async function abortStaleContinuation(sessionId: string, context: string): Promise<void> {
+    const sessionApi = (client as any).session;
+    if (!sessionApi || typeof sessionApi.abort !== "function") {
+      log("warn", "stale continuation admitted but session.abort is unavailable", { sessionId, context });
+      return;
+    }
+    try {
+      await sessionApi.abort({ path: { id: sessionId }, query: { directory } });
+      log("info", "aborted stale continuation after late prompt admission", { sessionId, context });
+      return;
+    } catch (legacyError) {
+      try {
+        await sessionApi.abort({ sessionID: sessionId, directory });
+        log("info", "aborted stale continuation after late prompt admission", { sessionId, context });
+      } catch (currentError) {
+        log("error", "failed to abort stale continuation after late prompt admission", {
+          sessionId,
+          context,
+          legacyError: String(legacyError),
+          currentError: String(currentError),
+        });
+      }
+    }
+  }
+
   // v0.7.3 / audit June 2026 — clear terminal goal state on plugin boot.
   //
   // The on-disk state file (`.opencode/.goal-state.json`) is the LIVE
@@ -1154,11 +1225,20 @@ export const server: Plugin = async ({ client, directory }) => {
     let pausedForWebhook: GoalState | null = null;
     log("error", "skipping nudge: active goal chain state unavailable", { sessionId, reason: safeReason, ...extra });
     await withStateLock(directory, async () => {
-      const fresh = readGoalState(directory);
+      const freshResult = readGoalStateResult(directory);
+      if (freshResult.kind === "corrupt") {
+        log("error", "failed to pause active chain: goal state file is corrupt", {
+          sessionId,
+          reason: freshResult.reason,
+          quarantined: listCorruptArtifacts(directory)[0] ?? null,
+        });
+        return undefined;
+      }
+      const fresh = freshResult.kind === "ok" ? freshResult.value : null;
       if (!fresh || fresh.status !== "active" || !fresh.metadata.chainId) return undefined;
       const res = transitionGoal(directory, "pause");
       if (res.ok) {
-        const paused = readGoalState(directory);
+        const paused = res.state;
         if (paused) {
           paused.lastEvaluation = {
             met: false,
@@ -1529,9 +1609,18 @@ export const server: Plugin = async ({ client, directory }) => {
   async function checkConstraints(
     state: GoalState,
     now: number,
-  ): Promise<{ cleared: true; reason: string } | { cleared: false } | null> {
+  ): Promise<{ cleared: true; reason: string; state: GoalState } | { cleared: false } | null> {
     return withStateLock(directory, () => {
-      const f = readGoalState(directory);
+      const freshResult = readGoalStateResult(directory);
+      if (freshResult.kind === "corrupt") {
+        log("error", "skipping constraint check: goal state file is corrupt", {
+          goalId: state.id,
+          reason: freshResult.reason,
+          quarantined: listCorruptArtifacts(directory)[0] ?? null,
+        });
+        return null;
+      }
+      const f = freshResult.kind === "ok" ? freshResult.value : null;
       if (!f || f.status !== "active" || f.id !== state.id) return null;
       const constraint = detectConstraintStop(f);
       if (!constraint.exceeded) return { cleared: false };
@@ -1541,7 +1630,7 @@ export const server: Plugin = async ({ client, directory }) => {
       recordEvaluation(f, f.lastEvaluation);
       recordTimelineFor(f, f.lastEvaluation, "constraint-clear");
       writeGoalStateAtomic(directory, f);
-      return { cleared: true, reason: constraint.reason };
+      return { cleared: true, reason: constraint.reason, state: f };
     });
   }
 
@@ -1557,7 +1646,16 @@ export const server: Plugin = async ({ client, directory }) => {
     const blockedText = detectMarker(latestText, BLOCKED_RE);
     if (blockedText === null) return { paused: false };
     return withStateLock(directory, () => {
-      const f = readGoalState(directory);
+      const freshResult = readGoalStateResult(directory);
+      if (freshResult.kind === "corrupt") {
+        log("error", "skipping blocked-marker transition: goal state file is corrupt", {
+          goalId: state.id,
+          reason: freshResult.reason,
+          quarantined: listCorruptArtifacts(directory)[0] ?? null,
+        });
+        return null;
+      }
+      const f = freshResult.kind === "ok" ? freshResult.value : null;
       if (!f || f.status !== "active" || f.id !== state.id) return null;
       recordEvaluation(f, { met: false, blocked: true, reason: `Agent reported blocked: ${sanitizeForPrompt(blockedText).slice(0, 200) || "(no detail)"}`, confidence: 0.8, timestamp: now, evaluatorType: "heuristic" });
       recordTimelineFor(f, f.lastEvaluation!, "blocked-marker");
@@ -1604,8 +1702,7 @@ export const server: Plugin = async ({ client, directory }) => {
       const constraintResult = await checkConstraints(state, now);
       if (!constraintResult) return;
       if (constraintResult.cleared) {
-        const cleared = readGoalState(directory);
-        if (cleared) fireWebhook(cleared, "active");
+        fireWebhook(constraintResult.state, "active");
         await notify(sessionId, "Goal stopped", constraintResult.reason, "warning");
         return;
       }
@@ -1634,7 +1731,16 @@ export const server: Plugin = async ({ client, directory }) => {
         : await evaluateGoal(state, { text: "", createdAt: 0 }, markerCutoff);
 
       const snapshot = await withStateLock(directory, () => {
-        const f = readGoalState(directory);
+        const freshResult = readGoalStateResult(directory);
+        if (freshResult.kind === "corrupt") {
+          log("error", "skipping goal evaluation write: goal state file is corrupt", {
+            goalId: state.id,
+            reason: freshResult.reason,
+            quarantined: listCorruptArtifacts(directory)[0] ?? null,
+          });
+          return null;
+        }
+        const f = freshResult.kind === "ok" ? freshResult.value : null;
         if (!f || f.status !== "active" || f.id !== state.id) return null;
         if (latestMeta && latestMeta.sessionTokens > 0) f.tokensUsed = latestMeta.sessionTokens;
         recordEvaluation(f, evaluation);
@@ -1648,7 +1754,7 @@ export const server: Plugin = async ({ client, directory }) => {
           recordTimelineFor(f, evaluation, `met-${evaluation.evaluatorType}`);
           writeGoalStateAtomic(directory, f);
           appendGoalArchive(directory, f, "achieved");
-          return { achieved: true as const, reason: evaluation.reason };
+          return { achieved: true as const, reason: evaluation.reason, state: f };
         }
 
         writeGoalStateAtomic(directory, f);
@@ -1665,8 +1771,7 @@ export const server: Plugin = async ({ client, directory }) => {
 
       if (!snapshot) return;
       if (snapshot.achieved) {
-        const achievedState = readGoalState(directory);
-        if (achievedState) fireWebhook(achievedState, "active");
+        fireWebhook(snapshot.state, "active");
         await notify(sessionId, "Goal achieved", snapshot.reason, "success");
         // v0.4.0: auto-advance chain if the achieved goal is part of one.
         // v0.7.2 — pass the just-completed step's marker timestamp so the
@@ -1701,6 +1806,7 @@ export const server: Plugin = async ({ client, directory }) => {
           // to scan, and the marker cutoff (above) keeps the prior
           // step's GOAL_COMPLETE: out of the scan.
           if (!chainResult.completed && chainResult.state) {
+            const advancedGoalId = chainResult.state.id;
             const nextCondition = sanitizeForPrompt(chainResult.state.condition).slice(0, 500);
             const safeMarkerAt = stepMarkerAt > 0 ? stepMarkerAt : 0;
             const reasonSuffix = snapshot.reason
@@ -1763,9 +1869,11 @@ export const server: Plugin = async ({ client, directory }) => {
             // user-visible notify fires before the side effects are
             // observed externally. (This is the C4 fix: pre-fix the
             // chain-advance path fired webhook BEFORE notify.)
+            let pausedChainAdvanceState: GoalState | null = null;
             const chainAdvanceOutcome = await deliverContinuation(client, {
               sessionId,
               idempotencyKey: `${sessionId}|${state.id}|${state.metadata.chainStep ?? ""}`,
+              shouldContinue: () => activeGoalStillCurrent(advancedGoalId, sessionId),
               body: {
                 ...(stepPinnedModel ? { model: stepPinnedModel } : {}),
                 ...(stepPinnedAgent ? { agent: stepPinnedAgent } : {}),
@@ -1787,7 +1895,7 @@ export const server: Plugin = async ({ client, directory }) => {
                   await withStateLock(directory, async () => {
                     const res = transitionGoal(directory, "pause");
                     if (!res.ok) return;
-                    const fresh = readGoalState(directory);
+                    const fresh = res.state;
                     if (fresh) {
                       fresh.lastEvaluation = {
                         met: false,
@@ -1798,6 +1906,7 @@ export const server: Plugin = async ({ client, directory }) => {
                         evaluatorType: "deterministic",
                       };
                       writeGoalStateAtomic(directory, fresh);
+                      pausedChainAdvanceState = fresh;
                     }
                   }).catch((lockErr) => {
                     log("error", "withStateLock failed in chain-advance pause", { error: String(lockErr) });
@@ -1814,9 +1923,7 @@ export const server: Plugin = async ({ client, directory }) => {
                   await notify(sessionId, title, message, level);
                 },
                 onWebhookFire: (status: GoalStatus) => {
-                  // Resolve fresh state post-pause so the webhook fires
-                  // against the most recent writeGoalStateAtomic.
-                  const fresh = readGoalState(directory);
+                  const fresh = pausedChainAdvanceState;
                   if (fresh) fireWebhook(fresh, status);
                 },
                 onReset: () => {
@@ -1827,6 +1934,7 @@ export const server: Plugin = async ({ client, directory }) => {
                   // counter-reset side effects (e.g. UI indicators);
                   // for now it's a no-op.
                 },
+                onStaleDelivery: () => abortStaleContinuation(sessionId, "chain advance"),
               },
             });
             // Surface chain-advance dispatcher errors that the
@@ -1840,7 +1948,7 @@ export const server: Plugin = async ({ client, directory }) => {
                 reason: chainAdvanceOutcome.reason,
               });
             } else {
-              log("debug", "Chain advance delivered (or duplicate-suppressed)", {
+              log("debug", "Chain advance continuation finished", {
                 sessionId,
                 status: chainAdvanceOutcome.status,
               });
@@ -1963,9 +2071,11 @@ export const server: Plugin = async ({ client, directory }) => {
       // invoked from the dispatcher's deps callbacks. The order is
       //   onPause  → onNotify  → onWebhookFire
       // matching the chain-advance path (C4 fix).
+      let pausedNudgeState: GoalState | null = null;
       const nudgeOutcome = await deliverContinuation(client, {
         sessionId,
         idempotencyKey: `${sessionId}|${state.id}`,
+        shouldContinue: () => activeGoalStillCurrent(state.id, sessionId),
         body: {
           ...(pinnedModel ? { model: pinnedModel } : {}),
           ...(pinnedAgent ? { agent: pinnedAgent } : {}),
@@ -1988,7 +2098,7 @@ export const server: Plugin = async ({ client, directory }) => {
             await withStateLock(directory, async () => {
               const res = transitionGoal(directory, "pause");
               if (res.ok) {
-                const fresh = readGoalState(directory);
+                const fresh = res.state;
                 if (fresh) {
                   fresh.lastEvaluation = {
                     met: false,
@@ -1999,6 +2109,7 @@ export const server: Plugin = async ({ client, directory }) => {
                     evaluatorType: "deterministic",
                   };
                   writeGoalStateAtomic(directory, fresh);
+                  pausedNudgeState = fresh;
                 }
               }
               return undefined;
@@ -2013,7 +2124,7 @@ export const server: Plugin = async ({ client, directory }) => {
             await notify(sessionId, title, message, level);
           },
           onWebhookFire: (status: GoalStatus) => {
-            const fresh = readGoalState(directory);
+            const fresh = pausedNudgeState;
             if (fresh) fireWebhook(fresh, status);
           },
           onReset: () => {
@@ -2023,6 +2134,7 @@ export const server: Plugin = async ({ client, directory }) => {
             // natural hook for any future counter-reset side effects;
             // for now it's a no-op.
           },
+          onStaleDelivery: () => abortStaleContinuation(sessionId, "nudge"),
         },
       });
       if (nudgeOutcome.status === "paused") {
@@ -2031,7 +2143,7 @@ export const server: Plugin = async ({ client, directory }) => {
           reason: nudgeOutcome.reason,
         });
       } else {
-        log("debug", "Nudge delivered (or duplicate-suppressed)", {
+        log("debug", "Nudge continuation finished", {
           sessionId,
           status: nudgeOutcome.status,
         });
@@ -2100,8 +2212,7 @@ export const server: Plugin = async ({ client, directory }) => {
             if (!res.ok) {
               return `Could not set the goal (${res.reason}): ${res.error}`;
             }
-            const fresh = readGoalState(ctx.directory);
-            if (fresh) fireWebhook(fresh, null);
+            fireWebhook(res.state, null);
             return goalInstructions(res.state, res.replaced);
           });
         },
@@ -2146,7 +2257,7 @@ export const server: Plugin = async ({ client, directory }) => {
             if (!res.ok) return res.error!;
             // v0.4.0+ webhook: fire on the active/paused → cleared
             // transition. (Spec call site: "Goal cleared".)
-            const fresh = readGoalState(ctx.directory);
+            const fresh = res.state;
             if (fresh) {
               // Archive the stopped run so it lands in history as "Cancelled"
               // instead of vanishing. Only the achieve path archived before, so
@@ -2180,7 +2291,7 @@ export const server: Plugin = async ({ client, directory }) => {
             if (!res.ok) return res.error!;
             // v0.4.0+ webhook: fire on the active → paused transition.
             // (Spec call site: "Goal paused".)
-            const fresh = readGoalState(ctx.directory);
+            const fresh = res.state;
             if (fresh && previousStatus !== "paused") fireWebhook(fresh, previousStatus);
             if (fresh) {
               const blocks = buildGoalTransitionBlocks(fresh, "pause");
@@ -2208,7 +2319,7 @@ export const server: Plugin = async ({ client, directory }) => {
             // v0.4.0+ webhook: fire on the paused → active transition.
             // (Spec call site: "Goal resumed".) Only fires when the
             // transition actually moved (not the already-active no-op).
-            const fresh = readGoalState(ctx.directory);
+            const fresh = res.state;
             if (fresh && previousStatus === "paused") fireWebhook(fresh, previousStatus);
             if (fresh) {
               const blocks = buildGoalTransitionBlocks(fresh, "resume");
@@ -2219,16 +2330,15 @@ export const server: Plugin = async ({ client, directory }) => {
         },
       }),
 
-      // v0.3.0 — GUI-ready data contract. Returns the current goal state as
-      // a JSON string (or the literal "null" if no state file). GUI
-      // consumers (e.g. the OpenCode Desktop Goals tab) call this on
-      // mount and poll on a timer; the contract is a stable shape they
-      // can render against. See docs/gui-integration.md for the full
-      // schema. The tool returns a JSON string (not a parsed object)
-      // because the OpenCode tool API expects a string return; the
-      // GUI does a JSON.parse on the result.
+      // v0.3.0 — API-ready data contract. Returns the current goal state as
+      // a JSON string (or the literal "null" if no state file). Desktop
+      // reads workspace files directly through the SDK; this tool remains
+      // for plugin/API consumers that cannot read those files themselves.
+      // See docs/gui-integration.md for the full schema. The tool returns
+      // a JSON string (not a parsed object) because the OpenCode tool API
+      // expects a string return.
       goal_get_state: tool({
-        description: "Read the current goal state (or null if no goal is set). Returns a JSON string. The shape is documented in docs/gui-integration.md. GUI consumers call this on mount and poll on a timer (e.g. every 2s); the OpenCode plugin has no event-emit API for live updates, so polling is the real-time mechanism.",
+        description: "Read the current goal state (or null if no goal is set). Returns a JSON string. The shape is documented in docs/gui-integration.md. Desktop reads workspace files through the SDK; this tool remains for plugin/API consumers that cannot read those files directly.",
         args: {},
         async execute(_args, ctx) {
           // v0.4.2 — thread the corrupt signal instead of collapsing it to
@@ -2282,7 +2392,7 @@ export const server: Plugin = async ({ client, directory }) => {
           command: tool.schema.string().describe("The /goal arguments to execute, e.g. 'turns 25', 'pause', or 'set \"tests pass\"'."),
         },
         async execute(args, ctx) {
-          const result = dispatchGoalCommandStructured(ctx.directory, args.command ?? "");
+          const result = await dispatchGoalCommandStructuredAsync(ctx.directory, args.command ?? "");
           const action = (args.command ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
           if (action === "template" || action === "use" || action === "import" || action === "export") {
             writeTemplatesSnapshot(ctx.directory);
@@ -2408,7 +2518,7 @@ export const server: Plugin = async ({ client, directory }) => {
           // is the only webhook config that survives a restart — see
           // server-webhook.test.mjs "sanitizeMetadata preserves
           // webhook (restartGoal)".
-          const fresh = readGoalState(ctx.directory);
+          const fresh = res.state;
           if (fresh) {
             fireWebhook(fresh, previousStatus);
             const blocks = buildGoalTransitionBlocks(fresh, "restart");
@@ -2541,7 +2651,7 @@ export const server: Plugin = async ({ client, directory }) => {
       // also calls structured internally and wraps — calling both meant
       // state was mutated twice. Single dispatch + presentGoalCommandResult
       // eliminates the double state read entirely.
-      const result = dispatchGoalCommandStructured(directory, args);
+      const result = await dispatchGoalCommandStructuredAsync(directory, args);
       const text = presentGoalCommandResult(result);
       const action = args.split(/\s+/)[0] ?? "";
       // v0.7.2 — removed the v0.7.x `skipNextEvaluation = true` for dial
@@ -2689,7 +2799,7 @@ export const server: Plugin = async ({ client, directory }) => {
           await withStateLock(directory, () => {
             const res = transitionGoal(directory, "pause");
             if (!res.ok) return;
-            const fresh = readGoalState(directory);
+            const fresh = res.state;
             if (fresh) {
               fresh.lastEvaluation = {
                 met: false,

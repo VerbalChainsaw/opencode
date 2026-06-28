@@ -23,6 +23,7 @@ import {
   pauseGoalRun,
   resetGoalWorkspaceState,
   startGoalRun,
+  startGoalRunGuarded,
   steerGoalRun,
   stopGoalRun,
   type GoalCommandClient,
@@ -1355,7 +1356,7 @@ describe("goal panel mission-control contracts", () => {
     expect(rowSrc).not.toContain("disabled={busy() !== null || !!liveGoal()}")
   })
 
-  test("terminal chain row delete still reaches the chain remove command", async () => {
+  test("terminal chain row cleanup is separate from live-pending removal", async () => {
     const src = await goalPanelSource()
     const removeVisibleStart = src.indexOf("const removeVisibleStep = (")
     const removeVisibleEnd = src.indexOf("const runtimeDetailState = createMemo", removeVisibleStart)
@@ -1363,8 +1364,8 @@ describe("goal panel mission-control contracts", () => {
     expect(removeVisibleEnd).toBeGreaterThan(removeVisibleStart)
     const removeVisible = src.slice(removeVisibleStart, removeVisibleEnd)
     expect(removeVisible).toContain('case "remove-live-pending":')
-    expect(removeVisible).toContain("if (!liveGoal() && !terminalGoal())")
-    expect(removeVisible).not.toContain("if (!liveGoal())")
+    expect(removeVisible).toContain('case "remove-terminal-chain-step":')
+    expect(removeVisible).toContain("if (liveGoal() || !terminalGoal())")
     expect(removeVisible).toContain("return void removeLiveChainStep(action.index)")
   })
 
@@ -2417,6 +2418,79 @@ describe("startGoalRun", () => {
         ],
       },
     })
+  })
+
+  test("guarded start suppresses prompt admission when a newer control already won", async () => {
+    const prompt = mock(async () => undefined)
+
+    const result = await startGoalRunGuarded(
+      {
+        session: { prompt },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+      },
+      {
+        shouldContinue: () => false,
+      },
+    )
+
+    expect(result).toEqual({ ok: false, reason: "stale-suppressed" })
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  test("guarded start aborts a prompt that succeeds after Stop/Pause wins the race", async () => {
+    let current = true
+    const prompt = mock(async () => {
+      current = false
+    })
+    const staleAbort = mock(async () => undefined)
+
+    const result = await startGoalRunGuarded(
+      {
+        session: { prompt },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+      },
+      {
+        shouldContinue: () => current,
+        onStaleDelivery: staleAbort,
+      },
+    )
+
+    expect(result).toEqual({ ok: false, reason: "stale-suppressed" })
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(staleAbort).toHaveBeenCalledTimes(1)
+  })
+
+  test("guarded start does not fall back to raw transport after generated prompt becomes stale", async () => {
+    let current = true
+    const prompt = mock(async () => {
+      current = false
+      throw new Error("request was aborted")
+    })
+    const post = mock(async () => undefined)
+
+    const result = await startGoalRunGuarded(
+      {
+        session: { prompt },
+        client: { post },
+      },
+      {
+        sessionID: "session-1",
+        directory: "C:\\repo\\project",
+      },
+      {
+        shouldContinue: () => current,
+      },
+    )
+
+    expect(result).toEqual({ ok: false, reason: "stale-suppressed" })
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(post).not.toHaveBeenCalled()
   })
 
   test("falls back to the raw prompt_async transport when generated promptAsync rejects", async () => {

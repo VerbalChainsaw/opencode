@@ -110,7 +110,15 @@ import {
   // AG-P1-07 — ordered chain refresh guard (gen-counter discard pattern).
   createOrderedChainRefresh,
 } from "./goal-panel-pure"
-import { executeGoalCommand, pauseGoalRun, resetGoalWorkspaceState, startGoalRun, steerGoalRun, stopGoalRun } from "./goal-panel-actions"
+import {
+  abortGoalSessionTree,
+  executeGoalCommand,
+  pauseGoalRun,
+  resetGoalWorkspaceState,
+  startGoalRunGuarded,
+  steerGoalRunGuarded,
+  stopGoalRun,
+} from "./goal-panel-actions"
 // `GoalState` and `GoalStore` are re-exported as types above; aliasing
 // them as locals is unnecessary because we only need them as type
 // annotations, which the imported type re-exports satisfy directly.
@@ -1789,6 +1797,29 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (options.templates) await refreshTemplates()
   }
 
+  let promptAdmissionEpoch = 0
+  const invalidatePromptAdmissions = () => {
+    promptAdmissionEpoch += 1
+  }
+  const promptAdmissionGuard = (expectedGoalID: string | null | undefined) => {
+    const epoch = promptAdmissionEpoch
+    return {
+      shouldContinue: async () => {
+        if (promptAdmissionEpoch !== epoch) return false
+        await props.goal.refresh().catch(ignoreRefreshError("goal.refresh (prompt guard)"))
+        if (promptAdmissionEpoch !== epoch) return false
+        const current = state()
+        if (!expectedGoalID) return true
+        return current?.id === expectedGoalID && current.status === "active"
+      },
+      onStaleDelivery: async () => {
+        const sessionID = props.sessionID
+        if (!sessionID) return
+        await abortGoalSessionTree(sdk.client, { sessionID, directory: sdk.directory })
+      },
+    }
+  }
+
   /** Send a deterministic `/goal <args>` control call. This intentionally does
    *  not use session.command; the 2s poll + refresh surface the result. */
   const sendGoalCommand = async (
@@ -1797,6 +1828,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   ): Promise<boolean> => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
+    invalidatePromptAdmissions()
     setBusy(label)
     const result = await executeGoalCommand(sdk.client, { sessionID, arguments: args, directory: sdk.directory })
     if (result.ok) {
@@ -1818,15 +1850,17 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sent = await sendGoalCommand(action, action)
     if (!sent) return false
     if (props.sessionID && (action === "restart" || action === "resume")) {
-      const prompted = await startGoalRun(sdk.client, {
+      const expectedGoalID = state()?.id
+      const prompted = await startGoalRunGuarded(sdk.client, {
         sessionID: props.sessionID,
         directory: sdk.directory,
-      })
-      if (!prompted) {
+      }, promptAdmissionGuard(expectedGoalID))
+      if (!prompted.ok && prompted.reason === "delivery-failed") {
         setOptimisticStatus("paused")
         await sendGoalCommand("pause", "pause")
         return false
       }
+      if (!prompted.ok) return false
     }
     return true
   }
@@ -1836,6 +1870,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const pauseGoal = async () => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
+    invalidatePromptAdmissions()
     setBusy("pause")
     const pendingPromptWarning = interruptionWarningText("pause")
     const result = await pauseGoalRun(sdk.client, {
@@ -1859,6 +1894,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const stopGoal = async () => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
+    invalidatePromptAdmissions()
     setBusy("clear")
     const pendingPromptWarning = interruptionWarningText("stop")
     const result = await stopGoalRun(sdk.client, {
@@ -1886,6 +1922,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const resetGoalState = async () => {
     const sessionID = props.sessionID
     if (!sessionID || busy()) return false
+    invalidatePromptAdmissions()
     setBusy("fresh")
     const result = await resetGoalWorkspaceState(sdk.client, {
       sessionID,
@@ -1929,11 +1966,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sent = await sendGoalCommand("set", args)
     if (sent) {
       if (props.sessionID) {
-        const prompted = await startGoalRun(sdk.client, {
+        const expectedGoalID = state()?.id
+        const prompted = await startGoalRunGuarded(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
-        })
-        if (!prompted) await sendGoalCommand("pause", "pause")
+        }, promptAdmissionGuard(expectedGoalID))
+        if (!prompted.ok && prompted.reason === "delivery-failed") await sendGoalCommand("pause", "pause")
       }
       setChainDraft("objective", "")
       setNewCommand("")
@@ -1951,11 +1989,13 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (sent) {
       if (props.sessionID) {
         promptAttempted = true
-        promptAdmitted = await steerGoalRun(sdk.client, {
+        const expectedGoalID = state()?.id
+        const promptResult = await steerGoalRunGuarded(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
-        }, note)
-        if (!promptAdmitted) setControlError(language.t("session.goal.steer.failed"))
+        }, note, promptAdmissionGuard(expectedGoalID))
+        promptAdmitted = promptResult.ok
+        if (!promptResult.ok && promptResult.reason === "delivery-failed") setControlError(language.t("session.goal.steer.failed"))
       }
       if (steerDraftDisposition({ commandSaved: sent, promptAttempted, promptAdmitted }) === "clear") {
         setSteerText("")
@@ -2661,7 +2701,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     const sent = await sendGoalCommand("chain", `chain start-json ${startPayload.payload}`)
     if (sent) {
       if (props.sessionID) {
-        const prompted = await startGoalRun(sdk.client, {
+        const expectedGoalID = state()?.id
+        const prompted = await startGoalRunGuarded(sdk.client, {
           sessionID: props.sessionID,
           directory: sdk.directory,
           ...(startPayload.firstStepAgent ? { agent: startPayload.firstStepAgent } : {}),
@@ -2669,8 +2710,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           ...(startPayload.firstStepSkills && startPayload.firstStepSkills.length > 0
             ? { skills: startPayload.firstStepSkills }
             : {}),
-        })
-        if (!prompted) await sendGoalCommand("pause", "pause")
+        }, promptAdmissionGuard(expectedGoalID))
+        if (!prompted.ok && prompted.reason === "delivery-failed") await sendGoalCommand("pause", "pause")
       }
     }
   }
@@ -3162,6 +3203,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     if (visibleChainStepSource() === "live" && index <= runningStepIndex()) {
       return language.t("session.goal.chainBuilder.stepRemoveLocked")
     }
+    if (visibleChainStepSource() === "terminal-history") {
+      return language.t("session.goal.chainBuilder.stepRemove")
+    }
     return language.t(
       visibleChainStepSource() === "live"
         ? "session.goal.chainBuilder.stepRemovePending"
@@ -3243,6 +3287,20 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           // silent noop. Terminal goals are allowed through so completed
           // chain rows can be cleaned up instead of becoming inert.
           return
+        }
+        return void removeLiveChainStep(action.index);
+      case "remove-terminal-chain-step":
+        if (liveGoal() || !terminalGoal()) {
+          // Terminal cleanup must never mutate the current live chain. If a
+          // live run appeared between render and click, fall back to dismissing
+          // the stale terminal affordance only.
+          const tGoal = terminalGoal();
+          if (tGoal) {
+            setDismissedTerminalGoalIDs("ids", (prev) =>
+              prev.includes(tGoal.id) ? prev : [...prev, tGoal.id],
+            );
+          }
+          return;
         }
         return void removeLiveChainStep(action.index);
       case "dismiss-terminal":

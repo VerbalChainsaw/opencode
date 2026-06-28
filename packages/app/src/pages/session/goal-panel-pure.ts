@@ -1537,6 +1537,7 @@ export type ChainStepVisibleSource = "draft" | "live" | "terminal-history";
 export type ChainStepVisibleAction =
   | { kind: "edit-draft"; stepID: string }
   | { kind: "remove-live-pending"; index: number }
+  | { kind: "remove-terminal-chain-step"; index: number }
   | { kind: "dismiss-terminal" }
   | { kind: "noop" };
 
@@ -1553,9 +1554,11 @@ export type ChainStepVisibleAction =
  *      own protection against removing running/done steps is
  *      preserved by the live layer (`removeLiveChainStep` already
  *      guards `index <= runningStepIndex()` for active runs).
- *   3. Terminal-history rows never touch the live chain file; the
- *      action is a distinct `dismiss-terminal` command, not a
- *      remove. The tsx layer wires this to archive/reset.
+ *   3. Terminal-history rows never masquerade as live pending rows.
+ *      If no live run is active, their destructive action is a distinct
+ *      terminal-chain cleanup path. If a live run is active, the row can
+ *      only dismiss the terminal summary so it cannot mutate the current
+ *      chain file by accident.
  *   4. Rows with `noop` action render the X as disabled (the tsx
  *      layer also handles `disabled` from run-state — this function
  *      just makes the contract explicit).
@@ -1590,9 +1593,15 @@ export function chainStepVisibleAction(args: {
     }
     return { kind: "noop" };
   }
-  // terminal-history: never mutate live chain. The action is a
-  // distinct dismiss command (archives the terminal run).
-  return { kind: "dismiss-terminal" };
+  // terminal-history: never route through the live-pending action. When
+  // there is an active/paused live run, a terminal row can only dismiss
+  // itself so it cannot interfere with the current runtime chain. When
+  // there is no live run, the cleanup path may remove the terminal chain
+  // artifact explicitly.
+  if (args.liveRunStatus === "active" || args.liveRunStatus === "paused") {
+    return { kind: "dismiss-terminal" };
+  }
+  return { kind: "remove-terminal-chain-step", index: args.index };
 }
 
 export function chainStepVisibleSourceForState(args: {
@@ -1604,7 +1613,7 @@ export function chainStepVisibleSourceForState(args: {
 }): ChainStepVisibleSource {
   if (args.hasLiveGoal) return "live"
   if (args.hasDraftSteps || args.draftSource === "draft") return "draft"
-  if (args.hasTerminalGoal && args.hasChainSnapshot) return "live"
+  if (args.hasTerminalGoal && args.hasChainSnapshot) return "terminal-history"
   return "draft"
 }
 

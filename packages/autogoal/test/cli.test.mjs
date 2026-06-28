@@ -127,6 +127,18 @@ test("CLI surface does not ship a standalone web server command", () => {
   assert.ok(!pkg.files.includes("src/control-server.ts"), "package files must not ship a standalone control server");
 });
 
+test("CLI routes normal commands through the async structured dispatcher", () => {
+  const cliSource = readFileSync(join(here, "..", "src", "cli.ts"), "utf-8");
+
+  assert.match(cliSource, /dispatchGoalCommandStructuredAsync/, "CLI must import the async dispatcher");
+  assert.match(cliSource, /async function main\(\)/, "main must be async so command dispatch can await atomic paths");
+  assert.match(
+    cliSource,
+    /await dispatchGoalCommandStructuredAsync\(parsed\.directory, dispatcherArg\)/,
+    "normal CLI commands must use the async dispatcher so chain skip shares the atomic path",
+  );
+});
+
 // ── CLI_TO_DISPATCHER ───────────────────────────────────────────────────────
 
 test("CLI_TO_DISPATCHER: all CLI commands have a dispatcher mapping", () => {

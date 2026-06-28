@@ -30,7 +30,7 @@ import { splitGoalCommand } from "./dispatcher.js"
 // Canonical types from the plugin's state layer — single source of truth.
 // control-state.ts is the EXPERIMENTAL API backend; it delegates type
 // authority to goal-state.ts so the two implementations cannot drift.
-import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, sanitizeForPrompt, validateGoalState, DEFAULT_CONSTRAINTS, CONSTRAINT_BOUNDS, type GoalStatus, type Verification } from "./goal-state.js"
+import { editMaxTurns, editMaxTime, editMaxTokens, transitionGoal as goalTransitionGoal, restartGoal as goalRestartGoal, appendSteering as goalAppendSteering, clearSteering as goalClearSteering, editCondition as goalEditCondition, createHandoff as goalCreateHandoff, claimHandoff as goalClaimHandoff, sanitizeForPrompt, validateGoalState, withStateLock, DEFAULT_CONSTRAINTS, CONSTRAINT_BOUNDS, type GoalStatus, type Verification } from "./goal-state.js"
 import type { ChainWebhook, GoalPinnedModel } from "./goal-chain.js";
 import { sanitizeChainWebhook } from "./goal-chain.js";
 import { isPlainObject, isFiniteNumber } from "./utils.js";
@@ -134,7 +134,7 @@ export interface GoalControlState {
     steering?: Array<{ at: number; note: string }>
     previousId?: string
     restartedAt?: number
-    // D3 fix (CENTER-AUDIT 2026-06-27): these four are preserved at runtime
+    // D3 fix (CENTER-AUDIT 2026-06-27): these fields are preserved at runtime
     // (setActiveChainGoal / updateActiveChainMetadata / sanitizeControlMetadata)
     // but were previously only reachable through the `Record<string, unknown>`
     // index signature, so TS consumers of the bridge saw them as `unknown`.
@@ -143,6 +143,7 @@ export interface GoalControlState {
     chainId?: string
     chainStep?: number
     chainTotal?: number
+    stepMarkerAt?: number
     webhook?: { url: string; on: GoalControlStatus[]; allowLocal?: boolean }
   }
 }
@@ -179,6 +180,17 @@ const TEMPLATE_DELETE_PREFIX = ["template", "delete", ""].join(" ")
 const CHAIN_START_JSON_PREFIX = ["chain", "start-json", ""].join(" ")
 
 export async function runGoalControlStateFile(
+  directory: string,
+  command: string,
+  now = Date.now(),
+  options: GoalControlStateFileOptions = {},
+): Promise<GoalControlStateFileResult> {
+  return withStateLock(directory, () =>
+    runGoalControlStateFileUnlocked(directory, command, now, options),
+  )
+}
+
+async function runGoalControlStateFileUnlocked(
   directory: string,
   command: string,
   now = Date.now(),
@@ -503,8 +515,8 @@ async function removeChainStep(directory: string, index: number, now: number) {
     }
     throw new Error("Cannot remove the only step in the chain; clear the goal instead.")
   }
-  if (!terminalChainState && index === chain.current) {
-    throw new Error("Cannot remove the step that is currently running.")
+  if (!terminalChainState && chain.current >= 0 && index <= chain.current) {
+    throw new Error("Only pending future steps can be removed from a live chain. Stop or reset before editing the active step.")
   }
   // Preserve which step is active by identity, then re-derive its index after splice.
   const active = chain.steps[chain.current]
@@ -1050,6 +1062,7 @@ function sanitizeControlMetadata(value: unknown): GoalControlState["metadata"] {
   if (typeof metadata.chainId === "string") out.chainId = sanitizeForPrompt(metadata.chainId).slice(0, 160)
   if (isFiniteNumber(metadata.chainStep)) out.chainStep = metadata.chainStep
   if (isFiniteNumber(metadata.chainTotal)) out.chainTotal = metadata.chainTotal
+  if (isFiniteNumber(metadata.stepMarkerAt) && metadata.stepMarkerAt >= 0) out.stepMarkerAt = metadata.stepMarkerAt
   if (Array.isArray(metadata.steering)) {
     const steering = metadata.steering
       .filter((item): item is { at: number; note: string } => isPlainObject(item) && isFiniteNumber(item.at) && typeof item.note === "string")

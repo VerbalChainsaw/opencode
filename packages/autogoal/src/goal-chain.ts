@@ -446,6 +446,26 @@ export type CreateChainResult =
   | { ok: true; chain: GoalChain; state: GoalState }
   | { ok: false; reason?: "corrupt-goal"; error: string };
 
+export type ChainOperationFailureReason =
+  | "no-chain"
+  | "no-goal"
+  | "corrupt-chain"
+  | "corrupt-goal"
+  | "interrupted"
+  | "terminal-state"
+  | "invalid-value"
+  | "write-failed";
+
+export type ChainOperationFailure = {
+  ok: false;
+  reason: ChainOperationFailureReason;
+  error: string;
+};
+
+function chainFailure(reason: ChainOperationFailureReason, error: string): ChainOperationFailure {
+  return { ok: false, reason, error };
+}
+
 export interface CreateChainOpts {
   setBy?: "user" | "template" | "chain";
   sessionId?: string;
@@ -523,13 +543,10 @@ function corruptGoalStateForChainStartError(directory: string, reason: CorruptRe
 function readGoalStateForChainOperation(
   directory: string,
   operation: string,
-): { ok: true; state: GoalState | null } | { ok: false; error: string } {
+): { ok: true; state: GoalState | null } | ChainOperationFailure {
   const result = readGoalStateResult(directory);
   if (result.kind === "corrupt") {
-    return {
-      ok: false,
-      error: corruptGoalStateForChainOperationError(directory, result.reason, operation),
-    };
+    return chainFailure("corrupt-goal", corruptGoalStateForChainOperationError(directory, result.reason, operation));
   }
   return { ok: true, state: result.kind === "ok" ? result.value : null };
 }
@@ -537,15 +554,27 @@ function readGoalStateForChainOperation(
 function readGoalChainForOperation(
   directory: string,
   operation: string,
-): { ok: true; chain: GoalChain | null } | { ok: false; error: string } {
+): { ok: true; chain: GoalChain | null } | ChainOperationFailure {
   const result = readGoalChainResult(directory);
   if (result.kind === "corrupt") {
-    return {
-      ok: false,
-      error: corruptGoalChainForOperationError(directory, result.reason, operation),
-    };
+    return chainFailure("corrupt-chain", corruptGoalChainForOperationError(directory, result.reason, operation));
   }
   return { ok: true, chain: result.kind === "ok" ? result.value : null };
+}
+
+function chainInterruptedError(): ChainOperationFailure {
+  return chainFailure(
+    "interrupted",
+    "Chain interrupted — goal was manually overridden. Start a new chain before editing the stale chain.",
+  );
+}
+
+function requireCurrentStateForChain(
+  chain: GoalChain,
+  state: GoalState | null,
+): { ok: true; state: GoalState } | ChainOperationFailure {
+  if (!state || state.metadata.chainId !== chain.id) return chainInterruptedError();
+  return { ok: true, state };
 }
 
 function constraintsForStep(step: GoalChainStep, chain: Pick<GoalChain, "master"> | null): GoalConstraints {
@@ -755,7 +784,7 @@ export function createGoalChain(
 // ── Chain advancement ────────────────────────────────────────────────────────
 
 export type AdvanceChainResult =
-  | { ok: false; error: string }
+  | ChainOperationFailure
   | { ok: true; message: string; completed?: boolean; state?: GoalState };
 
 /**
@@ -778,17 +807,15 @@ export function advanceGoalChain(
   const chainResult = readGoalChainForOperation(directory, "advancing a chain");
   if (!chainResult.ok) return chainResult;
   const chain = chainResult.chain;
-  if (!chain) return { ok: false, error: "No active chain." };
+  if (!chain) return chainFailure("no-chain", "No active chain.");
 
   const stateResult = readGoalStateForChainOperation(directory, "advancing a chain");
   if (!stateResult.ok) return stateResult;
-  const state = stateResult.state;
-  // Guard: the current goal must belong to this chain
-  if (!state || state.metadata.chainId !== chain.id) {
-    return { ok: false, error: "Chain interrupted — goal was manually overridden. Use 'chain reset' to restart." };
-  }
+  const ownership = requireCurrentStateForChain(chain, stateResult.state);
+  if (!ownership.ok) return ownership;
+  const state = ownership.state;
   if (state.status === "cleared") {
-    return { ok: false, error: "Chain stopped — the current goal was cleared." };
+    return chainFailure("terminal-state", "Chain stopped — the current goal was cleared.");
   }
   recordMasterUsage(chain, state, now);
 
@@ -825,7 +852,7 @@ export function advanceGoalChain(
     try {
       writeGoalChainAtomic(directory, chain);
     } catch (err: unknown) {
-      return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` };
+      return chainFailure("write-failed", `Failed to write chain: ${err instanceof Error ? err.message : String(err)}`);
     }
     return { ok: true, completed: true, message: "Chain master budget reached." };
   }
@@ -879,13 +906,13 @@ export function advanceGoalChain(
   try {
     writeGoalChainAtomic(directory, chain);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write chain: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   try {
     writeGoalStateAtomic(directory, newState);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write state: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return {
@@ -924,15 +951,24 @@ export function skipGoalChainStep(directory: string, now: number = Date.now()): 
   return advanceGoalChain(directory, now);
 }
 
+export async function skipGoalChainStepAtomic(directory: string, now: number = Date.now()): Promise<AdvanceChainResult> {
+  return advanceGoalChainAtomic(directory, now);
+}
+
 /** Reset the chain to step 0 with fresh counters. */
 export function resetGoalChain(directory: string, now: number = Date.now()): AdvanceChainResult {
   const chainResult = readGoalChainForOperation(directory, "resetting a chain");
   if (!chainResult.ok) return chainResult;
   const chain = chainResult.chain;
-  if (!chain) return { ok: false, error: "No active chain." };
+  if (!chain) return chainFailure("no-chain", "No active chain.");
 
   const stateResult = readGoalStateForChainOperation(directory, "resetting a chain");
   if (!stateResult.ok) return stateResult;
+  const ownership = requireCurrentStateForChain(chain, stateResult.state);
+  if (!ownership.ok) return ownership;
+  if (ownership.state.status === "cleared") {
+    return chainFailure("terminal-state", "Chain stopped — the current goal was cleared.");
+  }
 
   chain.current = 0;
   chain.cycles = 0;
@@ -965,13 +1001,13 @@ export function resetGoalChain(directory: string, now: number = Date.now()): Adv
   try {
     writeGoalChainAtomic(directory, chain);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write chain: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   try {
     writeGoalStateAtomic(directory, newState);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write state: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return {
@@ -985,6 +1021,7 @@ export function resetGoalChain(directory: string, now: number = Date.now()): Adv
 
 export interface SetChainWebhookResult {
   ok: boolean;
+  reason?: ChainOperationFailureReason;
   error?: string;
   /** The new chain-level webhook (or null if cleared). */
   webhook?: ChainWebhook | null;
@@ -1012,20 +1049,22 @@ export function setChainWebhook(
   const chainResult = readGoalChainForOperation(directory, "changing chain webhook settings");
   if (!chainResult.ok) return chainResult;
   const chain = chainResult.chain;
-  if (!chain) return { ok: false, error: "No active chain." };
+  if (!chain) return chainFailure("no-chain", "No active chain.");
 
   // Reject invalid input. `null` is the explicit "clear" signal.
   let sanitizedWebhook: ChainWebhook | null = null;
   if (webhook !== null) {
     const sanitized = sanitizeChainWebhook(webhook);
     if (sanitized === null) {
-      return { ok: false, error: "Invalid webhook shape: url must be http(s), 'on' must list at least one valid status." };
+      return chainFailure("invalid-value", "Invalid webhook shape: url must be http(s), 'on' must list at least one valid status.");
     }
     sanitizedWebhook = sanitized;
   }
 
   const stateResult = readGoalStateForChainOperation(directory, "changing chain webhook settings");
   if (!stateResult.ok) return stateResult;
+  const ownership = requireCurrentStateForChain(chain, stateResult.state);
+  if (!ownership.ok) return ownership;
 
   if (webhook !== null && sanitizedWebhook !== null) {
     chain.webhook = sanitizedWebhook;
@@ -1037,25 +1076,18 @@ export function setChainWebhook(
   // call sees the new value, AND so the on-disk state file is
   // self-consistent with the chain file (a debugger reading either
   // file alone gets the same answer).
-  const state = stateResult.state;
-  if (!state) {
-    // No state — this is unusual (a chain should always have a
-    // corresponding state), but the chain write is still meaningful.
-    try { writeGoalChainAtomic(directory, chain); }
-    catch (err: unknown) { return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` }; }
-    return { ok: true, webhook: chain.webhook ?? null, state: null };
-  }
+  const state = ownership.state;
   applyChainWebhookToState(state, chain);
 
   try {
     writeGoalChainAtomic(directory, chain);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write chain: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
     writeGoalStateAtomic(directory, state);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write state: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return { ok: true, webhook: chain.webhook ?? null, state };
@@ -1075,10 +1107,10 @@ export function addChainStep(
   condition: string,
   command: string | null = null,
   now: number = Date.now(),
-): { ok: boolean; error?: string } {
+): { ok: boolean; reason?: ChainOperationFailureReason; error?: string } {
   const cond = (condition ?? "").trim();
-  if (!cond) return { ok: false, error: "Step condition cannot be empty." };
-  if (cond.length > MAX_CONDITION_LEN) return { ok: false, error: `Step must be ${MAX_CONDITION_LEN} chars or fewer.` };
+  if (!cond) return chainFailure("invalid-value", "Step condition cannot be empty.");
+  if (cond.length > MAX_CONDITION_LEN) return chainFailure("invalid-value", `Step must be ${MAX_CONDITION_LEN} chars or fewer.`);
 
   const chainResult = readGoalChainForOperation(directory, "adding a chain step");
   if (!chainResult.ok) return chainResult;
@@ -1086,23 +1118,21 @@ export function addChainStep(
   if (chain) {
     const stateResult = readGoalStateForChainOperation(directory, "adding a chain step");
     if (!stateResult.ok) return stateResult;
-    const state = stateResult.state;
-    if (chain.steps.length >= MAX_CHAIN_STEPS) return { ok: false, error: `Chain cannot exceed ${MAX_CHAIN_STEPS} steps.` };
+    const ownership = requireCurrentStateForChain(chain, stateResult.state);
+    if (!ownership.ok) return ownership;
+    const state = ownership.state;
+    if (chain.steps.length >= MAX_CHAIN_STEPS) return chainFailure("invalid-value", `Chain cannot exceed ${MAX_CHAIN_STEPS} steps.`);
     chain.steps.push({ condition: cond, command });
-    if (state?.metadata.chainId === chain.id) {
-      state.metadata.chainTotal = chain.steps.length;
-    }
+    state.metadata.chainTotal = chain.steps.length;
     try {
       writeGoalChainAtomic(directory, chain);
     } catch (err: unknown) {
-      return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` };
+      return chainFailure("write-failed", `Failed to write chain: ${err instanceof Error ? err.message : String(err)}`);
     }
-    if (state?.metadata.chainId === chain.id) {
-      try {
-        writeGoalStateAtomic(directory, state);
-      } catch (err: unknown) {
-        return { ok: false, error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
-      }
+    try {
+      writeGoalStateAtomic(directory, state);
+    } catch (err: unknown) {
+      return chainFailure("write-failed", `Failed to write state: ${err instanceof Error ? err.message : String(err)}`);
     }
     return { ok: true };
   }
@@ -1111,7 +1141,7 @@ export function addChainStep(
   const stateResult = readGoalStateForChainOperation(directory, "adding a chain step");
   if (!stateResult.ok) return stateResult;
   const state = stateResult.state;
-  if (!state) return { ok: false, error: "No goal to add a sub-goal to. Set a goal first." };
+  if (!state) return chainFailure("no-goal", "No goal to add a sub-goal to. Set a goal first.");
   const res = createGoalChain(
     directory,
     [
@@ -1126,7 +1156,7 @@ export function addChainStep(
     ],
     { now },
   );
-  return res.ok ? { ok: true } : { ok: false, error: res.error };
+  return res.ok ? { ok: true } : chainFailure(res.reason ?? "invalid-value", res.error);
 }
 
 /**
@@ -1138,19 +1168,21 @@ export function reorderChainStep(
   directory: string,
   from: number,
   to: number,
-): { ok: boolean; error?: string } {
+): { ok: boolean; reason?: ChainOperationFailureReason; error?: string } {
   const chainResult = readGoalChainForOperation(directory, "reordering chain steps");
   if (!chainResult.ok) return chainResult;
   const chain = chainResult.chain;
-  if (!chain) return { ok: false, error: "No active chain." };
+  if (!chain) return chainFailure("no-chain", "No active chain.");
   const n = chain.steps.length;
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from >= n || to < 0 || to >= n) {
-    return { ok: false, error: "Step index out of range." };
+    return chainFailure("invalid-value", "Step index out of range.");
   }
-  if (from === to) return { ok: true };
 
   const stateResult = readGoalStateForChainOperation(directory, "reordering chain steps");
   if (!stateResult.ok) return stateResult;
+  const ownership = requireCurrentStateForChain(chain, stateResult.state);
+  if (!ownership.ok) return ownership;
+  if (from === to) return { ok: true };
 
   const [moved] = chain.steps.splice(from, 1);
   chain.steps.splice(to, 0, moved!);
@@ -1160,23 +1192,19 @@ export function reorderChainStep(
   else if (from < chain.current && to >= chain.current) chain.current -= 1;
   else if (from > chain.current && to <= chain.current) chain.current += 1;
 
-  const state = stateResult.state;
-  if (state?.metadata.chainId === chain.id) {
-    state.metadata.chainStep = chain.current;
-    state.metadata.chainTotal = chain.steps.length;
-  }
+  const state = ownership.state;
+  state.metadata.chainStep = chain.current;
+  state.metadata.chainTotal = chain.steps.length;
 
   try {
     writeGoalChainAtomic(directory, chain);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write chain: ${err instanceof Error ? err.message : String(err)}`);
   }
-  if (state?.metadata.chainId === chain.id) {
-    try {
-      writeGoalStateAtomic(directory, state);
-    } catch (err: unknown) {
-      return { ok: false, error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
-    }
+  try {
+    writeGoalStateAtomic(directory, state);
+  } catch (err: unknown) {
+    return chainFailure("write-failed", `Failed to write state: ${err instanceof Error ? err.message : String(err)}`);
   }
   return { ok: true };
 }
@@ -1191,33 +1219,34 @@ export function reorderChainStep(
 export function removeChainStep(
   directory: string,
   index: number,
-): { ok: boolean; error?: string } {
+): { ok: boolean; reason?: ChainOperationFailureReason; error?: string } {
   const chainResult = readGoalChainForOperation(directory, "removing a chain step");
   if (!chainResult.ok) return chainResult;
   const chain = chainResult.chain;
-  if (!chain) return { ok: false, error: "No active chain." };
+  if (!chain) return chainFailure("no-chain", "No active chain.");
   const n = chain.steps.length;
   if (!Number.isInteger(index) || index < 0 || index >= n) {
-    return { ok: false, error: "Step index out of range." };
+    return chainFailure("invalid-value", "Step index out of range.");
   }
   const stateResult = readGoalStateForChainOperation(directory, "removing a chain step");
   if (!stateResult.ok) return stateResult;
-  const state = stateResult.state;
+  const ownership = requireCurrentStateForChain(chain, stateResult.state);
+  if (!ownership.ok) return ownership;
+  const state = ownership.state;
   const terminalChainState =
-    state?.metadata.chainId === chain.id &&
     (state.status === "achieved" || state.status === "cleared");
 
   if (n <= 1) {
-    if (!terminalChainState) return { ok: false, error: "Cannot remove the only chain step." };
+    if (!terminalChainState) return chainFailure("invalid-value", "Cannot remove the only chain step.");
     try {
       unlinkSync(goalChainPath(directory));
     } catch (err: unknown) {
-      return { ok: false, error: `Failed to remove chain: ${err instanceof Error ? err.message : String(err)}` };
+      return chainFailure("write-failed", `Failed to remove chain: ${err instanceof Error ? err.message : String(err)}`);
     }
     return { ok: true };
   }
   if (!terminalChainState && chain.current >= 0 && index <= chain.current) {
-    return { ok: false, error: "Only pending future steps can be removed from a live chain. Stop or reset before editing the active step." };
+    return chainFailure("invalid-value", "Only pending future steps can be removed from a live chain. Stop or reset before editing the active step.");
   }
 
   chain.steps.splice(index, 1);
@@ -1225,21 +1254,17 @@ export function removeChainStep(
   if (terminalChainState && chain.current >= chain.steps.length) {
     chain.current = chain.steps.length - 1;
   }
-  if (state?.metadata.chainId === chain.id) {
-    state.metadata.chainTotal = chain.steps.length;
-  }
+  state.metadata.chainTotal = chain.steps.length;
 
   try {
     writeGoalChainAtomic(directory, chain);
   } catch (err: unknown) {
-    return { ok: false, error: `Failed to write chain: ${err instanceof Error ? err.message : String(err)}` };
+    return chainFailure("write-failed", `Failed to write chain: ${err instanceof Error ? err.message : String(err)}`);
   }
-  if (state?.metadata.chainId === chain.id) {
-    try {
-      writeGoalStateAtomic(directory, state);
-    } catch (err: unknown) {
-      return { ok: false, error: `Failed to write state: ${err instanceof Error ? err.message : String(err)}` };
-    }
+  try {
+    writeGoalStateAtomic(directory, state);
+  } catch (err: unknown) {
+    return chainFailure("write-failed", `Failed to write state: ${err instanceof Error ? err.message : String(err)}`);
   }
   return { ok: true };
 }

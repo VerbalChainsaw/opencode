@@ -23,9 +23,9 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   setGoal,
   transitionGoal,
-  readGoalState,
   readGoalStateResult,
   readHandoffResult,
+  withStateLock,
   listCorruptArtifacts,
   formatStatus,
   editMaxTurns,
@@ -69,9 +69,28 @@ const FRESH_STATE_FILES = [
   STEP_TIMELINE_FILE,
   SESSION_EVENTS_FILE,
 ] as const;
+const CHAIN_MUTATING_SUBACTIONS = new Set([
+  "skip",
+  "reset",
+  "add",
+  "move",
+  "remove",
+  "delete",
+  "start",
+  "start-json",
+  "start-inline",
+]);
 
-function cancelClearedChainArtifact(directory: string): { ok: true; cancelled: boolean } | { ok: false; message: string } {
-  const state = readGoalState(directory);
+function cancelClearedChainArtifact(directory: string, clearedState?: GoalState): { ok: true; cancelled: boolean } | { ok: false; message: string } {
+  const stateResult = clearedState ? { kind: "ok" as const, value: clearedState } : readGoalStateResult(directory);
+  if (stateResult.kind === "corrupt") {
+    const newest = newestCorruptArtifact(directory, ".goal-state.json.corrupt.");
+    return {
+      ok: false,
+      message: `Goal cleared, but the state file was corrupt${newest ? ` and was quarantined as ${newest}` : ""}. Review the quarantined artifact before continuing the chain.`,
+    };
+  }
+  const state = stateResult.kind === "ok" ? stateResult.value : null;
   const chainId = state?.metadata.chainId;
   if (!chainId || state.status !== "cleared") return { ok: true, cancelled: false };
 
@@ -212,6 +231,27 @@ export interface GoalCommandResult {
   /** Agent-only briefing (the "How to proceed:\n...\nBegin now." block).
    *  Present only when kind === "set". */
   agentExtras?: string;
+}
+
+function chainFailureToEnvelope(
+  res: { ok: boolean; reason?: unknown; error?: string },
+  fallbackKind: GoalCommandKind,
+): GoalCommandResult {
+  const message = res.error ?? "Chain operation failed.";
+  switch (res.reason) {
+    case "corrupt-chain":
+    case "corrupt-goal":
+      return { kind: "corrupt-state", message };
+    case "no-chain":
+    case "no-goal":
+      return { kind: "no-goal", message };
+    case "terminal-state":
+      return { kind: "terminal-state", message };
+    case "write-failed":
+      return { kind: "write-failed", message };
+    default:
+      return { kind: fallbackKind, message };
+  }
 }
 
 /** Maps the structured kind to the CLI's exit code. */
@@ -517,7 +557,7 @@ export function dispatchGoalCommandStructured(
   if (CLEAR_ALIASES.has(action)) {
     const res = transitionGoal(directory, "clear");
     if (res.ok) {
-      const cancelled = cancelClearedChainArtifact(directory);
+      const cancelled = cancelClearedChainArtifact(directory, res.state);
       if (!cancelled.ok) return { kind: "write-failed", message: cancelled.message };
       return {
         kind: "success",
@@ -557,7 +597,7 @@ export function dispatchGoalCommandStructured(
       if (res.reason === "already-in-state") return { kind: "already-in-state", message: res.error! };
       return { kind: "write-failed", message: res.error ?? "Failed to resume." };
     }
-    const state = readGoalState(directory);
+    const state = res.state;
     if (state) {
       // Special-cased bare message: the "continue working toward it now"
       // briefing is the user-facing output, NOT relay-wrapped. The
@@ -720,13 +760,13 @@ export function dispatchGoalCommandStructured(
 
     if (subAction === "skip") {
       const res = skipGoalChainStep(directory);
-      if (!res.ok) return { kind: "no-goal", message: res.error };
+      if (!res.ok) return chainFailureToEnvelope(res, "no-goal");
       return { kind: "success", message: res.message };
     }
 
     if (subAction === "reset") {
       const res = resetGoalChain(directory);
-      if (!res.ok) return { kind: "no-goal", message: res.error };
+      if (!res.ok) return chainFailureToEnvelope(res, "no-goal");
       return { kind: "success", message: res.message };
     }
 
@@ -734,7 +774,7 @@ export function dispatchGoalCommandStructured(
       const cond = unwrapQuotes(subPayload);
       if (!cond) return { kind: "usage", message: 'Usage: /goal chain add "<condition>"' };
       const res = addChainStep(directory, cond);
-      if (!res.ok) return { kind: "invalid-value", message: res.error! };
+      if (!res.ok) return chainFailureToEnvelope(res, "invalid-value");
       return { kind: "success", message: "Sub-goal step added." };
     }
 
@@ -744,7 +784,7 @@ export function dispatchGoalCommandStructured(
       const fromStep = parseInt(m[1]!, 10);
       const toStep = parseInt(m[2]!, 10);
       const res = reorderChainStep(directory, fromStep - 1, toStep - 1);
-      if (!res.ok) return { kind: "invalid-value", message: res.error! };
+      if (!res.ok) return chainFailureToEnvelope(res, "invalid-value");
       return { kind: "success", message: "Step reordered." };
     }
 
@@ -753,7 +793,7 @@ export function dispatchGoalCommandStructured(
       if (!m) return { kind: "usage", message: "Usage: /goal chain remove <step-number>" };
       const stepNumber = parseInt(m[1]!, 10);
       const res = removeChainStep(directory, stepNumber - 1);
-      if (!res.ok) return { kind: "invalid-value", message: res.error! };
+      if (!res.ok) return chainFailureToEnvelope(res, "invalid-value");
       return { kind: "success", message: `Step ${stepNumber} removed.` };
     }
 
@@ -850,6 +890,29 @@ function dialResultToEnvelope(
   if (res.reason === "terminal-state") return { kind: "terminal-state", message: res.error ?? "Cannot edit a goal in a terminal state." };
   if (res.reason === "invalid-value") return { kind: "invalid-value", message: res.error ?? "Invalid value." };
   return { kind: "write-failed", message: res.error ?? `${defaultMsg} failed.` };
+}
+
+export async function dispatchGoalCommandStructuredAsync(
+  directory: string,
+  rawArguments: string,
+): Promise<GoalCommandResult> {
+  const argsText = (rawArguments ?? "").trim();
+  const firstSpace = argsText.search(/\s/);
+  const firstWord = (firstSpace === -1 ? argsText : argsText.slice(0, firstSpace)).toLowerCase();
+  const isAction = KNOWN_ACTIONS.has(firstWord);
+  const action = isAction ? firstWord : "set";
+  const payload = isAction ? (firstSpace === -1 ? "" : argsText.slice(firstSpace + 1).trim()) : argsText;
+
+  if (action === "chain") {
+    const subAction = payload.split(/\s+/)[0]?.toLowerCase() ?? "";
+    if (CHAIN_MUTATING_SUBACTIONS.has(subAction)) {
+      return await withStateLock(directory, () =>
+        dispatchGoalCommandStructured(directory, rawArguments),
+      );
+    }
+  }
+
+  return dispatchGoalCommandStructured(directory, rawArguments);
 }
 
 /** Format a structured result into the agent-facing text the OpenCode

@@ -16,9 +16,10 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
-import { dispatchGoalCommandStructured, KIND_TO_EXIT } from "../dist/command.js";
-import { createHandoff } from "../dist/goal-state.js";
+import { dispatchGoalCommandStructured, dispatchGoalCommandStructuredAsync, KIND_TO_EXIT } from "../dist/command.js";
+import { createHandoff, withStateLock } from "../dist/goal-state.js";
 
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "opengoal-env-"));
@@ -40,6 +41,24 @@ function plantCorruptGoalState(dir) {
   const opencodeDir = join(dir, ".opencode");
   mkdirSync(opencodeDir, { recursive: true });
   writeFileSync(join(opencodeDir, ".goal-state.json"), "{not json", "utf-8");
+}
+
+function plantCorruptGoalChain(dir) {
+  const opencodeDir = join(dir, ".opencode");
+  mkdirSync(opencodeDir, { recursive: true });
+  writeFileSync(join(opencodeDir, ".goal-chain.json"), "{not json", "utf-8");
+}
+
+function startThreeStepChain(dir) {
+  const payload = JSON.stringify({
+    steps: [
+      { condition: "Plan" },
+      { condition: "Build" },
+      { condition: "Verify" },
+    ],
+  });
+  const start = dispatchGoalCommandStructured(dir, `chain start-json ${payload}`);
+  assert.equal(start.kind, "success", start.message);
 }
 
 // ── kind per action ─────────────────────────────────────────────────────────
@@ -246,6 +265,120 @@ test("envelope: chain start-json surfaces corrupt current state", () => {
       "quarantined state artifact should remain visible",
     );
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("async envelope: chain skip advances through the server-safe dispatcher", async () => {
+  const dir = freshDir();
+  try {
+    const payload = JSON.stringify({
+      steps: [
+        { condition: "Plan" },
+        { condition: "Build" },
+        { condition: "Verify" },
+      ],
+    });
+    const start = dispatchGoalCommandStructured(dir, `chain start-json ${payload}`);
+    assert.equal(start.kind, "success", start.message);
+
+    const skip = await dispatchGoalCommandStructuredAsync(dir, "chain skip");
+
+    assert.equal(skip.kind, "success", skip.message);
+    assert.match(skip.message, /Step 2\/3/);
+
+    const chain = JSON.parse(readFileSync(join(dir, ".opencode", ".goal-chain.json"), "utf-8"));
+    const state = JSON.parse(readFileSync(join(dir, ".opencode", ".goal-state.json"), "utf-8"));
+    assert.equal(chain.current, 1);
+    assert.equal(state.metadata.chainStep, 1);
+    assert.equal(state.condition, "Build");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("async envelope: chain controls surface corrupt chain files", async () => {
+  const cases = [
+    ["chain skip", /advancing a chain/i],
+    ["chain reset", /resetting a chain/i],
+    ['chain add "Review"', /adding a chain step/i],
+    ["chain move 1 2", /reordering chain steps/i],
+    ["chain remove 2", /removing a chain step/i],
+  ];
+
+  for (const [command, operation] of cases) {
+    const dir = freshDir();
+    try {
+      startThreeStepChain(dir);
+      plantCorruptGoalChain(dir);
+
+      const res = await dispatchGoalCommandStructuredAsync(dir, command);
+
+      assert.equal(res.kind, "corrupt-state", `${command}: ${res.message}`);
+      assert.match(res.message, /Goal chain file was corrupt/);
+      assert.match(res.message, operation);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test("async envelope: chain controls surface corrupt current goal state", async () => {
+  const cases = [
+    ["chain skip", /advancing a chain/i],
+    ["chain reset", /resetting a chain/i],
+    ['chain add "Review"', /adding a chain step/i],
+    ["chain move 1 2", /reordering chain steps/i],
+    ["chain remove 2", /removing a chain step/i],
+  ];
+
+  for (const [command, operation] of cases) {
+    const dir = freshDir();
+    try {
+      startThreeStepChain(dir);
+      plantCorruptGoalState(dir);
+
+      const res = await dispatchGoalCommandStructuredAsync(dir, command);
+
+      assert.equal(res.kind, "corrupt-state", `${command}: ${res.message}`);
+      assert.match(res.message, /Goal state file was corrupt/);
+      assert.match(res.message, operation);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test("async envelope: chain mutating controls wait for the state lock", async () => {
+  const cases = [
+    "chain skip",
+    "chain reset",
+    'chain add "Review"',
+    "chain move 2 3",
+    "chain remove 2",
+    `chain start-json ${JSON.stringify({ steps: [{ condition: "Fresh plan" }, { condition: "Fresh build" }] })}`,
+  ];
+
+  for (const command of cases) {
+    const dir = freshDir();
+    try {
+      startThreeStepChain(dir);
+
+      let release;
+      const releaseLock = new Promise((resolve) => { release = resolve; });
+      let lockStarted;
+      const lockStartedPromise = new Promise((resolve) => { lockStarted = resolve; });
+      const holder = withStateLock(dir, async () => {
+        lockStarted();
+        await releaseLock;
+      });
+      await lockStartedPromise;
+
+      const commandResult = dispatchGoalCommandStructuredAsync(dir, command);
+      const whileLocked = await Promise.race([
+        commandResult.then(() => "resolved"),
+        sleep(25).then(() => "pending"),
+      ]);
+
+      assert.equal(whileLocked, "pending", `${command} resolved while another state mutation held the lock`);
+      release();
+      const res = await commandResult;
+      assert.equal(res.kind, "success", `${command}: ${res.message}`);
+      await holder;
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });
 
 test("envelope: chain remove deletes a pending one-based step and updates chainTotal", () => {

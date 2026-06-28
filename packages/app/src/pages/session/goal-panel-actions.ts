@@ -65,6 +65,14 @@ export interface GoalCommandClient {
 }
 
 export type GoalControlResult = { ok: true; warning?: string } | { ok: false; error: string }
+export type GoalPromptRunResult =
+  | { ok: true }
+  | { ok: false; reason: "delivery-failed" | "stale-suppressed" }
+
+export type GoalPromptAdmissionGuard = {
+  shouldContinue?: () => boolean | Promise<boolean>
+  onStaleDelivery?: () => Promise<void> | void
+}
 
 const START_GOAL_PROMPT =
   "Begin working toward the current OpenGoal goal now. Read .opencode/.goal-state.json for the condition, constraints, steering, and verification command. Continue until the goal is achieved, blocked, or the constraints require stopping."
@@ -200,6 +208,10 @@ async function abortActiveSessionTree(
   return { attempted: true, warnings } as const
 }
 
+export async function abortGoalSessionTree(client: GoalCommandClient, input: GoalSessionScope) {
+  return abortActiveSessionTree(client, input)
+}
+
 function uniqueMessages(items: string[]) {
   return [...new Set(items.filter(Boolean))]
 }
@@ -252,7 +264,23 @@ export function goalSteerPrompt(note: string) {
   return `Steering update for the current OpenGoal run. Apply this direction to the active or next continuation without restarting the goal:\n\n${note}`
 }
 
-async function sendGoalPrompt(client: GoalCommandClient, input: GoalPromptAsyncInput, text: string) {
+async function sendGoalPromptGuarded(
+  client: GoalCommandClient,
+  input: GoalPromptAsyncInput,
+  text: string,
+  guard: GoalPromptAdmissionGuard = {},
+): Promise<GoalPromptRunResult> {
+  const shouldContinue = async () => guard.shouldContinue ? await guard.shouldContinue() : true
+  if (!(await shouldContinue())) return { ok: false, reason: "stale-suppressed" }
+
+  const finalizeAdmission = async (): Promise<GoalPromptRunResult> => {
+    if (!(await shouldContinue())) {
+      await guard.onStaleDelivery?.()
+      return { ok: false, reason: "stale-suppressed" }
+    }
+    return { ok: true }
+  }
+
   const { skills, ...promptInput } = input
   const payload = {
     ...promptInput,
@@ -268,19 +296,21 @@ async function sendGoalPrompt(client: GoalCommandClient, input: GoalPromptAsyncI
     // nudge enters the same lifecycle as a real composer send.
     if (client.session?.prompt) {
       await client.session.prompt(payload)
-      return true
+      return finalizeAdmission()
     }
     if (client.session?.promptAsync) {
       await client.session.promptAsync(payload)
-      return true
+      return finalizeAdmission()
     }
   } catch {
     // Fall back to the raw transport below. The desktop SDK surface can change
     // shape faster than this local helper, but the HTTP endpoint is stable.
   }
 
+  if (!(await shouldContinue())) return { ok: false, reason: "stale-suppressed" }
+
   const transport = client.client
-  if (!transport?.post) return false
+  if (!transport?.post) return { ok: false, reason: "delivery-failed" }
   const { sessionID, directory, workspace, ...body } = payload
   const query = {
     ...(directory ? { directory } : {}),
@@ -293,10 +323,14 @@ async function sendGoalPrompt(client: GoalCommandClient, input: GoalPromptAsyncI
       query,
       body,
     })
-    return true
+    return finalizeAdmission()
   } catch {
-    return false
+    return { ok: false, reason: "delivery-failed" }
   }
+}
+
+async function sendGoalPrompt(client: GoalCommandClient, input: GoalPromptAsyncInput, text: string) {
+  return (await sendGoalPromptGuarded(client, input, text)).ok
 }
 
 export async function executeGoalCommand(
@@ -355,6 +389,14 @@ export async function startGoalRun(client: GoalCommandClient, input: GoalPromptA
   return sendGoalPrompt(client, input, START_GOAL_PROMPT)
 }
 
+export async function startGoalRunGuarded(
+  client: GoalCommandClient,
+  input: GoalPromptAsyncInput,
+  guard: GoalPromptAdmissionGuard = {},
+): Promise<GoalPromptRunResult> {
+  return sendGoalPromptGuarded(client, input, START_GOAL_PROMPT, guard)
+}
+
 export async function stopGoalRun(
   client: GoalCommandClient,
   input: {
@@ -403,4 +445,15 @@ export async function steerGoalRun(client: GoalCommandClient, input: GoalPromptA
   const clean = note.trim()
   if (!clean) return false
   return sendGoalPrompt(client, input, goalSteerPrompt(clean))
+}
+
+export async function steerGoalRunGuarded(
+  client: GoalCommandClient,
+  input: GoalPromptAsyncInput,
+  note: string,
+  guard: GoalPromptAdmissionGuard = {},
+): Promise<GoalPromptRunResult> {
+  const clean = note.trim()
+  if (!clean) return { ok: false, reason: "delivery-failed" }
+  return sendGoalPromptGuarded(client, input, goalSteerPrompt(clean), guard)
 }

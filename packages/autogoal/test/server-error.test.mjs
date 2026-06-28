@@ -63,7 +63,10 @@ const distServerPath = pathToFileURL(join(distDir, "server.js")).href;
 // ── Module imports ─────────────────────────────────────────────────────────
 
 const { server } = await import(distServerPath);
-const { readGoalState } = await import(
+const { readGoalState, setGoal } = await import(
+  "file:///" + join(distDir, "goal-state.js").replace(/\\/g, "/")
+);
+const { transitionGoal } = await import(
   "file:///" + join(distDir, "goal-state.js").replace(/\\/g, "/")
 );
 const { createGoalChain } = await import(
@@ -1152,6 +1155,70 @@ describe("session.idle skips nudge when a permission is open (defect coverage)",
       "turnsEvaluated should have incremented (evaluate ran; only the nudge was skipped)");
     assert.equal(final.lastEvaluation.met, false,
       "lastEvaluation.met should be false (the shell command exited 1)");
+  });
+
+  it("in-flight guard: aborted nudge delivery is not retried after the goal is cleared", async () => {
+    const create = createGoalChain(dir, [
+      {
+        condition: "stop-race step",
+        verification: { type: "shell", command: process.platform === "win32" ? "exit 1" : "false" },
+      },
+    ]);
+    assert.equal(create.ok, true);
+
+    let attempts = 0;
+    let delivered = 0;
+    client.session.prompt = async (req) => {
+      attempts += 1;
+      if (attempts === 1) {
+        const cleared = transitionGoal(dir, "clear");
+        assert.equal(cleared.ok, true, cleared.error);
+        const err = new Error("The operation was aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+      delivered += 1;
+      spies.prompts.push(req);
+      return { data: { id: `prompt-${attempts}` } };
+    };
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    assert.equal(
+      attempts,
+      1,
+      "a Stop-triggered AbortError must not retry the continuation after the goal is cleared",
+    );
+    assert.equal(delivered, 0, "no reply-driving nudge should be delivered after the goal is cleared");
+    assert.equal(readStateFileRaw(dir).status, "cleared");
+  });
+
+  it("in-flight guard: hard nudge failure does not pause a replacement goal", async () => {
+    const create = createGoalChain(dir, [
+      {
+        condition: "old step",
+        verification: { type: "shell", command: process.platform === "win32" ? "exit 1" : "false" },
+      },
+    ]);
+    assert.equal(create.ok, true);
+
+    client.session.prompt = async () => {
+      const replaced = setGoal(dir, "replacement goal");
+      assert.equal(replaced.ok, true, replaced.error);
+      const err = new Error("Invalid API key for anthropic");
+      err.name = "ProviderAuthError";
+      throw err;
+    };
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "test-session" } },
+    });
+
+    const final = readStateFileRaw(dir);
+    assert.equal(final.condition, "replacement goal");
+    assert.equal(final.status, "active", "an old hard nudge failure must not pause a newly-set goal");
   });
 });
 

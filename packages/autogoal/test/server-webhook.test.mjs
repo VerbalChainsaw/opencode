@@ -195,10 +195,9 @@ describe("fireWebhook call sites — spec coverage", () => {
     // What we verify here: the source code has a fireWebhook call
     // for the achieved path with previousStatus="active".
     const source = readFileSync(join(here, "..", "src", "server.ts"), "utf-8");
-    assert.ok(/fireWebhook\(achievedState,\s*"active"\)/.test(source) ||
-              /fireWebhook\(achievedState, "active"\)/.test(source) ||
-              source.includes('fireWebhook(achievedState, "active")'),
-      "evaluate() achieved path should call fireWebhook(achievedState, 'active')");
+    assert.ok(/fireWebhook\(snapshot\.state,\s*"active"\)/.test(source) ||
+              source.includes('fireWebhook(snapshot.state, "active")'),
+      "evaluate() achieved path should call fireWebhook(snapshot.state, 'active')");
   });
 });
 
@@ -1135,9 +1134,9 @@ describe("fireWebhook call sites — source audit (8 spec call sites)", () => {
 
   it("fireWebhook is called from evaluate() achieved path (active → achieved)", () => {
     // The achieved call is in the auto-loop, not in a tool. Look
-    // for "fireWebhook(achievedState" in the source.
-    assert.ok(/fireWebhook\(achievedState/.test(source),
-      "evaluate() should call fireWebhook on the achieved path");
+    // for the webhook firing from the state returned by the achieved write.
+    assert.ok(/fireWebhook\(snapshot\.state,\s*"active"\)/.test(source),
+      "evaluate() should call fireWebhook on the achieved path using snapshot.state");
   });
 
   it("fireWebhook is called from evaluate() blocked path (active → paused)", () => {
@@ -1150,9 +1149,9 @@ describe("fireWebhook call sites — source audit (8 spec call sites)", () => {
 
   it("fireWebhook is called from evaluate() constraint-clear path (active → cleared)", () => {
     // The constraint-clear path fires the webhook with previousStatus
-    // "active". Look for fireWebhook(cleared, "active") pattern.
-    assert.ok(/fireWebhook\(cleared, "active"\)/.test(source),
-      "evaluate() constraint-clear should call fireWebhook(cleared, 'active')");
+    // "active" from the state returned by checkConstraints.
+    assert.ok(/fireWebhook\(constraintResult\.state,\s*"active"\)/.test(source),
+      "evaluate() constraint-clear should call fireWebhook(constraintResult.state, 'active')");
   });
 });
 

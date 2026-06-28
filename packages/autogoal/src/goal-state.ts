@@ -1004,6 +1004,8 @@ export interface TransitionResult {
   status?: GoalStatus;
   turnsEvaluated?: number;
   message?: string;
+  /** The exact state written by a successful transition. */
+  state?: GoalState;
   /** Set on every `ok: false` return. Additive and optional; existing
    *  callers that only inspect `error` are unaffected. */
   reason?: TransitionReason;
@@ -1077,7 +1079,7 @@ export function transitionGoal(directory: string, action: TransitionAction, now:
       pause: "Goal paused. Resume with `/goal resume`.",
       resume: `Goal resumed. ${state.turnsEvaluated} turns completed so far.`,
     };
-    return { ok: true, status: state.status, turnsEvaluated: state.turnsEvaluated, message: messages[action] };
+    return { ok: true, status: state.status, turnsEvaluated: state.turnsEvaluated, message: messages[action], state };
   }
 }
 
@@ -1477,7 +1479,7 @@ export function sanitizeMetadata(meta: unknown): GoalState["metadata"] {
  * this is a no-op (the restart would clobber the handoff). The user must
  * claim the handoff first or delete it.
  */
-export function restartGoal(directory: string, now: number = Date.now()): { ok: true; newId: string; message: string } | { ok: false; reason: "no-goal" | "corrupt-goal" | "terminal-state" | "handoff-pending" | "write-failed"; error?: string } {
+export function restartGoal(directory: string, now: number = Date.now()): { ok: true; newId: string; state: GoalState; message: string } | { ok: false; reason: "no-goal" | "corrupt-goal" | "terminal-state" | "handoff-pending" | "write-failed"; error?: string } {
   {
     const current = readGoalStateForMutation(directory);
     if (!current.ok) return current;
@@ -1527,6 +1529,7 @@ export function restartGoal(directory: string, now: number = Date.now()): { ok: 
     return {
       ok: true,
       newId: newState.id,
+      state: newState,
       message: `Goal restarted. New id: ${newState.id.slice(0, 8)}.`,
     };
   }

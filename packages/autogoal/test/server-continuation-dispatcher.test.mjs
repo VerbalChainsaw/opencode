@@ -549,3 +549,96 @@ test("C2.5: backoffMs returning 0 skips the delay", async () => {
   assert.equal(attempts, 2);
   assert.ok(elapsed < 50, `backoffMs returning 0 should not delay; took ${elapsed}ms`);
 });
+
+test("stale guard suppresses hard-failure pause when the target changes during prompt delivery", async () => {
+  let current = true;
+  let attempts = 0;
+  let pauseCalled = 0;
+  let notifyCalled = 0;
+  let webhookCalled = 0;
+  let resetCalled = 0;
+
+  const { client } = makeHarness({
+    prompt: async () => {
+      attempts++;
+      current = false;
+      const err = new Error("ProviderAuthError: invalid key");
+      err.name = "ProviderAuthError";
+      throw err;
+    },
+  });
+
+  const result = await deliverContinuation(client, {
+    sessionId: "s-stale-hard-failure",
+    idempotencyKey: "s-stale-hard-failure/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    shouldContinue: () => current,
+    deps: {
+      onPause: () => { pauseCalled++; },
+      onNotify: () => { notifyCalled++; },
+      onWebhookFire: () => { webhookCalled++; },
+      onReset: () => { resetCalled++; },
+    },
+  });
+
+  assert.equal(result.status, "stale-suppressed");
+  assert.equal(attempts, 1, "hard failures still do not retry");
+  assert.equal(pauseCalled, 0, "stale hard failure must not pause the replacement/cleared goal");
+  assert.equal(notifyCalled, 0, "stale hard failure must not notify as though the current goal failed");
+  assert.equal(webhookCalled, 0, "stale hard failure must not emit a paused webhook for the wrong goal");
+  assert.equal(resetCalled, 0, "stale suppression is not a successful delivery");
+});
+
+test("stale guard suppresses and aborts a prompt that succeeds after the target changes", async () => {
+  let current = true;
+  let attempts = 0;
+  let staleAbortCalled = 0;
+  let resetCalled = 0;
+
+  const { client } = makeHarness({
+    prompt: async () => {
+      attempts++;
+      current = false;
+      return { data: { id: "late-prompt" } };
+    },
+  });
+
+  const result = await deliverContinuation(client, {
+    sessionId: "s-stale-success",
+    idempotencyKey: "s-stale-success/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    shouldContinue: () => current,
+    deps: {
+      onPause: () => {},
+      onNotify: () => {},
+      onWebhookFire: () => {},
+      onReset: () => { resetCalled++; },
+      onStaleDelivery: () => { staleAbortCalled++; },
+    },
+  });
+
+  assert.equal(result.status, "stale-suppressed");
+  assert.equal(attempts, 1, "the prompt attempt itself already happened");
+  assert.equal(staleAbortCalled, 1, "late prompt admission must trigger best-effort cleanup");
+  assert.equal(resetCalled, 0, "stale suppression is not a successful delivery");
+
+  const duplicate = await deliverContinuation(client, {
+    sessionId: "s-stale-success",
+    idempotencyKey: "s-stale-success/k",
+    body: { parts: [{ type: "text", text: "test" }] },
+    maxAttempts: 3,
+    shouldContinue: () => false,
+    deps: {
+      onPause: () => {},
+      onNotify: () => {},
+      onWebhookFire: () => {},
+      onReset: () => { resetCalled++; },
+      onStaleDelivery: () => { staleAbortCalled++; },
+    },
+  });
+
+  assert.equal(duplicate.status, "stale-suppressed");
+  assert.equal(attempts, 1, "stale success must not poison idempotency as delivered");
+});

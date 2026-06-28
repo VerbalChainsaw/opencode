@@ -1,24 +1,43 @@
-# GUI Integration — opencode-autogoal v0.3.0
+# GUI Integration - opencode-autogoal
 
-This document is the contract for any GUI that wants to render the
-AutoGoal plugin's state. The canonical consumer is the OpenCode
-Desktop Goal panel (`packages/app/src/pages/session/goal-panel.tsx`)
-and its control bridge (`packages/app/src/pages/session/goal-panel-actions.ts`)
-in this monorepo, but the contract is host-agnostic — any web component,
-native widget, or CLI dashboard can implement against it.
+This document is the current contract for GUI surfaces that render or
+control OpenGoal state. The canonical consumer in this monorepo is the
+OpenCode Desktop Goal panel:
 
-## The data contract
+- `packages/app/src/pages/session/goal-panel.tsx`
+- `packages/app/src/pages/session/goal-panel-pure.ts`
+- `packages/app/src/pages/session/goal-panel-actions.ts`
 
-There is exactly one source of truth: the state file at
-`.opencode/.goal-state.json`. The shape is the `GoalState` interface
-in `src/goal-state.ts`. It is:
+The old cross-repo assumption is retired. Desktop integration is in this
+monorepo and must use the runtime paths and bridge described below.
+
+## Source of truth
+
+The runtime state is file-backed under the workspace root:
+
+| File | Purpose |
+|---|---|
+| `.opencode/.goal-state.json` | Current goal state |
+| `.opencode/.goal-chain.json` | Optional active chain snapshot |
+| `.opencode/.goal-handoff.json` | Optional handoff payload |
+| `.opencode/goal-archive.jsonl` | Terminal run history |
+
+There is no event-push or SSE path for the Desktop Goal panel. The
+renderer polls the workspace files through the OpenCode SDK and treats
+the files as the source of truth.
+
+## Goal state contract
+
+The authoritative shape is the `GoalState` interface in
+`packages/autogoal/src/goal-state.ts`.
 
 ```typescript
 interface GoalState {
   version: number;
   id: string;
   condition: string;
-  command: string | null;
+  command?: string | null;
+  verification?: Verification | null;
   status: "active" | "paused" | "achieved" | "cleared";
   createdAt: number;
   startedAt: number;
@@ -28,206 +47,186 @@ interface GoalState {
   turnsEvaluated: number;
   tokensUsed: number;
   lastEvaluation: GoalEvaluation | null;
-  evaluationHistory: GoalEvaluation[];  // capped at 10
+  evaluationHistory: GoalEvaluation[];
   constraints: {
-    maxTurns: number;          // [1, 10_000]
-    maxTimeMinutes: number;    // [1, 10_000]
-    maxTokens: number;         // [1, 10_000_000]
+    maxTurns: number;
+    maxTimeMinutes: number;
+    maxTokens: number;
   };
   metadata: {
     setBy: "user" | "template" | "chain";
     sessionId?: string;
     agentName?: string;
-    // v0.2.0+ optional fields:
     conditionEditedAt?: number;
     previousId?: string;
     restartedAt?: number;
-    steering?: Array<{ at: number; note: string }>;  // capped at 20
+    steering?: Array<{ at: number; note: string }>;
     resumedFromHandoffAt?: number;
+    chainId?: string;
+    chainStep?: number;
+    chainTotal?: number;
+    webhook?: { url: string; on: Array<"active" | "paused" | "achieved" | "cleared">; allowLocal?: boolean };
+    stepMarkerAt?: number;
   };
 }
-
-interface GoalEvaluation {
-  met: boolean;
-  reason: string;        // 200-char cap; sanitized for prompt injection
-  confidence: number;     // [0.0, 1.0]
-  timestamp: number;
-  evaluatorType: "deterministic" | "model" | "heuristic";
-  blocked?: boolean;      // true if the agent signalled GOAL_BLOCKED
-  rawOutput?: string;     // up to 1000 chars
-}
 ```
 
-Read this with `JSON.parse(stateFileContent)`. Validate with
-`validateGoalState(state)` (re-exported from the plugin's `./goal-state.js`
-subpath export). If the validator returns false, treat the state as
-corrupt and render an empty-state placeholder.
+Renderer code cannot import the plugin validator directly, so the
+Desktop panel mirrors the trust boundary in `isGoalStateShape`. Anything
+that fails this structural check renders as corrupt state, never as a
+typed goal.
 
-The state file may legitimately be missing (no goal set yet). Treat
-that as "empty state" — the file's existence is NOT a precondition
-for the GUI to render.
+## Reading state
 
-## The live-update mechanism (polling)
-
-The OpenCode plugin has no event-emit API for live state updates.
-The GUI must poll. The recommended pattern is a `setInterval` at
-**2 seconds**; that's a reasonable trade-off between freshness and
-the host's resource budget.
-
-The polling call is the `goal_get_state` tool. From the GUI
-SolidJS side, you call it via the OpenCode SDK:
+The Desktop panel reads files with `sdk.client.file.read({ path })`.
+The SDK normally returns a `FileContent` object with a `content` field,
+but the renderer accepts either that object shape or a plain string.
 
 ```typescript
-import { useSDK } from "@/context/sdk";
-
-const sdk = useSDK();
-const directory = useDirectory();  // the project root
-const [state, setState] = createSignal<GoalState | null>(null);
-
-async function refresh() {
-  // The SDK client exposes plugin tools via client.tool.invoke or
-  // similar. The exact API shape depends on the OpenCode version.
-  // For v0.3.0+ the call is:
-  const raw = await sdk.client.tool.invoke("goal_get_state", { directory });
-  if (raw === "null" || !raw) {
-    setState(null);
-  } else {
-    const parsed = JSON.parse(raw);
-    setState(parsed);
-  }
-}
-
-onMount(() => {
-  refresh();
-  const interval = setInterval(refresh, 2000);
-  onCleanup(() => clearInterval(interval));
-});
+const res = await sdk.client.file.read({ path: ".opencode/.goal-state.json" });
+const content = typeof res.data === "string" ? res.data : res.data?.content;
 ```
 
-(If the SDK in your OpenCode version doesn't have `tool.invoke`,
-adapt to the equivalent. The `goal_get_state` tool is registered
-whenever the opencode-autogoal plugin is loaded; check
-`sdk.client.tool.list()` for the available tools.)
+The polling interval is 2 seconds. A manual refresh should also run
+immediately after a successful control action so the UI does not wait
+for the next poll.
 
-### Corrupt state (v0.4.2+)
+Read behavior:
 
-When the state file exists but is corrupt, `goal_get_state` returns
-`{"$corrupt":{"reason":"parse"|"validate"|"oversize"|"io","quarantined":"<filename>|null"}}`
-instead of `"null"`. The plugin has already quarantined the file
-(renamed to `.goal-state.json.corrupt.<ts>`) by the time you see this.
-Corrupt-aware GUIs should render a warning naming the quarantined file.
-Corrupt-unaware GUIs need no change: the payload fails
-`validateGoalState`, and the documented contract (see "The data
-contract" above) already says to treat validator-rejected payloads as
-corrupt and render the empty-state placeholder.
+- Missing state file means "no goal set".
+- Empty state file means "no goal set".
+- Oversized, unparsable, or structurally invalid state means "corrupt".
+- Backend/network failure is not "no goal set"; render an unreachable
+  backend state so the user can tell the app is not reading the workspace.
 
-## The dial surface (write side)
+The same file-read pattern applies to chain, handoff, activity, and
+archive snapshots. Chain data must be cross-checked against
+`state.metadata.chainId`; a chain snapshot without a matching current
+goal is stale and must not drive live controls.
 
-The GUI can mutate goal state by invoking the dials as tools. The
-plugin exposes these:
+## Writing controls
+
+Desktop buttons do not mutate files directly. They call the native
+goal-control bridge through `executeGoalCommand` in
+`goal-panel-actions.ts`.
+
+The plugin still exposes the public tool surface below for plugin/API
+consumers. Desktop should treat `goal_control` as the deterministic
+button bridge and should read live state through file polling, not
+through a tool invocation.
 
 | Tool | Args | Returns |
 |---|---|---|
-| `set_goal` | `{condition, command?, maxTurns?, maxMinutes?}` | The new state (as a stringified goal description) |
-| `goal_get_state` | (none) | JSON string of the current state or "null" |
-| `goal_status` | (none) | A short human-readable status string |
-| `clear_goal` | (none) | Confirmation string |
-| `pause_goal` | (none) | Confirmation string |
-| `resume_goal` | (none) | Confirmation string |
-| `goal_turns` | `{n}` | Confirmation string (n in [1, 10000]) |
-| `goal_time` | `{n}` | Confirmation string (n in [1, 10000]) |
-| `goal_tokens` | `{n}` | Confirmation string (n in [1, 10000000]) |
+| `set_goal` | `{condition, command?, maxTurns?, maxMinutes?}` | The new state as user-facing text |
+| `goal_get_state` | `{}` | JSON string of the current state or `"null"` |
+| `goal_status` | `{}` | Short human-readable status string |
+| `clear_goal` | `{}` | Confirmation string |
+| `pause_goal` | `{}` | Confirmation string |
+| `resume_goal` | `{}` | Confirmation string |
+| `goal_turns` | `{n}` | Confirmation string; `n` in `[1, 10000]` |
+| `goal_time` | `{n}` | Confirmation string; `n` in `[1, 10000]` |
+| `goal_tokens` | `{n}` | Confirmation string; `n` in `[1, 10000000]` |
 | `goal_condition` | `{text}` | Confirmation string |
 | `goal_steer` | `{text}` | Confirmation string |
-| `goal_clear_steering` | (none) | Confirmation string |
-| `goal_restart` | (none) | Confirmation string |
+| `goal_clear_steering` | `{}` | Confirmation string |
+| `goal_restart` | `{}` | Confirmation string |
 | `goal_handoff` | `{note?}` | Confirmation string |
-| `goal_claim` | (none) | Confirmation string |
-| `goal_webhook` | `{url?, on?, allowLocal?}` | Confirmation string — set/clear notification webhook |
-| `goal_control` | `{command}` | Confirmation string for Desktop GUI controls; returns user-facing text only |
+| `goal_claim` | `{}` | Confirmation string |
+| `goal_webhook` | `{url?, on?, allowLocal?}` | Confirmation string |
+| `goal_control` | `{command}` | Desktop bridge response text |
 
-The `goal_*` dial tools are the v0.2.0+ dials. All return strings
-suitable for displaying in a toast. For a true dialog-based
-interaction (with confirm/cancel), use the TUI keymap commands
-`/goal-turns`, `/goal-restart`, etc. — those have the same backend
-primitives.
+Preferred transport:
 
-The 5 transition tools (`set_goal`, `goal_status`, `clear_goal`,
-`pause_goal`, `resume_goal`) are the v0.1.0+ conversational tools.
-
-`goal_control` is the Desktop GUI bridge for existing `/goal ...`
-commands. It exists so button clicks can update the goal state
-deterministically without going through the session command/chat turn
-path. It must return only the user-facing dispatcher message, not the
-agent-only "How to proceed" scaffold used when an agent is asked to
-start working.
-
-## Rendering the readouts
-
-A reasonable Goals tab renders (at minimum):
-
-```
-┌─────────────────────────────────────────┐
-│  GOALS                       [icon]      │  ← sidebar_title
-├─────────────────────────────────────────┤
-│  🎯 "make all tests pass"               │  ← sidebar_content
-│  ███████████░░░░░░░░░░ 55%  11/20 turns  │
-│  turns:  11/20    time:   5/30m          │
-│  tokens: 12,345/100,000  last: tests pass│
-│  ──── eval history ────                  │
-│  ✓  tests pass                           │
-│  ·  compiling                            │
-│  ·  reading test files                   │
-│  2 steer notes    ⤴ handoff             │
-│  last edit: 3m ago                       │
-├─────────────────────────────────────────┤
-│  dials: /goal-turns · /goal-steer · ...  │  ← sidebar_footer
-└─────────────────────────────────────────┘
+```typescript
+await client.post({
+  url: "/experimental/goal/control/{toolID}",
+  path: { toolID: "goal_control" },
+  query: { directory, workspace },
+  body: {
+    directory,
+    workspace,
+    sessionID,
+    arguments: { command }
+  }
+});
 ```
 
-The dials in the footer are the *slash command names* (which the
-TUI keymap binds), not direct invocations. A real working GUI
-should:
+The generated SDK `client.tool.control` method is a fallback only. A GUI
+that cannot reach either bridge should disable write controls and show a
+clear unavailable-control state.
 
-1. Render the readouts from `state` (polled every 2s)
-2. On user action (click a button), invoke the corresponding tool
-3. Force a refresh of the polled state
+`goal_control` returns user-facing dispatcher text only. It must not
+return the agent-only "How to proceed" scaffold used when a model is
+asked to start or continue work.
+
+## Prompt-start controls
+
+Some GUI actions intentionally start a model turn after the deterministic
+state write. Examples include Start, Resume, Restart, and Steer. These
+actions must use the guarded prompt helpers in `goal-panel-actions.ts`:
+
+- `startGoalRunGuarded`
+- `steerGoalRunGuarded`
+
+The guard is part of the control contract. It checks admission before
+delivery and again after delivery. If Stop, Pause, Reset, or another
+newer control wins the race, the stale prompt is suppressed and any
+late-started session is aborted.
+
+Stop and Pause are hard controls:
+
+- Invalidate pending prompt admissions.
+- Abort the active session tree before the state transition.
+- Send deterministic `clear` or `pause` through `goal_control`.
+- Abort the active session tree again after the transition.
+- Refresh the Goal panel surfaces.
+
+This ordering prevents a late prompt from re-arming a cleared or paused
+goal after the user pressed Stop or Pause.
+
+## Rendering expectations
+
+A useful Desktop Goal panel should render:
+
+- Current condition and lifecycle status.
+- Turns, elapsed time, token usage, and constraint ceilings.
+- Verification command or structured verification summary.
+- Latest evaluation reason and recent evaluation history.
+- Chain progress when `metadata.chainId` matches the chain file.
+- Handoff, steering, archive/history, and corrupt/unreachable states.
+- Clear disabled states for controls that are invalid for the current
+  lifecycle.
+
+Terminal goals (`achieved` or `cleared`) are read-only except for
+explicit restart/archive/history flows.
 
 ## Edge cases
 
-- **State file missing**: render an empty-state placeholder with
-  "Set a goal with `/goal set '<condition>'`" or "Click here to set
-  a goal" (GUI-invokes the `set_goal` tool).
-- **State file corrupt** (validator returns false): render an error
-  banner with the path. Don't render the readouts — they'll be
-  nonsensical.
-- **No plugin installed**: the `goal_get_state` tool call will fail.
-  Catch the error in `refresh()` and render "AutoGoal plugin not
-  installed" in the tab.
-- **Terminal state** (status `achieved` or `cleared`): show the
-  read-only readouts, gray out the dials. The plugin doesn't allow
-  editing terminal-state goals.
-- **Goal was just edited**: the next poll (within 2s) will show
-  the new condition. No special-casing needed.
+- **State file missing**: render the new-goal empty state.
+- **Corrupt state**: render a warning and do not render readouts from the
+  invalid payload.
+- **Backend unreachable**: render an unavailable-backend state, not the
+  empty new-goal state.
+- **Control bridge unavailable**: keep reads active but disable writes.
+- **Terminal goal**: show read-only status and archive/history actions.
+- **Live chain editing**: only pending future steps can be removed while
+  a chain is active. The current or past step requires Stop or Reset.
+- **Late prompt delivery**: suppress and abort stale prompt admissions
+  after Stop, Pause, Reset, or a newer start/restart wins.
 
 ## Security
 
-The state file is user-controlled (anyone with write access to the
-project can plant one). The plugin's `validateGoalState` enforces
-shape and array-length caps. The `claimHandoff` and `restartGoal`
-primitives rebuild metadata from a fixed allowlist (`sanitizeMetadata`)
-and route the condition and steering notes through `sanitizeForPrompt`
-before any prompt-surface interpolation. The GUI is a READ consumer;
-the dials go through the plugin's primitives which handle all
-sanitization. **Do not render raw `metadata.steering[].note` without
-running it through `sanitizeForPrompt` first** (the plugin's
-`./goal-state.js` exports this).
+The state files are user-controlled workspace data. Renderer code must
+enforce size caps before `JSON.parse`, structurally validate parsed
+payloads, and sanitize user-controlled text before rendering.
+
+Write controls must go through the bridge and the shared state/chain
+primitives. A GUI must not hand-edit `.opencode/.goal-state.json` or
+`.opencode/.goal-chain.json`.
 
 ## Versioning
 
-The data contract is the public API. Backward-incompatible changes
-to `GoalState` are a major version bump (v0.3 → v0.4). The
-plugin's `state.version` field on disk is independent of the npm
-package version — it's the in-file schema version, currently `1`.
-The plugin tolerates older state files (no `version` field defaults
-to 1).
+The on-disk state schema is versioned by `state.version`. Package
+version and state schema version are independent. Backward-incompatible
+changes to the state file contract require a documented schema change
+and corresponding renderer validation updates.
