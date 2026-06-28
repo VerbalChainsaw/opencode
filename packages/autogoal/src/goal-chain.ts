@@ -136,6 +136,18 @@ export interface GoalChain {
 export const MAX_CHAIN_SIZE = 256 * 1024;  // same cap as state files
 export const MAX_CHAIN_STEPS = 50;
 
+function isPositiveInteger(value: unknown): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value) && value >= 1;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value) && value >= 0;
+}
+
+function isChainCurrentIndex(value: unknown, stepCount: number): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value) && value >= -1 && value < stepCount;
+}
+
 // ── I/O ──────────────────────────────────────────────────────────────────────
 
 export function goalChainPath(directory: string): string {
@@ -388,8 +400,8 @@ export function validateGoalChain(chain: unknown): chain is GoalChain {
     if (!isPlainObject(step)) return false;
     if (typeof step.condition !== "string" || step.condition.trim().length === 0) return false;
     if (step.command !== undefined && step.command !== null && typeof step.command !== "string") return false;
-    if (step.maxTurns !== undefined && (!isFiniteNumber(step.maxTurns) || step.maxTurns < 1)) return false;
-    if (step.maxMinutes !== undefined && (!isFiniteNumber(step.maxMinutes) || step.maxMinutes < 1)) return false;
+    if (step.maxTurns !== undefined && !isPositiveInteger(step.maxTurns)) return false;
+    if (step.maxMinutes !== undefined && !isPositiveInteger(step.maxMinutes)) return false;
     // v0.4.1 (E-2) — per-step `verification` shape check. Mirrors
     // goal-state.ts:223-233 so a chain file with a malformed
     // `verification` (e.g. { type: "BANANA" }) cannot smuggle bad
@@ -404,9 +416,9 @@ export function validateGoalChain(chain: unknown): chain is GoalChain {
     }
     if (stepMetadataError(step) !== null) return false;
   }
-  if (!isFiniteNumber(chain.current) || chain.current < -1 || chain.current >= chain.steps.length) return false;
-  if (!isFiniteNumber(chain.cycles) || chain.cycles < 0) return false;
-  if (!isFiniteNumber(chain.maxCycles) || chain.maxCycles < 0) return false;
+  if (!isChainCurrentIndex(chain.current, chain.steps.length)) return false;
+  if (!isNonNegativeInteger(chain.cycles)) return false;
+  if (!isNonNegativeInteger(chain.maxCycles)) return false;
   if (chain.onComplete !== "stop" && chain.onComplete !== "loop") return false;
   if (!isPlainObject(chain.metadata)) return false;
   if (!isFiniteNumber(chain.metadata.createdAt)) return false;
@@ -420,10 +432,10 @@ export function validateGoalChain(chain: unknown): chain is GoalChain {
   }
   if (chain.master !== undefined) {
     if (!isPlainObject(chain.master)) return false;
-    if (chain.master.maxTurns !== undefined && (!isFiniteNumber(chain.master.maxTurns) || chain.master.maxTurns < 1)) return false;
-    if (chain.master.maxMinutes !== undefined && (!isFiniteNumber(chain.master.maxMinutes) || chain.master.maxMinutes < 1)) return false;
-    if (!isFiniteNumber(chain.master.turnsUsed) || chain.master.turnsUsed < 0) return false;
-    if (!isFiniteNumber(chain.master.minutesUsed) || chain.master.minutesUsed < 0) return false;
+    if (chain.master.maxTurns !== undefined && !isPositiveInteger(chain.master.maxTurns)) return false;
+    if (chain.master.maxMinutes !== undefined && !isPositiveInteger(chain.master.maxMinutes)) return false;
+    if (!isNonNegativeInteger(chain.master.turnsUsed)) return false;
+    if (!isNonNegativeInteger(chain.master.minutesUsed)) return false;
   }
   return true;
 }
@@ -616,6 +628,12 @@ export function createGoalChain(
     }
     if (s.condition.length > MAX_CONDITION_LEN) {
       return { ok: false, error: `Step ${i + 1} condition must be ${MAX_CONDITION_LEN} chars or fewer.` };
+    }
+    if (s.maxTurns !== undefined && !isPositiveInteger(s.maxTurns)) {
+      return { ok: false, error: `Step ${i + 1} maxTurns must be a positive integer.` };
+    }
+    if (s.maxMinutes !== undefined && !isPositiveInteger(s.maxMinutes)) {
+      return { ok: false, error: `Step ${i + 1} maxMinutes must be a positive integer.` };
     }
     // v0.4.1 (E-2) — reject malformed `verification` at chain-create
     // time so the validator runs BEFORE the chain file is written.

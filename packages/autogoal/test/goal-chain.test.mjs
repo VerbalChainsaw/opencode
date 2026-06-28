@@ -488,23 +488,70 @@ describe("resetGoalChain", () => {
 });
 
 describe("validateGoalChain", () => {
+  function validChain(overrides = {}) {
+    return {
+      version: 1,
+      id: "abc",
+      steps: [{ condition: "x" }],
+      current: 0,
+      cycles: 0,
+      maxCycles: 10,
+      onComplete: "stop",
+      metadata: { createdAt: 1, setBy: "user" },
+      ...overrides,
+    };
+  }
+
   it("accepts a valid chain", () => {
-    const c = { version: 1, id: "abc", steps: [{ condition: "x" }], current: 0, cycles: 0, maxCycles: 10, onComplete: "stop", metadata: { createdAt: 1, setBy: "user" } };
+    const c = validChain();
     assert.ok(validateGoalChain(c));
   });
 
   it("rejects missing steps", () => {
-    assert.equal(validateGoalChain({ version: 1, id: "x", steps: [], current: 0, cycles: 0, maxCycles: 10, onComplete: "stop", metadata: { createdAt: 1, setBy: "user" } }), false);
+    assert.equal(validateGoalChain(validChain({ steps: [] })), false);
   });
 
   it("rejects invalid current index", () => {
-    const c = { version: 1, id: "x", steps: [{ condition: "x" }], current: 5, cycles: 0, maxCycles: 10, onComplete: "stop", metadata: { createdAt: 1, setBy: "user" } };
+    const c = validChain({ current: 5 });
     assert.equal(validateGoalChain(c), false);
   });
 
   it("rejects step with empty condition", () => {
-    const c = { version: 1, id: "x", steps: [{ condition: "" }], current: 0, cycles: 0, maxCycles: 10, onComplete: "stop", metadata: { createdAt: 1, setBy: "user" } };
+    const c = validChain({ steps: [{ condition: "" }] });
     assert.equal(validateGoalChain(c), false);
+  });
+
+  it("rejects fractional indexes and counters that cannot safely index chain steps", () => {
+    const invalidCases = [
+      validChain({ current: 0.5 }),
+      validChain({ cycles: 0.5 }),
+      validChain({ maxCycles: 10.5 }),
+      validChain({ steps: [{ condition: "x", maxTurns: 2.5 }] }),
+      validChain({ steps: [{ condition: "x", maxMinutes: 2.5 }] }),
+      validChain({ master: { maxTurns: 10.5, turnsUsed: 0, minutesUsed: 0 } }),
+      validChain({ master: { maxMinutes: 10.5, turnsUsed: 0, minutesUsed: 0 } }),
+      validChain({ master: { maxTurns: 10, turnsUsed: 0.5, minutesUsed: 0 } }),
+      validChain({ master: { maxTurns: 10, turnsUsed: 0, minutesUsed: 0.5 } }),
+    ];
+
+    for (const c of invalidCases) {
+      assert.equal(validateGoalChain(c), false, JSON.stringify(c));
+    }
+  });
+
+  it("rejects fractional step budgets before writing a new chain", () => {
+    const dir = freshDir();
+    try {
+      const turns = createGoalChain(dir, [{ condition: "x", maxTurns: 2.5 }]);
+      assert.equal(turns.ok, false);
+      assert.match(turns.error, /maxTurns/i);
+      assert.equal(existsSync(join(dir, CHAIN_FILE)), false);
+
+      const minutes = createGoalChain(dir, [{ condition: "x", maxMinutes: 2.5 }]);
+      assert.equal(minutes.ok, false);
+      assert.match(minutes.error, /maxMinutes/i);
+      assert.equal(existsSync(join(dir, CHAIN_FILE)), false);
+    } finally { cleanDir(dir); }
   });
 });
 
@@ -896,6 +943,34 @@ describe("C-2: readGoalChainResult tri-state reader", () => {
       }
       assert.equal(existsSync(chainPath), false,
         "schema-invalid chain file must be renamed");
+    } finally { cleanDir(dir); }
+  });
+
+  it("fractional current index → {kind:'corrupt', reason:'validate'} and renames", () => {
+    const dir = freshDir();
+    try {
+      const chainPath = join(dir, CHAIN_FILE);
+      mkdirSync(join(dir, ".opencode"), { recursive: true });
+      writeFileSync(chainPath, JSON.stringify({
+        version: 1,
+        id: "abc",
+        steps: [{ condition: "first" }, { condition: "second" }],
+        current: 0.5,
+        cycles: 0,
+        maxCycles: 10,
+        onComplete: "stop",
+        metadata: { createdAt: 1, setBy: "user" },
+      }), "utf-8");
+
+      const r = readGoalChainResult(dir);
+
+      assert.equal(r.kind, "corrupt");
+      if (r.kind === "corrupt") assert.equal(r.reason, "validate");
+      assert.equal(existsSync(chainPath), false, "fractional index chain file must be quarantined");
+      assert.ok(
+        readdirSync(join(dir, ".opencode")).some((entry) => entry.startsWith(".goal-chain.json.corrupt.")),
+        "quarantined chain artifact should remain visible",
+      );
     } finally { cleanDir(dir); }
   });
 
