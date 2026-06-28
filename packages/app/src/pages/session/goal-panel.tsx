@@ -87,6 +87,7 @@ import {
   formatHandoffAge,
   isHandoffStale,
   handoffOriginLabel,
+  goalControlQuotedArg,
   goalInterruptionWarningKey,
   isGoalPinnedModel,
   steerDraftDisposition,
@@ -1964,14 +1965,15 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return result.ok
   }
 
-  /** Create a goal from the main Goal field. Quotes are stripped so they can't
-   *  break the `/goal set "<condition>"` quoting; the condition is required,
+  /** Create a goal from the main Goal field. The condition is required,
    *  the verify command optional. */
   const createGoal = async () => {
-    const condition = chainDraft.objective.trim().replace(/"/g, "")
+    const condition = chainDraft.objective.trim()
     if (!condition) return
-    const command = newCommand().trim().replace(/"/g, "")
-    const args = command ? `set "${condition}" --command "${command}"` : `set "${condition}"`
+    const command = newCommand().trim()
+    const args = command
+      ? `set ${goalControlQuotedArg(condition)} --command ${goalControlQuotedArg(command)}`
+      : `set ${goalControlQuotedArg(condition)}`
     const sent = await sendGoalCommand("set", args)
     if (sent) {
       if (props.sessionID) {
@@ -1990,9 +1992,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   /** Add a steering note: `/goal steer "<note>"`. The plugin shows it to the
    *  agent on the next nudge. */
   const steerGoal = async () => {
-    const note = steerText().trim().replace(/"/g, "")
+    const note = steerText().trim()
     if (!note) return
-    const sent = await sendGoalCommand("steer", `steer "${note}"`)
+    const sent = await sendGoalCommand("steer", `steer ${goalControlQuotedArg(note)}`)
     let promptAttempted = false
     let promptAdmitted = false
     if (sent) {
@@ -2014,8 +2016,8 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   }
 
   const handoffGoal = async () => {
-    const note = handoffText().trim().replace(/"/g, "")
-    const sent = await sendGoalCommand("handoff", note ? `handoff ${note}` : "handoff")
+    const note = handoffText().trim()
+    const sent = await sendGoalCommand("handoff", note ? `handoff ${goalControlQuotedArg(note)}` : "handoff")
     if (sent) {
       setHandoffText("")
       setHandoffOpen(false)

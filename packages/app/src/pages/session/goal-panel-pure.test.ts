@@ -24,6 +24,7 @@ import {
   chainStepVisibleAction,
   chainStepVisibleSourceForState,
   DEFAULT_TEMPLATE_BUTTONS,
+  goalControlQuotedArg,
   runtimePinAvailability,
   type GoalActionDraftState,
   type GoalChainDraftStep,
@@ -53,6 +54,14 @@ const runtimeChainSnapshot = (overrides: Record<string, unknown> = {}) => ({
   onComplete: "stop",
   metadata: { createdAt: 1_700_000_000_000, setBy: "user" },
   ...overrides,
+});
+
+describe("goal control command argument quoting", () => {
+  test("preserves embedded quotes and backslashes for the bridge tokenizer", () => {
+    expect(goalControlQuotedArg(String.raw`Fix "quoted" path C:\tmp`)).toBe(
+      String.raw`"Fix \"quoted\" path C:\\tmp"`,
+    );
+  });
 });
 
 describe("runtime chain snapshot parser", () => {

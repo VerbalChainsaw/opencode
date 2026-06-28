@@ -17,6 +17,25 @@ function freshDir() {
   return mkdtempSync(join(tmpdir(), "opengoal-bridge-"));
 }
 
+test("bridge: quoted command args preserve embedded quotes and backslashes", async () => {
+  const dir = freshDir();
+  try {
+    const condition = String.raw`Fix "quoted" path C:\tmp`;
+    const note = String.raw`Try "quoted" hint C:\tmp`;
+    await runGoalControlStateFile(dir, String.raw`set "Fix \"quoted\" path C:\\tmp"`, Date.now());
+    assert.equal(readGoalState(dir).condition, condition);
+
+    await runGoalControlStateFile(dir, String.raw`steer "Try \"quoted\" hint C:\\tmp"`, Date.now());
+    assert.equal(readGoalState(dir).metadata.steering[0].note, note);
+
+    await runGoalControlStateFile(dir, String.raw`handoff "Try \"quoted\" hint C:\\tmp"`, Date.now());
+    const handoff = JSON.parse(readFileSync(join(dir, ".opencode", ".goal-handoff.json"), "utf-8"));
+    assert.equal(handoff.note, note);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("bridge: chain remove deletes a pending one-based step", async () => {
   const dir = freshDir();
   try {

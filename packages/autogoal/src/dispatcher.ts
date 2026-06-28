@@ -18,6 +18,8 @@
  *
  * - Splits on whitespace, respecting single (`'`) and double (`"`) quoted
  *   spans. The quotes are stripped, not preserved.
+ * - Inside double-quoted spans, `\"` and `\\` preserve a literal quote or
+ *   backslash. Other backslashes stay literal so Windows paths survive.
  * - Throws on an unclosed quote so a malformed command fails fast rather
  *   than silently misparsing the rest of the line.
  * - Used by `control-state.ts:runGoalControlStateFile` to route the command
@@ -30,11 +32,21 @@ export function splitGoalCommand(command: string): string[] {
   const tokens: string[] = []
   let current = ""
   let quote: '"' | "'" | null = null
-  for (const char of command.trim()) {
+  const input = command.trim()
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i]!
     if (quote) {
       if (char === quote) {
         quote = null
         continue
+      }
+      if (quote === '"' && char === "\\" && i + 1 < input.length) {
+        const next = input[i + 1]!
+        if (next === '"' || next === "\\") {
+          current += next
+          i++
+          continue
+        }
       }
       current += char
       continue

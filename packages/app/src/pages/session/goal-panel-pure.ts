@@ -109,6 +109,10 @@ const RENDERER_CONSTRAINT_BOUNDS = {
   maxTokens: 10_000_000,
 } as const
 
+export function goalControlQuotedArg(value: string) {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+}
+
 function isFiniteNumberInRange(value: unknown, min: number, max: number): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
 }
