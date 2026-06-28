@@ -2597,7 +2597,10 @@ export const server: Plugin = async ({ client, directory }) => {
           if (stateResult.kind === "corrupt") {
             return `Cannot claim the handoff because the ${corruptStateNotice(stateResult.reason, ctx.directory)}`;
           }
-          const res = claimHandoff(ctx.directory);
+          // KNOWN C fix: bind the resumed goal to the CLAIMING session so the
+          // operator who claims the handoff can see and drive it (the prior
+          // code carried the origin session's id forward, orphaning the goal).
+          const res = claimHandoff(ctx.directory, Date.now(), ctx.sessionID);
           if (res.ok) return res.message;
           if (res.reason === "no-handoff") return "No handoff to claim.";
           if (res.reason === "current-goal") return res.error ?? "A goal is already active. Clear it before claiming the handoff.";

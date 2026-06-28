@@ -1796,7 +1796,7 @@ function corruptFileError(directory: string, fileLabel: string, artifactPrefix: 
  * delete the handoff. If no handoff exists, no-op. If a current goal
  * exists, refuse (the user must clear or finish it first).
  */
-export function claimHandoff(directory: string, now: number = Date.now()): { ok: true; state: GoalState; message: string } | { ok: false; reason: "no-handoff" | "current-goal" | "corrupt-goal" | "corrupt-handoff" | "write-failed"; error?: string } {
+export function claimHandoff(directory: string, now: number = Date.now(), sessionID?: string): { ok: true; state: GoalState; message: string } | { ok: false; reason: "no-handoff" | "current-goal" | "corrupt-goal" | "corrupt-handoff" | "write-failed"; error?: string } {
   {
     const currentResult = readGoalStateResult(directory);
     if (currentResult.kind === "corrupt") {
@@ -1866,6 +1866,19 @@ export function claimHandoff(directory: string, now: number = Date.now()): { ok:
         resumedFromHandoffAt: now,
       },
     };
+    // Data-contract fix (CENTER-AUDIT 2026-06-28, KNOWN C): rebind ownership to
+    // the CLAIMING session. A handoff is intentionally cross-session, but the
+    // resumed state previously carried the ORIGIN session's metadata.sessionId
+    // verbatim (via sanitizeMetadata). The renderer then opens a fresh session
+    // to claim, so goalStateForSession / goalBelongsToSession scoped the goal to
+    // the origin id — the claimer could neither see nor drive it (an orphaned
+    // zombie goal). Rebind to the claimer (sanitized, matching createGoalState's
+    // contract) so the operator who claims it owns it. When no session id is
+    // supplied (CLI/headless claim), leave the goal unbound so the first idle
+    // can drive it.
+    const claimerId = sanitizeSessionId(sessionID);
+    if (claimerId) resumed.metadata.sessionId = claimerId;
+    else delete resumed.metadata.sessionId;
 
     try {
       writeGoalStateAtomic(directory, resumed);

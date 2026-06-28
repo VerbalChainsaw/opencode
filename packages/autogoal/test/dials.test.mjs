@@ -861,6 +861,48 @@ test("claimHandoff: no handoff → no-handoff error", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("claimHandoff: rebinds resumed goal to the CLAIMING session, not the origin (KNOWN C)", () => {
+  const dir = freshDir();
+  try {
+    // Goal created + handed off in the ORIGIN session.
+    plantState(dir, { id: "g-origin", metadata: { setBy: "user", sessionId: "ses_origin" } });
+    createHandoff(dir);
+    transitionGoal(dir, "clear"); // clean slate for the claim
+
+    // A DIFFERENT session claims it.
+    const res = claimHandoff(dir, 12345, "ses_claimer");
+    assert.equal(res.ok, true);
+    if (res.ok) {
+      assert.equal(
+        res.state.metadata.sessionId,
+        "ses_claimer",
+        "resumed goal must be owned by the claimer so the claiming session can see/drive it",
+      );
+    }
+    // Persisted state agrees — the on-disk goal is bound to the claimer.
+    assert.equal(readGoalState(dir).metadata.sessionId, "ses_claimer");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("claimHandoff: no claimer session → resumed goal is unbound, not origin-owned (CLI/headless)", () => {
+  const dir = freshDir();
+  try {
+    plantState(dir, { id: "g-origin2", metadata: { setBy: "user", sessionId: "ses_origin" } });
+    createHandoff(dir);
+    transitionGoal(dir, "clear");
+
+    const res = claimHandoff(dir, 12345); // no sessionID
+    assert.equal(res.ok, true);
+    if (res.ok) {
+      assert.equal(
+        res.state.metadata.sessionId,
+        undefined,
+        "with no claimer, the goal must be unbound (driveable by first idle), never keep the origin owner",
+      );
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("claimHandoff: refuses if a current goal is active (would clobber)", () => {
   const dir = freshDir();
   try {
