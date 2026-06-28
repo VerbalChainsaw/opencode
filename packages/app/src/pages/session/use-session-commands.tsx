@@ -17,6 +17,8 @@ import { showToast } from "@/utils/toast"
 import { findLast } from "@opencode-ai/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
+import { formatServerError } from "@/utils/server-errors"
+import { abortWorkingSessionTurn } from "@/utils/session-abort"
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
@@ -282,13 +284,27 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
+  const abortBeforeHistoryChange = async (sessionID: string) => {
+    const result = await abortWorkingSessionTurn({
+      client: sdk.client,
+      sessionID,
+      working: sync.data.session_working(sessionID),
+    })
+    if (result.ok) return true
+
+    showToast({
+      variant: "error",
+      title: language.t("prompt.toast.abortFailed.title"),
+      description: formatServerError(result.error, language.t),
+    })
+    return false
+  }
+
   const undo = async () => {
     const sessionID = params.id
     if (!sessionID) return
 
-    if (sync.data.session_working(params.id ?? "")) {
-      await sdk.client.session.abort({ sessionID }).catch(() => {})
-    }
+    if (!(await abortBeforeHistoryChange(sessionID))) return
 
     const revert = info()?.revert?.messageID
     const message = findLast(userMessages(), (x) => !revert || x.id < revert)

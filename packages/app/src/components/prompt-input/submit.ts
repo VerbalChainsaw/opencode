@@ -21,6 +21,7 @@ import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
+import { abortWorkingSessionTurn } from "@/utils/session-abort"
 
 type PendingPrompt = {
   abort: AbortController
@@ -250,18 +251,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return true
     }
 
-    try {
-      await sdk.client.session.abort({ sessionID })
-      clearStoppedUi()
-      return true
-    } catch (err) {
+    const result = await abortWorkingSessionTurn({
+      client: sdk.client,
+      sessionID,
+      working: true,
+    })
+    if (!result.ok) {
       showToast({
         variant: "error",
         title: language.t("prompt.toast.abortFailed.title"),
-        description: errorMessage(err),
+        description: errorMessage(result.error),
       })
       return false
     }
+
+    clearStoppedUi()
+    return true
   }
 
   const restoreCommentItems = (items: CommentItem[]) => {

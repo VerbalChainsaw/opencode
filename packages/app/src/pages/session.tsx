@@ -70,6 +70,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
+import { abortWorkingSessionTurn } from "@/utils/session-abort"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 
 const emptyUserMessages: UserMessage[] = []
@@ -1508,8 +1509,14 @@ export default function Page() {
     setFollowup("edit", id, undefined)
   }
 
-  const halt = (sessionID: string) =>
-    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
+  const halt = async (sessionID: string) => {
+    const result = await abortWorkingSessionTurn({
+      client: sdk.client,
+      sessionID,
+      working: busy(sessionID),
+    })
+    if (!result.ok) throw result.error
+  }
 
   const revertMutation = useMutation(() => ({
     mutationFn: async (input: { sessionID: string; messageID: string }) => {
