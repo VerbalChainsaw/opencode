@@ -231,13 +231,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
   const abort = async () => {
     const sessionID = params.id
-    if (!sessionID) return Promise.resolve()
+    if (!sessionID) return false
 
-    serverSync.todo.set(sessionID, [])
-    const [, setStore] = serverSync.child(sdk.directory)
-    setStore("todo", sessionID, [])
-
-    input.onAbort?.()
+    const clearStoppedUi = () => {
+      serverSync.todo.set(sessionID, [])
+      const [, setStore] = serverSync.child(sdk.directory)
+      setStore("todo", sessionID, [])
+      input.onAbort?.()
+    }
 
     const key = pendingKey(sessionID)
     const queued = pending.get(key)
@@ -245,13 +246,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       queued.abort.abort()
       queued.cleanup()
       pending.delete(key)
-      return Promise.resolve()
+      clearStoppedUi()
+      return true
     }
-    return sdk.client.session
-      .abort({
-        sessionID,
+
+    try {
+      await sdk.client.session.abort({ sessionID })
+      clearStoppedUi()
+      return true
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: language.t("prompt.toast.abortFailed.title"),
+        description: errorMessage(err),
       })
-      .catch(() => {})
+      return false
+    }
   }
 
   const restoreCommentItems = (items: CommentItem[]) => {

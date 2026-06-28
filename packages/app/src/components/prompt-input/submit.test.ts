@@ -20,10 +20,14 @@ const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
+const abortedSessions: string[] = []
+const todoWrites: Array<{ sessionID: string; todos: unknown }> = []
+const toastCalls: unknown[] = []
 
 let params: { id?: string } = {}
 let selected = "/repo/worktree-a"
 let variant: string | undefined
+let abortFailure: Error | undefined
 
 const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 
@@ -47,7 +51,11 @@ const clientFor = (directory: string) => {
       prompt: async () => ({ data: undefined }),
       promptAsync: async () => ({ data: undefined }),
       command: async () => ({ data: undefined }),
-      abort: async () => ({ data: undefined }),
+      abort: async (input: { sessionID: string }) => {
+        abortedSessions.push(input.sessionID)
+        if (abortFailure) throw abortFailure
+        return { data: undefined }
+      },
     },
     worktree: {
       create: async () => ({ data: { directory: `${directory}/new` } }),
@@ -73,7 +81,23 @@ beforeAll(async () => {
   }))
 
   mock.module("@opencode-ai/ui/toast", () => ({
-    showToast: () => 0,
+    Toast: {
+      Region: () => undefined,
+    },
+    showToast: (options: unknown) => {
+      toastCalls.push(options)
+      return 0
+    },
+  }))
+
+  mock.module("@opencode-ai/ui/v2/toast-v2", () => ({
+    ToastV2: {
+      Region: () => undefined,
+    },
+    showToastV2: (options: unknown) => {
+      toastCalls.push(options)
+      return 0
+    },
   }))
 
   mock.module("@opencode-ai/core/util/encode", () => ({
@@ -177,6 +201,11 @@ beforeAll(async () => {
 
   mock.module("@/context/server-sync", () => ({
     useServerSync: () => ({
+      todo: {
+        set: (sessionID: string, todos: unknown) => {
+          todoWrites.push({ sessionID, todos })
+        },
+      },
       child: (directory: string) => {
         syncedDirectories.push(directory)
         storedSessions[directory] ??= []
@@ -224,12 +253,85 @@ beforeEach(() => {
   params = {}
   sentShell.length = 0
   syncedDirectories.length = 0
+  abortedSessions.length = 0
+  todoWrites.length = 0
+  toastCalls.length = 0
   selected = "/repo/worktree-a"
   variant = undefined
+  abortFailure = undefined
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
 
 describe("prompt submit worktree selection", () => {
+  test("does not clear stopped UI state when server abort fails", async () => {
+    params = { id: "session-1" }
+    abortFailure = new Error("backend refused abort")
+    const onAbort = mock(() => undefined)
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onAbort,
+      onSubmit: () => undefined,
+    })
+
+    await expect(submit.abort()).resolves.toBe(false)
+
+    expect(abortedSessions).toEqual(["session-1"])
+    expect(todoWrites).toEqual([])
+    expect(syncedDirectories).toEqual([])
+    expect(onAbort).not.toHaveBeenCalled()
+    expect(toastCalls).toEqual([
+      {
+        variant: "error",
+        title: "prompt.toast.abortFailed.title",
+        description: "backend refused abort",
+      },
+    ])
+  })
+
+  test("clears stopped UI state after server abort succeeds", async () => {
+    params = { id: "session-1" }
+    const onAbort = mock(() => undefined)
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onAbort,
+      onSubmit: () => undefined,
+    })
+
+    await expect(submit.abort()).resolves.toBe(true)
+
+    expect(abortedSessions).toEqual(["session-1"])
+    expect(todoWrites).toEqual([{ sessionID: "session-1", todos: [] }])
+    expect(syncedDirectories).toEqual(["/repo/main"])
+    expect(onAbort).toHaveBeenCalledTimes(1)
+    expect(toastCalls).toEqual([])
+  })
+
   test("reads the latest worktree accessor value per submit", async () => {
     const submit = createPromptSubmit({
       info: () => undefined,

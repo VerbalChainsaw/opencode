@@ -284,6 +284,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "傳送提示前請先選擇代理程式和模型。",
   "prompt.toast.worktreeCreateFailed.title": "建立工作樹失敗",
   "prompt.toast.sessionCreateFailed.title": "建立工作階段失敗",
+  "prompt.toast.abortFailed.title": "停止工作階段失敗",
   "prompt.toast.shellSendFailed.title": "傳送 shell 命令失敗",
   "prompt.toast.commandSendFailed.title": "傳送命令失敗",
   "prompt.toast.promptSendFailed.title": "傳送提示失敗",
