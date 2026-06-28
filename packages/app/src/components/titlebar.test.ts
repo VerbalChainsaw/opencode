@@ -68,4 +68,12 @@ describe("titlebar TSX wiring", () => {
     expect(src).toContain("data-[truncate=true]:right-0 inset-y-0 flex w-9 flex-row items-center px-1 py-1")
     expect(src).not.toContain("pr-1 py-1 w-8 pl-2")
   })
+
+  test("session tabs keep a clickable labeled body when metadata is unavailable", async () => {
+    const src = await titlebar()
+    expect(src).toContain("titlebarSessionTabTitle")
+    expect(src).toContain('data-session-loaded={tabSession() ? "true" : "false"}')
+    expect(src).toContain('data-slot="titlebar-session-tab-title"')
+    expect(src).not.toContain("<Show when={session.latest}>")
+  })
 })

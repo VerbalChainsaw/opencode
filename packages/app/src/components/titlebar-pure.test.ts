@@ -4,6 +4,7 @@ import {
   readTitlebarDirectoryPickerSelection,
   resolveTitlebarNewSessionDirectory,
   titlebarDraftRequest,
+  titlebarSessionTabTitle,
   windowsControlsWidthCSS,
 } from "./titlebar-pure"
 
@@ -45,6 +46,32 @@ describe("titlebar pure helpers", () => {
       directory: "C:\\repo\\current",
     })
     expect(Object.keys(titlebarDraftRequest("server-a", "C:\\repo\\current"))).toEqual(["server", "directory"])
+  })
+
+  test("keeps session tabs labeled when session metadata is unavailable", () => {
+    expect(
+      titlebarSessionTabTitle({
+        title: " Implement titlebar fallback ",
+        sessionId: "ses_123",
+        fallback: "Session",
+      }),
+    ).toBe("Implement titlebar fallback")
+
+    expect(
+      titlebarSessionTabTitle({
+        title: "   ",
+        sessionId: "ses_123",
+        fallback: "Session",
+      }),
+    ).toBe("ses_123")
+
+    expect(
+      titlebarSessionTabTitle({
+        title: undefined,
+        sessionId: undefined,
+        fallback: "Session",
+      }),
+    ).toBe("Session")
   })
 
   test("calculates Windows control width and Electron titlebar clamp", () => {

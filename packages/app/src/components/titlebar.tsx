@@ -40,6 +40,7 @@ import {
   readTitlebarDirectoryPickerSelection,
   resolveTitlebarNewSessionDirectory,
   titlebarDraftRequest,
+  titlebarSessionTabTitle,
   windowsControlsWidthCSS,
 } from "@/components/titlebar-pure"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -717,6 +718,20 @@ function TabNavItem(props: {
     },
     { initialValue: props.sessionId ? dirSyncCtx()?.session.get(props.sessionId) : undefined },
   )
+  const tabSession = createMemo(() => session.latest)
+  const tabTitle = createMemo(() =>
+    titlebarSessionTabTitle({
+      title: tabSession()?.title,
+      sessionId: props.sessionId,
+      fallback: language.t("session.tab.session"),
+    }),
+  )
+  const tabProject = createMemo(() => {
+    const current = tabSession()
+    if (!current) return
+    return projectForSession(current, serverCtx()?.projects.list() ?? [])
+  })
+  const tabSessionId = createMemo(() => tabSession()?.id ?? props.sessionId)
 
   return (
     <div
@@ -728,32 +743,43 @@ function TabNavItem(props: {
         closeTab(event)
       }}
     >
-      <Show when={session.latest}>
-        {(session) => {
-          const project = createMemo(() => projectForSession(session(), serverCtx()?.projects.list() ?? []))
-
-          return (
-            <a
-              href={props.href}
-              onClick={(event) => {
-                event.preventDefault()
-                props.onNavigate()
-              }}
-              class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
-            >
-              <span data-slot="project-avatar-slot">
-                <ProjectTabAvatar
-                  project={project()}
-                  directory={props.directory}
-                  sessionId={session().id}
-                  activeServer={props.activeServer}
-                />
-              </span>
-              <span class="min-w-0 flex-1">{session().title}</span>
-            </a>
-          )
+      <a
+        href={props.href}
+        onClick={(event) => {
+          event.preventDefault()
+          props.onNavigate()
         }}
-      </Show>
+        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
+        data-session-loaded={tabSession() ? "true" : "false"}
+        title={tabTitle()}
+      >
+        <span data-slot="project-avatar-slot">
+          <Show
+            when={tabSessionId()}
+            fallback={
+              <ProjectAvatar
+                fallback={displayName({ worktree: props.directory })}
+                src={undefined}
+                variant={undefined}
+                unread={false}
+                loading={false}
+              />
+            }
+          >
+            {(sessionId) => (
+              <ProjectTabAvatar
+                project={tabProject()}
+                directory={props.directory}
+                sessionId={sessionId()}
+                activeServer={props.activeServer}
+              />
+            )}
+          </Show>
+        </span>
+        <span class="min-w-0 flex-1 truncate" data-slot="titlebar-session-tab-title">
+          {tabTitle()}
+        </span>
+      </a>
 
       <div
         class="absolute not-group-hover:not-group-data-[active=true]:not-data-[truncate=true]:left-52 group-hover:right-0 group-data-[active=true]:right-0 data-[truncate=true]:right-0 inset-y-0 flex w-9 flex-row items-center px-1 py-1"

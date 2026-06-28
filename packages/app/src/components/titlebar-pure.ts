@@ -32,6 +32,20 @@ export function titlebarDraftRequest<ServerKey extends string>(
   return { server, directory }
 }
 
+export function titlebarSessionTabTitle(input: {
+  title?: string | null
+  sessionId?: string | null
+  fallback: string
+}) {
+  const title = input.title?.trim()
+  if (title) return title
+
+  const sessionId = input.sessionId?.trim()
+  if (sessionId) return sessionId
+
+  return input.fallback
+}
+
 export function windowsControlsWidthCSS(zoom: number, baseWidth = WINDOWS_CONTROLS_BASE_WIDTH) {
   return `${baseWidth / Math.max(zoom, 1)}px`
 }
