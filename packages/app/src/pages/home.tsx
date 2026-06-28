@@ -480,6 +480,20 @@ function HomeDesign() {
   function openGoalRecord(record: HomeGoalRecord) {
     const conn = focusedServer()
     if (!conn) return
+    const loadedSession = record.sessionID
+      ? records().find((item) => item.session.id === record.sessionID)?.session
+      : undefined
+    if (loadedSession) {
+      openSession(loadedSession)
+      return
+    }
+    if (record.sessionID) {
+      const ctx = global.createServerCtx(conn)
+      ctx.projects.open(record.project.worktree)
+      ctx.projects.touch(record.project.worktree)
+      navigateOnServer(conn, `/${base64Encode(record.directory)}/session/${record.sessionID}`)
+      return
+    }
     const session = records().find((item) => pathKey(item.session.directory) === pathKey(record.directory))?.session
     if (session) {
       openSession(session)

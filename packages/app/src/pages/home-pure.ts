@@ -18,6 +18,7 @@ export type HomeGoalRecord = {
   project: LocalProject
   projectName: string
   directory: string
+  sessionID?: string
   status: GoalState["status"]
   condition: string
   updated: number
@@ -93,6 +94,14 @@ function homeProjectForDirectory(
   return projects.find((project) => directories(project).some((candidate) => pathKey(candidate) === pathKey(directory)))
 }
 
+function homeGoalSessionID(state: GoalState) {
+  const raw = state.metadata?.sessionId
+  if (typeof raw !== "string") return undefined
+  const sessionID = raw.trim()
+  if (!/^[A-Za-z0-9_-]{1,160}$/.test(sessionID)) return undefined
+  return sessionID
+}
+
 export async function buildHomeGoalRecords(input: {
   projectDirectories: string[]
   projects: LocalProject[]
@@ -107,12 +116,14 @@ export async function buildHomeGoalRecords(input: {
       const store = await input.readGoal(directory)
       if (!store.state) return null
       if (!(store.state.status === "active" || store.state.status === "paused")) return null
+      const sessionID = homeGoalSessionID(store.state)
 
       return {
         id: store.state.id,
         project,
         projectName: displayName(project),
         directory,
+        ...(sessionID ? { sessionID } : {}),
         status: store.state.status,
         condition: cleanText(store.state.condition),
         updated: store.state.lastEvaluation?.timestamp ?? store.state.startedAt,

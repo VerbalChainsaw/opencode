@@ -260,6 +260,25 @@ describe("home mission-control contract", () => {
     expect(activeMetric![0]).not.toContain("sessionTitle")
   })
 
+  test("Open Goal routes by goal owner session id before falling back to directory matching", async () => {
+    const src = await home()
+    const start = src.indexOf("function openGoalRecord")
+    const end = src.indexOf("function openSession", start)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const body = src.slice(start, end)
+
+    expect(body).toContain("record.sessionID")
+    expect(body).toContain("item.session.id === record.sessionID")
+    expect(body.indexOf("item.session.id === record.sessionID")).toBeLessThan(
+      body.indexOf("pathKey(item.session.directory)"),
+    )
+    expect(body).toContain("ctx.projects.open(record.project.worktree)")
+    expect(body).toContain("ctx.projects.touch(record.project.worktree)")
+    expect(body).toContain("navigateOnServer(conn, `/${base64Encode(record.directory)}/session/${record.sessionID}`)")
+    expect(body).toContain("selectProject(conn, record.directory)")
+  })
+
   test("Active Goals dialog uses localized purpose and empty-state copy", async () => {
     const src = await home()
     const goalsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)

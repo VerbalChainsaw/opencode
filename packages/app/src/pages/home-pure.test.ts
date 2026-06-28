@@ -121,8 +121,14 @@ describe("home pure data builders", () => {
     const beta = project("p2", "Beta", "C:/beta")
     const archived = project("p3", "Done", "C:/done")
     const states = {
-      "C:/alpha": goalState("g1", "active", "Fix\u0000all tests", 1_700_000_000_000, 1_700_000_060_000),
-      "C:/beta": goalState("g2", "paused", "Resume release", 1_700_000_050_000),
+      "C:/alpha": {
+        ...goalState("g1", "active", "Fix\u0000all tests", 1_700_000_000_000, 1_700_000_060_000),
+        metadata: { sessionId: "ses_alpha_owner" },
+      },
+      "C:/beta": {
+        ...goalState("g2", "paused", "Resume release", 1_700_000_050_000),
+        metadata: { sessionId: "../not-a-session-route" },
+      },
       "C:/done": goalState("g3", "achieved", "Already shipped", 1_700_000_070_000, 1_700_000_080_000),
     }
 
@@ -134,8 +140,14 @@ describe("home pure data builders", () => {
     })
 
     expect(result.map((record) => record.id)).toEqual(["g1", "g2"])
-    expect(result[0]).toMatchObject({ projectName: "Alpha", directory: "C:/alpha", condition: "Fixall tests" })
+    expect(result[0]).toMatchObject({
+      projectName: "Alpha",
+      directory: "C:/alpha",
+      sessionID: "ses_alpha_owner",
+      condition: "Fixall tests",
+    })
     expect(result[1]).toMatchObject({ projectName: "Beta", status: "paused", updated: 1_700_000_050_000 })
+    expect(result[1].sessionID).toBeUndefined()
   })
 
   test("builds goal-derived attention records for limit-hit and stalled runs", async () => {
