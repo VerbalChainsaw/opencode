@@ -1,6 +1,6 @@
 > Status: Reference/work-order.
-> Canonical architecture: [../ARCHITECTURE.md](../ARCHITECTURE.md)
-> This file provides implementation detail subordinate to the canonical architecture tracker.
+> Canonical contract: [../docs/gui-integration.md](../docs/gui-integration.md) — the monorepo is the sole authority. The live-update mechanism is **2s polling**, not events (see §3).
+> This file provides implementation detail subordinate to that canonical contract.
 
 # Goal Panel — Desktop UI Design Specification
 
@@ -12,7 +12,7 @@
 
 ## 1. Architecture Overview
 
-The goal panel lives in the **session right sidebar** (`session-side-panel.tsx`) as a new tab alongside Review, Context, and file tabs. It reads goal state from `.opencode/.goal-state.json` via the server client, subscribes to SSE events for live updates, and offers pause/resume/clear controls without leaving the session view.
+The goal panel lives in the **session right sidebar** (`session-side-panel.tsx`) as a new tab alongside Review, Context, and file tabs. It reads goal state from `.opencode/.goal-state.json` by polling the SDK `client.file.read` API every 2s (the goal runtime has no event-emit API; polling is the documented live-update mechanism), and offers pause/resume/clear controls without leaving the session view.
 
 ```
 ┌──────────────┐  ┌───────────────────────────────────┐  ┌──────────────────┐
@@ -85,19 +85,21 @@ GoalPanel (new file: session/goal-panel.tsx)
 ```
 Server Plugin (src/server.ts)
   │
-  │  writes .opencode/.goal-state.json
-  │  emits SSE event: "goal.state.changed"
+  │  writes .opencode/.goal-state.json  (atomic: temp + rename)
   ▼
 OpenCode Server (packages/server)
   │
-  │  SSE event stream (already exists via server-sdk.tsx)
   │  File read API: client.file.read({ path: ".opencode/.goal-state.json" })
   ▼
 Desktop Renderer
-  ├── server-sdk.tsx → event listener (catches "goal.state.changed")
-  ├── createResource() → polls file via client.file.read() every 3s as fallback
+  ├── useGoal() → polls file via client.file.read() every 2s (POLL_MS=2000) — primary and only mechanism
+  ├── reconcile keyed on goal `id` → live subtree stays stable across polls
   └── goal-panel.tsx → renders from reactive state
 ```
+
+> There is **no SSE / event-push path**. The goal runtime exposes no event-emit
+> API, so the renderer polls. See `../docs/gui-integration.md` for the canonical
+> contract.
 
 ### Data contract (GoalState — TypeScript)
 
@@ -133,22 +135,17 @@ interface GoalState {
 
 ### Server API additions needed
 
-**New SSE event type:**
+**None.** No server-side event is required — the GUI polls the state file. This
+section previously specified a `goal.state.changed` SSE event; that path was
+never implemented and is not needed.
 
-```ts
-// Emitted by server plugin after every state mutation
-type EventGoalStateChanged = {
-  type: "goal.state.changed";
-  properties: {
-    state: GoalState;   // full state object
-    previousStatus?: string;  // for transition animations
-  };
-};
-```
+**File read (the live-update mechanism):**
 
-**File read fallback:**
-
-The renderer can already call `client.file.read()` — but the path `.opencode/.goal-state.json` may need to be relative to the workspace directory. The server plugin's `directory` parameter is the workspace root, and the file lives at `.opencode/.goal-state.json` relative to it. This path must be resolvable by the server's file API.
+The renderer calls `client.file.read()` on a 2s interval. The path
+`.opencode/.goal-state.json` is relative to the workspace directory. The server
+plugin's `directory` parameter is the workspace root, and the file lives at
+`.opencode/.goal-state.json` relative to it. This path must be resolvable by the
+server's file API.
 
 ---
 
@@ -284,7 +281,7 @@ Use existing `@opencode-ai/ui/icon` names:
 | Goal file missing during render   | Show empty state, not error                            |
 | Goal file is malformed JSON       | Show error state with "reset" suggestion               |
 | File read API returns 403/404     | Show "no goal" (same as missing file)                  |
-| SSE event stream disconnects      | Fall back to polling (3s interval)                     |
+| Poll read fails (backend down)    | Show connectivity hint, keep last state, retry next 2s poll |
 | Goal transitions during render    | Animate with CSS transition (status badge)             |
 | Very long condition (>200 chars)  | Truncate with `line-clamp-2`, expand on hover/tooltip  |
 | Constraint field missing          | Default to 20 turns, 30 min                            |
@@ -300,8 +297,7 @@ Use existing `@opencode-ai/ui/icon` names:
 
 | File                                               | Purpose                              |
 |----------------------------------------------------|--------------------------------------|
-| `packages/app/src/pages/session/goal-panel.tsx`    | Main GoalPanel component             |
-| `packages/app/src/context/goal.tsx`                | `useGoal` hook (state fetch + SSE)   |
+| `packages/app/src/pages/session/goal-panel.tsx`    | Main GoalPanel component + `useGoal` hook (2s polled `file.read`) |
 
 ### Modified files
 
@@ -310,8 +306,7 @@ Use existing `@opencode-ai/ui/icon` names:
 | `packages/app/src/pages/session/session-side-panel.tsx` | Add "goal" tab trigger + content |
 | `packages/app/src/pages/session.tsx`               | Wire `useGoal` into SessionSidePanel props |
 | `packages/app/src/i18n/en.ts` (×18 locales)        | Add i18n keys                        |
-| `packages/server/src/...` (TBD)                    | File-read endpoint for `.opencode/` files or new event |
-| `src/server.ts` (opencode-goal)                    | Emit "goal.state.changed" SSE event  |
+| `packages/server/src/...` (TBD)                    | File-read endpoint for `.opencode/` files |
 
 ---
 
@@ -379,12 +374,12 @@ Use existing `@opencode-ai/ui/icon` names:
 ## 11. Implementation Phases
 
 ### Phase 1 — Data plumbing (server side)
-1. Add goal state read API to server (or use existing file API)
-2. Add SSE event emission from server plugin
+1. Confirm the GUI can read `.opencode/.goal-state.json` via the existing `file.read` API
+2. (No server event needed — the GUI polls the state file)
 3. Verify renderer can receive goal state
 
 ### Phase 2 — GoalPanel component (renderer)
-1. Create `useGoal` hook (`createResource` + SSE listener)
+1. Create `useGoal` hook (2s `setInterval` polling `file.read`)
 2. Build `GoalPanel` with all states (loading/empty/active/paused/achieved/error)
 3. Add progress bar, controls, evaluation display
 
@@ -406,9 +401,8 @@ Use existing `@opencode-ai/ui/icon` names:
 
 | # | Question | Risk |
 |---|----------|------|
-| 1 | Does `client.file.read` support dot-prefixed paths? | Low — test needed |
-| 2 | Can server plugins emit arbitrary SSE events? | Medium — may need server-side changes |
-| 3 | Goal state is per-workspace, not per-session. Which workspace's goal to show? | Medium — use the active session's workspace |
+| 1 | Does `client.file.read` support dot-prefixed paths? | Low — resolved: yes, the panel reads `.opencode/.goal-state.json` |
+| 2 | Goal state is per-workspace, but goals are session-scoped via `metadata.sessionId`. Which goal to show? | Resolved — `goalStateForSession` shows a goal only in its owning session (unbound goals show globally) |
 | 4 | Multiple sessions can share a goal. Should the panel show in all? | Low — yes, panel reads same state file |
 | 5 | The rendering surface is SolidJS, not React. Are all patterns transferable? | Low — SolidJS has `createResource`, `Show`, `For` |
 
@@ -427,4 +421,4 @@ Use existing `@opencode-ai/ui/icon` names:
 - [ ] Progress bar respects `motion-reduce`
 - [ ] Confirm dialog traps focus for clear action
 - [ ] Panel resizes correctly with sidebar
-- [ ] No hydration mismatch when SSE delivers stale state
+- [ ] No flicker/focus-loss when a 2s poll delivers updated state (state is reconciled keyed on `id`, not replaced)

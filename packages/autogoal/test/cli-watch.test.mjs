@@ -50,6 +50,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { renderWatchFrame } from "../dist/cli.js";
+import { presentGoalState } from "../dist/gui.js";
 import {
   createGoalState,
   validateGoalState,
@@ -205,14 +206,16 @@ test("renderWatchFrame: steering produces singular count for one entry, plural f
   assert.match(threeFrame, /3 steering notes/);
 });
 
-test("renderWatchFrame: chain progress is displayed with chain-step current/total", () => {
-  // Canonical `metadata.chainStep` is 0-based (src/goal-state.ts:79-80,
-  // "0-based" comment). The frame relays `chainStep` verbatim via
-  // presentGoalState. Pin the current implementation's behavior:
-  // for chainStep=1, chainTotal=4, the frame emits `chain step 1/4`.
-  // Do NOT claim 1-based display as the spec contract — see packet
-  // F-4 "IMPORTANT CHAIN-NUMBER RULE": spec is silent, so pin the
-  // current user-facing behavior.
+test("renderWatchFrame: chain progress is displayed 1-based (D2 fix)", () => {
+  // Canonical `metadata.chainStep` is 0-based storage (goal-state.ts:79-80).
+  // D2 fix (CENTER-AUDIT 2026-06-27): the watch frame now displays it
+  // 1-based to match every other user-facing surface (doctor line
+  // cli.ts:262, sidebar-logic, goal-blocks, control-center-pane all +1).
+  // Pre-fix this surface was the lone 0-based one, so the first step of a
+  // chain rendered "chain step 0/N". The +1 lives at the cli.ts print site
+  // ONLY — presentGoalState's projection stays 0-based (regression below).
+  //
+  // Stored chainStep=1 (the 2nd step, 0-based) → display "chain step 2/4".
   const state = makeState({
     metadata: {
       chainId: "c1",
@@ -223,7 +226,36 @@ test("renderWatchFrame: chain progress is displayed with chain-step current/tota
   const frame = renderWatchFrame(makeResult(state), false, null, WIDTH, NOW, 2000);
   assert.match(frame, /chain step/);
   assert.match(frame, /\/4\b/);
-  assert.match(frame, /1\/4/);
+  assert.match(frame, /chain step 2\/4/);
+});
+
+test("renderWatchFrame: first chain step displays 1/N, not 0/N (D2 regression)", () => {
+  // The headline symptom of the D2 bug: the first step (stored chainStep=0)
+  // must render "chain step 1/3", never "chain step 0/3".
+  const state = makeState({
+    metadata: {
+      chainId: "c1",
+      chainStep: 0,
+      chainTotal: 3,
+    },
+  });
+  const frame = renderWatchFrame(makeResult(state), false, null, WIDTH, NOW, 2000);
+  assert.match(frame, /chain step 1\/3/);
+  assert.doesNotMatch(frame, /chain step 0\/3/);
+});
+
+test("presentGoalState projection keeps chainStep 0-based (D2 double-increment guard)", () => {
+  // The +1 must live ONLY at the cli.ts display boundary. presentGoalState's
+  // chainStep.current must stay equal to the stored 0-based metadata, because
+  // other consumers (control-center-pane, control-center-logic) read this
+  // projection and add their OWN +1 — moving the offset here would render
+  // current+2 on those surfaces.
+  const state = makeState({
+    metadata: { chainId: "c1", chainStep: 2, chainTotal: 5 },
+  });
+  const projected = presentGoalState(state, false, NOW);
+  assert.equal(projected.chainStep.current, 2);
+  assert.equal(projected.chainStep.total, 5);
 });
 
 test("renderWatchFrame: handoff presence is displayed", () => {

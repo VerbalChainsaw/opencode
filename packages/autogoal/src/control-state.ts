@@ -134,6 +134,16 @@ export interface GoalControlState {
     steering?: Array<{ at: number; note: string }>
     previousId?: string
     restartedAt?: number
+    // D3 fix (CENTER-AUDIT 2026-06-27): these four are preserved at runtime
+    // (setActiveChainGoal / updateActiveChainMetadata / sanitizeControlMetadata)
+    // but were previously only reachable through the `Record<string, unknown>`
+    // index signature, so TS consumers of the bridge saw them as `unknown`.
+    // Declaring them matches the canonical GoalState.metadata in goal-state.ts.
+    // chainStep stays 0-based (runtime semantics unchanged — type only).
+    chainId?: string
+    chainStep?: number
+    chainTotal?: number
+    webhook?: { url: string; on: GoalControlStatus[]; allowLocal?: boolean }
   }
 }
 

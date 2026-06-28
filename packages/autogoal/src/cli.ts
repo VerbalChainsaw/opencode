@@ -592,7 +592,13 @@ export function renderWatchFrame(
     lines.push(clamp(`Last: ${p.lastReason ?? "none yet"}`));
     const extras: string[] = [];
     if (p.steeringCount > 0) extras.push(`${p.steeringCount} steering note${p.steeringCount === 1 ? "" : "s"}`);
-    if (p.chainStep) extras.push(`chain step ${p.chainStep.current}/${p.chainStep.total}`);
+    // Display is 1-based to match every other user-facing surface (doctor
+    // line, sidebar, blocks, control-center pane). Stored metadata.chainStep
+    // stays 0-based — the +1 is a display-boundary offset only. (D2 fix,
+    // CENTER-AUDIT 2026-06-27 — cli.ts was the lone 0-based human-facing
+    // surface; do NOT move this +1 into gui.ts's projection, which other
+    // consumers read as 0-based and re-increment.)
+    if (p.chainStep) extras.push(`chain step ${p.chainStep.current + 1}/${p.chainStep.total}`);
     if (p.hasHandoff) extras.push("handoff pending");
     if (extras.length) lines.push(clamp(extras.join(" · ")));
   }

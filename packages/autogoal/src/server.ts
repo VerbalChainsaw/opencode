@@ -2760,8 +2760,25 @@ export const server: Plugin = async ({ client, directory }) => {
     },
 
     "experimental.session.compacting": async (_input, output) => {
-      const state = readGoalState(directory);
-      if (!state || (state.status !== "active" && state.status !== "paused")) return;
+      // D1 fix (CENTER-AUDIT 2026-06-27): use the tri-state reader, not the
+      // readGoalState() shim. The shim collapses both "absent" and "corrupt"
+      // to null, so a corrupt .goal-state.json during compaction silently
+      // dropped the ACTIVE GOAL context with no log/quarantine — the agent
+      // lost its goal anchor across compaction. This was the lone top-of-
+      // handler state read still corrupt-blind; session.idle (above) and the
+      // chain read (below) already discriminate corrupt. Mirror that pattern.
+      const stateResult = readGoalStateResult(directory);
+      if (stateResult.kind === "absent") return;
+      if (stateResult.kind === "corrupt") {
+        const quarantined = listCorruptArtifacts(directory)[0] ?? null;
+        log("error", "skipping compaction context: goal state file is corrupt", {
+          reason: stateResult.reason,
+          quarantined,
+        });
+        return;
+      }
+      const state = stateResult.value;
+      if (state.status !== "active" && state.status !== "paused") return;
       if (!goalBelongsToSession(state, (_input as { sessionID?: unknown }).sessionID)) return;
       const steering = Array.isArray(state.metadata.steering) ? state.metadata.steering : [];
       const lastSteer = steering.length > 0 ? steering[steering.length - 1] : null;
