@@ -956,6 +956,21 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("const [historyOpen, setHistoryOpen] = createSignal(true)")
   })
 
+  test("history reuse starts the reused goal instead of only setting state", async () => {
+    const src = await goalPanelSource()
+    const start = src.indexOf("const reuseHistoryRun = async (command: string) => {")
+    const end = src.indexOf("const visibleChainSteps =", start)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const reuse = src.slice(start, end)
+
+    expect(reuse).toContain('sendGoalCommand("set", command)')
+    expect(reuse).toContain("startGoalRunGuarded")
+    expect(reuse).toContain("promptAdmissionGuard(expectedGoalID)")
+    expect(reuse).toContain('prompted.reason === "delivery-failed"')
+    expect(reuse).toContain('sendGoalCommand("pause", "pause")')
+  })
+
   test("action editor exposes editable action fields and top-level actions", async () => {
     const src = await goalPanelSource()
     const editor = src.match(/data-testid="action-editor"[\s\S]*?<\/section>/)

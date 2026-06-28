@@ -3180,7 +3180,25 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     return minutes > 0 ? `${minutes}m` : "<1m"
   }
 
-  const reuseHistoryRun = (command: string) => sendGoalCommand("set", command)
+  const reuseHistoryRun = async (command: string) => {
+    const sent = await sendGoalCommand("set", command)
+    if (!sent || !props.sessionID) return sent
+
+    const expectedGoalID = state()?.id
+    const prompted = await startGoalRunGuarded(
+      sdk.client,
+      {
+        sessionID: props.sessionID,
+        directory: sdk.directory,
+      },
+      promptAdmissionGuard(expectedGoalID),
+    )
+    if (!prompted.ok && prompted.reason === "delivery-failed") {
+      await sendGoalCommand("pause", "pause")
+      return false
+    }
+    return prompted.ok
+  }
 
   const visibleChainSteps = createMemo<GoalChainDraftStep[]>(() => {
     const live = liveGoal()
