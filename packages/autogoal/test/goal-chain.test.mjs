@@ -16,6 +16,13 @@ function plantCorruptGoalState(dir) {
   writeFileSync(statePath, "{not json", "utf-8");
   return statePath;
 }
+function plantCorruptGoalChain(dir) {
+  const opencodeDir = join(dir, ".opencode");
+  mkdirSync(opencodeDir, { recursive: true });
+  const chainPath = join(opencodeDir, ".goal-chain.json");
+  writeFileSync(chainPath, "{not json", "utf-8");
+  return chainPath;
+}
 
 const { createGoalChain, readGoalChain, readGoalChainResult, advanceGoalChain, skipGoalChainStep, resetGoalChain, addChainStep, reorderChainStep, removeChainStep, setChainWebhook, validateGoalChain, CHAIN_FILE, MAX_CHAIN_SIZE } = await import("../dist/goal-chain.js");
 const { readGoalState, writeGoalStateAtomic, transitionGoal, setGoal, setGoalFields, createHandoff, claimHandoff } = await import("../dist/goal-state.js");
@@ -933,6 +940,41 @@ describe("C-2: readGoalChainResult tri-state reader", () => {
       assert.ok(entries.find((e) => e.startsWith(".goal-chain.json.corrupt.")));
     } finally { cleanDir(dir); }
   });
+});
+
+describe("C-3: chain operations fail closed on corrupt chain files", () => {
+  const cases = [
+    ["advanceGoalChain", (dir) => advanceGoalChain(dir)],
+    ["resetGoalChain", (dir) => resetGoalChain(dir)],
+    ["setChainWebhook", (dir) => setChainWebhook(dir, { url: "https://example.com/hook", on: ["achieved"] })],
+    ["addChainStep", (dir) => addChainStep(dir, "third")],
+    ["reorderChainStep", (dir) => reorderChainStep(dir, 0, 1)],
+    ["removeChainStep", (dir) => removeChainStep(dir, 1)],
+  ];
+
+  for (const [name, runOperation] of cases) {
+    it(`${name} reports corrupt chain instead of treating it as absent`, () => {
+      const dir = freshDir();
+      try {
+        const create = createGoalChain(dir, [{ condition: "first" }, { condition: "second" }]);
+        assert.equal(create.ok, true, create.error);
+        const stateBefore = readGoalState(dir);
+        const chainPath = plantCorruptGoalChain(dir);
+
+        const res = runOperation(dir);
+
+        assert.equal(res.ok, false, `${name} should not succeed on a corrupt chain file`);
+        assert.match(res.error, /Goal chain file was corrupt/);
+        assert.equal(existsSync(chainPath), false, "corrupt chain should be quarantined");
+        assert.equal(existsSync(join(dir, CHAIN_FILE)), false, "operation should not write a replacement chain file");
+        assert.deepEqual(readGoalState(dir), stateBefore, "operation should not mutate current state");
+        assert.ok(
+          readdirSync(join(dir, ".opencode")).some((entry) => entry.startsWith(".goal-chain.json.corrupt.")),
+          "quarantined chain artifact should remain visible",
+        );
+      } finally { cleanDir(dir); }
+    });
+  }
 });
 
 // ── Path (f): maxCycles semantics ────────────────────────────────────────

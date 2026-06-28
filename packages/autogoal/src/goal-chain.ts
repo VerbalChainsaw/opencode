@@ -495,6 +495,15 @@ function corruptGoalStateForChainOperationError(directory: string, reason: Corru
   );
 }
 
+function corruptGoalChainForOperationError(directory: string, reason: CorruptReason, operation: string): string {
+  const newest = newestCorruptArtifact(directory, ".goal-chain.json.corrupt.");
+  return (
+    `Goal chain file was corrupt (${reason})` +
+    `${newest ? ` and was quarantined as ${newest}` : ""}. ` +
+    `Review the quarantined artifact before ${operation}.`
+  );
+}
+
 function corruptGoalStateForChainStartError(directory: string, reason: CorruptReason): string {
   return corruptGoalStateForChainOperationError(directory, reason, "starting a chain");
 }
@@ -511,6 +520,20 @@ function readGoalStateForChainOperation(
     };
   }
   return { ok: true, state: result.kind === "ok" ? result.value : null };
+}
+
+function readGoalChainForOperation(
+  directory: string,
+  operation: string,
+): { ok: true; chain: GoalChain | null } | { ok: false; error: string } {
+  const result = readGoalChainResult(directory);
+  if (result.kind === "corrupt") {
+    return {
+      ok: false,
+      error: corruptGoalChainForOperationError(directory, result.reason, operation),
+    };
+  }
+  return { ok: true, chain: result.kind === "ok" ? result.value : null };
 }
 
 function constraintsForStep(step: GoalChainStep, chain: Pick<GoalChain, "master"> | null): GoalConstraints {
@@ -734,7 +757,9 @@ export function advanceGoalChain(
   now: number = Date.now(),
   opts: { stepMarkerAt?: number } = {},
 ): AdvanceChainResult {
-  const chain = readGoalChain(directory);
+  const chainResult = readGoalChainForOperation(directory, "advancing a chain");
+  if (!chainResult.ok) return chainResult;
+  const chain = chainResult.chain;
   if (!chain) return { ok: false, error: "No active chain." };
 
   const stateResult = readGoalStateForChainOperation(directory, "advancing a chain");
@@ -883,7 +908,9 @@ export function skipGoalChainStep(directory: string, now: number = Date.now()): 
 
 /** Reset the chain to step 0 with fresh counters. */
 export function resetGoalChain(directory: string, now: number = Date.now()): AdvanceChainResult {
-  const chain = readGoalChain(directory);
+  const chainResult = readGoalChainForOperation(directory, "resetting a chain");
+  if (!chainResult.ok) return chainResult;
+  const chain = chainResult.chain;
   if (!chain) return { ok: false, error: "No active chain." };
 
   const stateResult = readGoalStateForChainOperation(directory, "resetting a chain");
@@ -964,7 +991,9 @@ export function setChainWebhook(
   webhook: ChainWebhook | null,
   _now: number = Date.now(),
 ): SetChainWebhookResult {
-  const chain = readGoalChain(directory);
+  const chainResult = readGoalChainForOperation(directory, "changing chain webhook settings");
+  if (!chainResult.ok) return chainResult;
+  const chain = chainResult.chain;
   if (!chain) return { ok: false, error: "No active chain." };
 
   // Reject invalid input. `null` is the explicit "clear" signal.
@@ -1033,7 +1062,9 @@ export function addChainStep(
   if (!cond) return { ok: false, error: "Step condition cannot be empty." };
   if (cond.length > MAX_CONDITION_LEN) return { ok: false, error: `Step must be ${MAX_CONDITION_LEN} chars or fewer.` };
 
-  const chain = readGoalChain(directory);
+  const chainResult = readGoalChainForOperation(directory, "adding a chain step");
+  if (!chainResult.ok) return chainResult;
+  const chain = chainResult.chain;
   if (chain) {
     const stateResult = readGoalStateForChainOperation(directory, "adding a chain step");
     if (!stateResult.ok) return stateResult;
@@ -1090,7 +1121,9 @@ export function reorderChainStep(
   from: number,
   to: number,
 ): { ok: boolean; error?: string } {
-  const chain = readGoalChain(directory);
+  const chainResult = readGoalChainForOperation(directory, "reordering chain steps");
+  if (!chainResult.ok) return chainResult;
+  const chain = chainResult.chain;
   if (!chain) return { ok: false, error: "No active chain." };
   const n = chain.steps.length;
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from >= n || to < 0 || to >= n) {
@@ -1141,7 +1174,9 @@ export function removeChainStep(
   directory: string,
   index: number,
 ): { ok: boolean; error?: string } {
-  const chain = readGoalChain(directory);
+  const chainResult = readGoalChainForOperation(directory, "removing a chain step");
+  if (!chainResult.ok) return chainResult;
+  const chain = chainResult.chain;
   if (!chain) return { ok: false, error: "No active chain." };
   const n = chain.steps.length;
   if (!Number.isInteger(index) || index < 0 || index >= n) {
