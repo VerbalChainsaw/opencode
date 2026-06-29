@@ -1362,6 +1362,216 @@ export function chainStartControlState(input: {
   return { disabled: false, reason: null }
 }
 
+export type GoalControlDiagnosticID =
+  | "start"
+  | "check"
+  | "report"
+  | "pauseResume"
+  | "stop"
+  | "restart"
+  | "steer"
+  | "handoff"
+  | "reset"
+
+export type GoalControlDiagnosticState = "available" | "blocked" | "busy" | "hidden"
+
+export type GoalControlDiagnosticLabelKey =
+  | "session.goal.create.submit"
+  | "session.goal.chainBuilder.start"
+  | "session.goal.chainBuilder.check"
+  | "session.goal.report.copy"
+  | "session.goal.action.pause"
+  | "session.goal.action.resume"
+  | "session.goal.action.stop"
+  | "session.goal.action.restart"
+  | "session.goal.action.steer"
+  | "session.goal.action.handoff"
+  | "session.goal.action.resetState"
+
+export type GoalControlDiagnosticEffectKey =
+  | "session.goal.diagnostics.effect.startGoal"
+  | "session.goal.diagnostics.effect.startChain"
+  | "session.goal.diagnostics.effect.checkChain"
+  | "session.goal.diagnostics.effect.copyReport"
+  | "session.goal.diagnostics.effect.pause"
+  | "session.goal.diagnostics.effect.resume"
+  | "session.goal.diagnostics.effect.stop"
+  | "session.goal.diagnostics.effect.restart"
+  | "session.goal.diagnostics.effect.steer"
+  | "session.goal.diagnostics.effect.handoff"
+  | "session.goal.diagnostics.effect.reset"
+
+export type GoalControlDiagnosticReasonKey =
+  | "session.goal.diagnostics.reason.busy"
+  | "session.goal.diagnostics.reason.missingSession"
+  | "session.goal.diagnostics.reason.missingObjective"
+  | "session.goal.diagnostics.reason.liveGoal"
+  | "session.goal.diagnostics.reason.pendingHandoff"
+
+export interface GoalControlDiagnostic {
+  id: GoalControlDiagnosticID
+  state: GoalControlDiagnosticState
+  labelKey: GoalControlDiagnosticLabelKey
+  effectKey: GoalControlDiagnosticEffectKey
+  reasonKey: GoalControlDiagnosticReasonKey | null
+  command: string
+}
+
+function blockedDiagnosticState(input: {
+  visible: boolean
+  busy: boolean
+  hasSession: boolean
+  blockedReason?: GoalControlDiagnosticReasonKey | null
+}): { state: GoalControlDiagnosticState; reasonKey: GoalControlDiagnosticReasonKey | null } {
+  if (!input.visible) return { state: "hidden", reasonKey: null }
+  if (input.busy) return { state: "busy", reasonKey: "session.goal.diagnostics.reason.busy" }
+  if (!input.hasSession) return { state: "blocked", reasonKey: "session.goal.diagnostics.reason.missingSession" }
+  if (input.blockedReason) return { state: "blocked", reasonKey: input.blockedReason }
+  return { state: "available", reasonKey: null }
+}
+
+function diagnostic(input: Omit<GoalControlDiagnostic, "state" | "reasonKey"> & {
+  state: GoalControlDiagnosticState
+  reasonKey?: GoalControlDiagnosticReasonKey | null
+}): GoalControlDiagnostic {
+  return {
+    ...input,
+    reasonKey: input.reasonKey ?? null,
+  }
+}
+
+export function goalControlDiagnostics(input: {
+  busy: boolean
+  hasSession: boolean
+  hasLiveGoal: boolean
+  liveStatus: GoalState["status"] | null
+  liveRunStalled: boolean
+  hasRunnableChain: boolean
+  hasObjective: boolean
+  hasPendingHandoff: boolean
+  hasTerminalGoal: boolean
+  hasCorruptState: boolean
+}): GoalControlDiagnostic[] {
+  const runtimeCanInteract = input.hasLiveGoal && input.liveStatus !== "achieved" && input.liveStatus !== "cleared"
+  const startBlockedReason =
+    input.hasLiveGoal
+      ? "session.goal.diagnostics.reason.liveGoal"
+      : !input.hasRunnableChain && !input.hasObjective
+        ? "session.goal.diagnostics.reason.missingObjective"
+        : null
+  const startState = blockedDiagnosticState({
+    visible: true,
+    busy: input.busy,
+    hasSession: input.hasSession,
+    blockedReason: startBlockedReason,
+  })
+  const checkState = blockedDiagnosticState({
+    visible: input.hasRunnableChain && !input.hasLiveGoal,
+    busy: input.busy,
+    hasSession: input.hasSession,
+  })
+  const pauseResumeState = blockedDiagnosticState({
+    visible: input.liveStatus === "active" || input.liveStatus === "paused",
+    busy: input.busy,
+    hasSession: input.hasSession,
+  })
+  const runtimeState = blockedDiagnosticState({
+    visible: runtimeCanInteract,
+    busy: input.busy,
+    hasSession: input.hasSession,
+  })
+  const restartState = blockedDiagnosticState({
+    visible: input.hasLiveGoal && (input.liveStatus === "paused" || input.liveRunStalled),
+    busy: input.busy,
+    hasSession: input.hasSession,
+  })
+  const handoffState = blockedDiagnosticState({
+    visible: runtimeCanInteract,
+    busy: input.busy,
+    hasSession: input.hasSession,
+    blockedReason: input.hasPendingHandoff ? "session.goal.diagnostics.reason.pendingHandoff" : null,
+  })
+  const resetState = blockedDiagnosticState({
+    visible: input.hasTerminalGoal || input.hasCorruptState,
+    busy: input.busy,
+    hasSession: input.hasSession,
+  })
+
+  return [
+    diagnostic({
+      id: "start",
+      state: startState.state,
+      reasonKey: startState.reasonKey,
+      labelKey: input.hasRunnableChain ? "session.goal.chainBuilder.start" : "session.goal.create.submit",
+      effectKey: input.hasRunnableChain ? "session.goal.diagnostics.effect.startChain" : "session.goal.diagnostics.effect.startGoal",
+      command: input.hasRunnableChain ? "chain:start" : "goal:set",
+    }),
+    diagnostic({
+      id: "check",
+      state: checkState.state,
+      reasonKey: checkState.reasonKey,
+      labelKey: "session.goal.chainBuilder.check",
+      effectKey: "session.goal.diagnostics.effect.checkChain",
+      command: "chain:validate",
+    }),
+    diagnostic({
+      id: "report",
+      state: input.hasLiveGoal || input.hasTerminalGoal ? "available" : "hidden",
+      labelKey: "session.goal.report.copy",
+      effectKey: "session.goal.diagnostics.effect.copyReport",
+      command: "copy:goal-report",
+    }),
+    diagnostic({
+      id: "pauseResume",
+      state: pauseResumeState.state,
+      reasonKey: pauseResumeState.reasonKey,
+      labelKey: input.liveStatus === "paused" ? "session.goal.action.resume" : "session.goal.action.pause",
+      effectKey: input.liveStatus === "paused" ? "session.goal.diagnostics.effect.resume" : "session.goal.diagnostics.effect.pause",
+      command: input.liveStatus === "paused" ? "goal:resume" : "goal:pause",
+    }),
+    diagnostic({
+      id: "stop",
+      state: runtimeState.state,
+      reasonKey: runtimeState.reasonKey,
+      labelKey: "session.goal.action.stop",
+      effectKey: "session.goal.diagnostics.effect.stop",
+      command: "goal:clear",
+    }),
+    diagnostic({
+      id: "restart",
+      state: restartState.state,
+      reasonKey: restartState.reasonKey,
+      labelKey: "session.goal.action.restart",
+      effectKey: "session.goal.diagnostics.effect.restart",
+      command: "goal:restart",
+    }),
+    diagnostic({
+      id: "steer",
+      state: runtimeState.state,
+      reasonKey: runtimeState.reasonKey,
+      labelKey: "session.goal.action.steer",
+      effectKey: "session.goal.diagnostics.effect.steer",
+      command: "session:prompt",
+    }),
+    diagnostic({
+      id: "handoff",
+      state: handoffState.state,
+      reasonKey: handoffState.reasonKey,
+      labelKey: "session.goal.action.handoff",
+      effectKey: "session.goal.diagnostics.effect.handoff",
+      command: "handoff:write",
+    }),
+    diagnostic({
+      id: "reset",
+      state: resetState.state,
+      reasonKey: resetState.reasonKey,
+      labelKey: "session.goal.action.resetState",
+      effectKey: "session.goal.diagnostics.effect.reset",
+      command: "goal:fresh",
+    }),
+  ]
+}
+
 function clampPositiveInteger(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return Math.max(0, Math.round(fallback))
   return Math.max(0, Math.round(value))

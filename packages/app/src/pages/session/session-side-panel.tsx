@@ -215,12 +215,15 @@ export function SessionSidePanel(props: {
       shouldDefaultOpenGoalTab({
         sessionKey: key,
         defaultedSessionKey: goalTabState.defaultedSessionKey,
-        goalVisible: goalVisible(),
       })
     ) {
       setGoalTabState("defaultedSessionKey", key)
       void tabs().open("goal")
       tabs().setActive("goal")
+      // Guarantee AutoGoal is visibly the landing surface, not a collapsed
+      // side tab: open the side panel so the operator lands on the goal
+      // cockpit rather than the chat-only view.
+      if (!view().reviewPanel.opened()) view().reviewPanel.open()
     }
   })
   createEffect(() => {

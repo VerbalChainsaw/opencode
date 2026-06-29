@@ -23,46 +23,38 @@ describe("shouldShowFileTree", () => {
 })
 
 describe("shouldDefaultOpenGoalTab", () => {
-  test("opens the Goal tab once per restored session when the Goal surface is visible", () => {
+  test("AutoGoal is the default landing: opens once per session, even with no goal set", () => {
+    // Fresh session → default to AutoGoal (not gated on a goal existing).
     expect(
       shouldDefaultOpenGoalTab({
         sessionKey: "workspace/session-a",
         defaultedSessionKey: null,
-        goalVisible: true,
       }),
     ).toBe(true)
 
+    // Already defaulted for this session → don't yank the user back if they
+    // switched to chat/files.
     expect(
       shouldDefaultOpenGoalTab({
         sessionKey: "workspace/session-a",
         defaultedSessionKey: "workspace/session-a",
-        goalVisible: true,
       }),
     ).toBe(false)
 
+    // A different session re-defaults to AutoGoal.
     expect(
       shouldDefaultOpenGoalTab({
         sessionKey: "workspace/session-b",
         defaultedSessionKey: "workspace/session-a",
-        goalVisible: true,
       }),
     ).toBe(true)
   })
 
-  test("does not open when there is no session key or visible Goal surface", () => {
+  test("does not open when there is no session key", () => {
     expect(
       shouldDefaultOpenGoalTab({
         sessionKey: undefined,
         defaultedSessionKey: null,
-        goalVisible: true,
-      }),
-    ).toBe(false)
-
-    expect(
-      shouldDefaultOpenGoalTab({
-        sessionKey: "workspace/session-a",
-        defaultedSessionKey: null,
-        goalVisible: false,
       }),
     ).toBe(false)
   })

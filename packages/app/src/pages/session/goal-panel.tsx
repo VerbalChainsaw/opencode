@@ -67,6 +67,7 @@ import {
   chainStepVisibleSourceForState,
   resolveStepConditionWithObjective,
   cleanText,
+  goalControlDiagnostics,
   parseRuntimeChainSnapshot,
   readHandoffFromSdk,
   readGoalFromSdk,
@@ -106,6 +107,11 @@ import {
   type GoalTemplateModel,
   type GoalTemplateTone,
   type GoalPendingPromptKind,
+  type GoalControlDiagnostic,
+  type GoalControlDiagnosticEffectKey,
+  type GoalControlDiagnosticLabelKey,
+  type GoalControlDiagnosticReasonKey,
+  type GoalControlDiagnosticState,
   type RuntimeChainData,
   type RuntimeChainStep,
   type SkillPickerDisabledReason,
@@ -1868,6 +1874,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       if (!prompted.ok && prompted.reason === "delivery-failed") {
         setOptimisticStatus("paused")
         await sendGoalCommand("pause", "pause")
+        // Surface AFTER the recovery pause: sendGoalCommand's ok-path clears
+        // controlError (line ~1851), so setting it before the pause would be
+        // wiped. Without this the user clicks Resume/Restart, the agent is
+        // never nudged, the goal silently flips back to paused, and they get
+        // zero feedback. (Wiring sweep 2026-06-28, run-controls.)
+        setControlError(language.t("session.goal.run.deliveryFailed"))
         return false
       }
       if (!prompted.ok) return false
@@ -1982,7 +1994,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           sessionID: props.sessionID,
           directory: sdk.directory,
         }, promptAdmissionGuard(expectedGoalID))
-        if (!prompted.ok && prompted.reason === "delivery-failed") await sendGoalCommand("pause", "pause")
+        if (!prompted.ok && prompted.reason === "delivery-failed") {
+          await sendGoalCommand("pause", "pause")
+          // After the recovery pause (which clears controlError) so the
+          // failure is visible — the goal was saved but never started.
+          setControlError(language.t("session.goal.run.deliveryFailed"))
+        }
       }
       setChainDraft("objective", "")
       setNewCommand("")
@@ -2749,7 +2766,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
             ? { skills: startPayload.firstStepSkills }
             : {}),
         }, promptAdmissionGuard(expectedGoalID))
-        if (!prompted.ok && prompted.reason === "delivery-failed") await sendGoalCommand("pause", "pause")
+        if (!prompted.ok && prompted.reason === "delivery-failed") {
+          await sendGoalCommand("pause", "pause")
+          // After the recovery pause so the failure is visible — the chain
+          // was started but its first step never reached the session.
+          setControlError(language.t("session.goal.run.deliveryFailed"))
+        }
       }
     }
   }
@@ -3197,6 +3219,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
     )
     if (!prompted.ok && prompted.reason === "delivery-failed") {
       await sendGoalCommand("pause", "pause")
+      // After the recovery pause so re-running an archived goal that fails
+      // to deliver is visible, not a silent no-op.
+      setControlError(language.t("session.goal.run.deliveryFailed"))
       return false
     }
     return prompted.ok
@@ -3397,6 +3422,112 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   const runtimeCanInteract = createMemo(() => !!liveGoal() && state()?.status !== "achieved" && state()?.status !== "cleared")
   const runtimeCanRestart = createMemo(() => !!liveGoal() && (state()?.status === "paused" || liveRunStalled()))
+  const controlDiagnostics = createMemo(() =>
+    goalControlDiagnostics({
+      busy: busy() !== null,
+      hasSession: !!props.sessionID,
+      hasLiveGoal: !!liveGoal(),
+      liveStatus: state()?.status ?? null,
+      liveRunStalled: liveRunStalled(),
+      hasRunnableChain: hasRunnableChain(),
+      hasObjective: !!chainDraft.objective.trim(),
+      hasPendingHandoff: !!handoff().handoff,
+      hasTerminalGoal: !!unarchivedTerminalGoal(),
+      hasCorruptState: !!props.goal.store.corrupt,
+    }),
+  )
+  const visibleControlDiagnostics = createMemo(() => controlDiagnostics().filter((item) => item.state !== "hidden"))
+  const diagnosticStateLabel = (value: GoalControlDiagnosticState) => {
+    switch (value) {
+      case "available":
+        return language.t("session.goal.diagnostics.state.available")
+      case "blocked":
+        return language.t("session.goal.diagnostics.state.blocked")
+      case "busy":
+        return language.t("session.goal.diagnostics.state.busy")
+      case "hidden":
+        return language.t("session.goal.diagnostics.state.hidden")
+      default:
+        return language.t("session.goal.diagnostics.state.blocked")
+    }
+  }
+  const diagnosticControlLabel = (value: GoalControlDiagnosticLabelKey) => {
+    switch (value) {
+      case "session.goal.create.submit":
+        return language.t("session.goal.create.submit")
+      case "session.goal.chainBuilder.start":
+        return language.t("session.goal.chainBuilder.start")
+      case "session.goal.chainBuilder.check":
+        return language.t("session.goal.chainBuilder.check")
+      case "session.goal.report.copy":
+        return language.t("session.goal.report.copy")
+      case "session.goal.action.pause":
+        return language.t("session.goal.action.pause")
+      case "session.goal.action.resume":
+        return language.t("session.goal.action.resume")
+      case "session.goal.action.stop":
+        return language.t("session.goal.action.stop")
+      case "session.goal.action.restart":
+        return language.t("session.goal.action.restart")
+      case "session.goal.action.steer":
+        return language.t("session.goal.action.steer")
+      case "session.goal.action.handoff":
+        return language.t("session.goal.action.handoff")
+      case "session.goal.action.resetState":
+        return language.t("session.goal.action.resetState")
+      default:
+        return language.t("session.goal.diagnostics.unknownControl")
+    }
+  }
+  const diagnosticEffectLabel = (value: GoalControlDiagnosticEffectKey) => {
+    switch (value) {
+      case "session.goal.diagnostics.effect.startGoal":
+        return language.t("session.goal.diagnostics.effect.startGoal")
+      case "session.goal.diagnostics.effect.startChain":
+        return language.t("session.goal.diagnostics.effect.startChain")
+      case "session.goal.diagnostics.effect.checkChain":
+        return language.t("session.goal.diagnostics.effect.checkChain")
+      case "session.goal.diagnostics.effect.copyReport":
+        return language.t("session.goal.diagnostics.effect.copyReport")
+      case "session.goal.diagnostics.effect.pause":
+        return language.t("session.goal.diagnostics.effect.pause")
+      case "session.goal.diagnostics.effect.resume":
+        return language.t("session.goal.diagnostics.effect.resume")
+      case "session.goal.diagnostics.effect.stop":
+        return language.t("session.goal.diagnostics.effect.stop")
+      case "session.goal.diagnostics.effect.restart":
+        return language.t("session.goal.diagnostics.effect.restart")
+      case "session.goal.diagnostics.effect.steer":
+        return language.t("session.goal.diagnostics.effect.steer")
+      case "session.goal.diagnostics.effect.handoff":
+        return language.t("session.goal.diagnostics.effect.handoff")
+      case "session.goal.diagnostics.effect.reset":
+        return language.t("session.goal.diagnostics.effect.reset")
+      default:
+        return language.t("session.goal.diagnostics.ready")
+    }
+  }
+  const diagnosticReasonLabel = (value: GoalControlDiagnosticReasonKey | null) => {
+    switch (value) {
+      case "session.goal.diagnostics.reason.busy":
+        return language.t("session.goal.diagnostics.reason.busy")
+      case "session.goal.diagnostics.reason.missingSession":
+        return language.t("session.goal.diagnostics.reason.missingSession")
+      case "session.goal.diagnostics.reason.missingObjective":
+        return language.t("session.goal.diagnostics.reason.missingObjective")
+      case "session.goal.diagnostics.reason.liveGoal":
+        return language.t("session.goal.diagnostics.reason.liveGoal")
+      case "session.goal.diagnostics.reason.pendingHandoff":
+        return language.t("session.goal.diagnostics.reason.pendingHandoff")
+      default:
+        return language.t("session.goal.diagnostics.ready")
+    }
+  }
+  const diagnosticDetailLabel = (item: GoalControlDiagnostic) => {
+    if (item.state === "available") return diagnosticEffectLabel(item.effectKey)
+    if (item.reasonKey) return diagnosticReasonLabel(item.reasonKey)
+    return diagnosticEffectLabel(item.effectKey)
+  }
   const openRuntimePanel = (panel: "stop" | "steer" | "handoff") => {
     setConfirmingClear(panel === "stop")
     setSteerOpen(panel === "steer")
@@ -3771,6 +3902,76 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <span class="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-300" aria-hidden />
                   <span class="min-w-0 flex-1">{language.t("session.goal.backendUnreachable")}</span>
                 </div>
+              </Show>
+              <Show when={visibleControlDiagnostics().length > 0}>
+                <section
+                  data-component="goal-control-diagnostics"
+                  class="col-span-full rounded-lg border p-2.5"
+                  style={{
+                    "background-color": "rgba(2, 6, 23, 0.34)",
+                    "border-color": "rgba(125, 211, 252, 0.16)",
+                    "box-shadow": "inset 0 1px 0 rgba(255,255,255,0.035)",
+                  }}
+                >
+                  <div class="mb-2 flex min-w-0 items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="text-[10px] font-bold uppercase tracking-[0.1em] text-cyan-100/78">
+                        {language.t("session.goal.diagnostics.title")}
+                      </div>
+                      <p class="mt-0.5 text-[11px] leading-4 text-text-weaker">
+                        {language.t("session.goal.diagnostics.subtitle")}
+                      </p>
+                    </div>
+                    <span class="shrink-0 rounded-full border border-cyan-200/16 bg-cyan-400/8 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-cyan-100/72">
+                      {visibleControlDiagnostics().length}
+                    </span>
+                  </div>
+                  <div role="list" class="grid gap-1.5">
+                    <For each={visibleControlDiagnostics()}>
+                      {(item) => (
+                        <div
+                          role="listitem"
+                          data-component="goal-control-diagnostic-row"
+                          data-control={item.id}
+                          data-state={item.state}
+                          class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2 py-1.5"
+                          style={{
+                            "background-color": item.state === "available" ? "rgba(16, 185, 129, 0.045)" : "rgba(148, 163, 184, 0.045)",
+                            "border-color": item.state === "available" ? "rgba(110, 231, 183, 0.14)" : "rgba(148, 163, 184, 0.12)",
+                          }}
+                        >
+                          <div class="min-w-0">
+                            <div class="flex min-w-0 items-center gap-1.5">
+                              <span class="truncate text-[11px] font-semibold text-text-base">
+                                {diagnosticControlLabel(item.labelKey)}
+                              </span>
+                              <span
+                                class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em]"
+                                classList={{
+                                  "bg-emerald-400/14 text-emerald-100/82": item.state === "available",
+                                  "bg-amber-400/12 text-amber-100/78": item.state === "blocked" || item.state === "busy",
+                                }}
+                              >
+                                {diagnosticStateLabel(item.state)}
+                              </span>
+                            </div>
+                            <p class="mt-0.5 truncate text-[10px] leading-4 text-text-weaker" title={diagnosticDetailLabel(item)}>
+                              {diagnosticDetailLabel(item)}
+                            </p>
+                          </div>
+                          <div class="flex min-w-0 shrink-0 items-center gap-1.5">
+                            <span class="hidden text-[9px] font-bold uppercase tracking-[0.08em] text-text-weaker sm:inline">
+                              {language.t("session.goal.diagnostics.command")}
+                            </span>
+                            <code class="max-w-[128px] truncate rounded-sm border border-cyan-200/12 bg-black/24 px-1.5 py-0.5 font-mono text-[10px] text-cyan-100/72">
+                              {item.command}
+                            </code>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </section>
               </Show>
               <div class="flex min-w-0 flex-col gap-3">
               <GoalConsoleSection

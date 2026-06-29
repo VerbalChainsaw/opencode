@@ -256,6 +256,17 @@ describe("goal panel mission-control contracts", () => {
     expect(src).not.toContain("<Show when={liveGoal() && handoffOpen()}>")
   })
 
+  test("runtime controls expose a diagnostics card backed by the pure intent model", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("goalControlDiagnostics(")
+    expect(src).toContain("const visibleControlDiagnostics = createMemo")
+    expect(src).toContain('data-component="goal-control-diagnostics"')
+    expect(src).toContain('data-component="goal-control-diagnostic-row"')
+    expect(src).toContain("session.goal.diagnostics.title")
+    expect(src).toContain("diagnosticEffectLabel")
+    expect(src).toContain("diagnosticReasonLabel")
+  })
+
   test("create goal starts the agent after state is written, but shared controls stay turnless", async () => {
     const src = await goalPanelSource()
     const createGoal = src.match(/const createGoal = async \(\) => \{[\s\S]*?\n  \}/)

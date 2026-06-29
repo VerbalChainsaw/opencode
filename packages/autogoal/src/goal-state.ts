@@ -328,8 +328,15 @@ export function parseConstraints(text: string, defaults: GoalConstraints): GoalC
 }
 
 export function parseCommand(text: string): string | null {
-  const m = text.match(/--command\s+"([^"]+)"/) || text.match(/--command\s+'([^']+)'/);
-  return m ? m[1] : null;
+  // Escape-aware: the GUI quotes the command via goalControlQuotedArg, which
+  // backslash-escapes embedded quotes/backslashes, so `echo "done"` arrives as
+  // `--command "echo \"done\""`. `(?:\\.|[^"\\])+` consumes those escapes
+  // instead of stopping at the first inner quote (the old `[^"]+` truncated to
+  // `echo \`). The captured group is then un-escaped to recover the literal
+  // command. (Wiring sweep 2026-06-28.)
+  const m =
+    text.match(/--command\s+"((?:\\.|[^"\\])+)"/) || text.match(/--command\s+'((?:\\.|[^'\\])+)'/);
+  return m ? m[1].replace(/\\(["'\\])/g, "$1") : null;
 }
 
 /**
@@ -427,14 +434,31 @@ export function parseShellWords(s: string): string[] {
 /**
  * Strip ONE pair of surrounding matching quotes when the whole string is a
  * single quoted token — e.g. `/goal set "do the thing"` → `do the thing`.
- * Leaves inner quotes alone (`make the "smart" parser`) and multi-quote strings
- * (`"a" and "b"`) untouched by requiring exactly two occurrences of the quote.
+ *
+ * The GUI quotes control args via `goalControlQuotedArg` (goal-panel-pure.ts),
+ * which backslash-escapes embedded quotes and backslashes:
+ *   `say "hi"`  → `"say \"hi\""`     `use \path` → `"use \\path"`
+ * This is the symmetric consumer: it strips the outer pair AND reverses that
+ * escaping, so a steer/handoff note or condition containing `"` or `\` round-
+ * trips intact. Before this fix the escaped form (four+ quote chars) failed the
+ * exact-two-quotes guard and was persisted verbatim — the agent then saw the
+ * literal `"say \"hi\""` as its steering hint. (Wiring sweep 2026-06-28.)
+ *
+ * Strip+unescape applies when the token is a simple single pair (exactly two
+ * quote chars, no escapes — the manual CLI case) OR clearly an escaped form
+ * (contains `\"` / `\'` / `\\`). A genuine multi-token CLI string like
+ * `"a" and "b"` (several quotes, no escapes) is left untouched, preserving the
+ * prior behavior.
  */
 export function unwrapQuotes(s: string): string {
   if (s.length < 2) return s;
   const q = s[0];
-  if ((q === '"' || q === "'") && s[s.length - 1] === q && s.split(q).length - 1 === 2) {
-    return s.slice(1, -1).trim();
+  if ((q === '"' || q === "'") && s[s.length - 1] === q) {
+    const inner = s.slice(1, -1);
+    const hasEscapes = /\\["'\\]/.test(inner);
+    if (s.split(q).length - 1 === 2 || hasEscapes) {
+      return inner.replace(/\\(["'\\])/g, "$1").trim();
+    }
   }
   return s;
 }
@@ -446,8 +470,8 @@ export function stripMetadata(text: string): string {
     .replace(/stop after \d+k? tokens?/gi, "")
     .replace(/--turns\s+\d+/gi, "")
     .replace(/--time\s+\d+/gi, "")
-    .replace(/--command\s+"[^"]+"/gi, "")
-    .replace(/--command\s+'[^']+'/gi, "")
+    .replace(/--command\s+"(?:\\.|[^"\\])+"/gi, "")
+    .replace(/--command\s+'(?:\\.|[^'\\])+'/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 }

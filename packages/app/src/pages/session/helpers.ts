@@ -45,14 +45,19 @@ export function shouldAutoOpenGoalTab(input: {
     input.currentGoalID !== input.dismissedGoalID
 }
 
+/**
+ * AutoGoal is this fork's default landing surface: opening or starting a
+ * session focuses the Goal tab, not the chat-only view. This fires once per
+ * session key (the `defaultedSessionKey` guard), so a user who then switches
+ * to chat/files is never yanked back. It is intentionally NOT gated on whether
+ * a goal already exists — the empty "set a goal" state is still the intended
+ * landing, so the operator is always one surface away from launching a run.
+ */
 export function shouldDefaultOpenGoalTab(input: {
   sessionKey: string | undefined
   defaultedSessionKey: string | null
-  goalVisible: boolean
 }) {
-  return !!input.sessionKey &&
-    input.goalVisible &&
-    input.sessionKey !== input.defaultedSessionKey
+  return !!input.sessionKey && input.sessionKey !== input.defaultedSessionKey
 }
 
 /**

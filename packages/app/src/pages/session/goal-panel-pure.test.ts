@@ -28,6 +28,7 @@ import {
   runtimePinAvailability,
   type GoalActionDraftState,
   type GoalChainDraftStep,
+  type GoalState,
   parseRuntimeChainSnapshot,
 } from "./goal-panel-pure";
 
@@ -61,6 +62,159 @@ describe("goal control command argument quoting", () => {
     expect(goalControlQuotedArg(String.raw`Fix "quoted" path C:\tmp`)).toBe(
       String.raw`"Fix \"quoted\" path C:\\tmp"`,
     );
+  });
+});
+
+type GoalControlDiagnosticsInput = {
+  busy: boolean;
+  hasSession: boolean;
+  hasLiveGoal: boolean;
+  liveStatus: GoalState["status"] | null;
+  liveRunStalled: boolean;
+  hasRunnableChain: boolean;
+  hasObjective: boolean;
+  hasPendingHandoff: boolean;
+  hasTerminalGoal: boolean;
+  hasCorruptState: boolean;
+};
+
+type GoalControlDiagnostic = {
+  id: string;
+  state: string;
+  labelKey: string;
+  effectKey: string;
+  reasonKey: string | null;
+  command: string;
+};
+
+async function controlDiagnostics(input: GoalControlDiagnosticsInput): Promise<GoalControlDiagnostic[]> {
+  const mod = (await import("./goal-panel-pure")) as typeof import("./goal-panel-pure") & {
+    goalControlDiagnostics?: (input: GoalControlDiagnosticsInput) => GoalControlDiagnostic[];
+  };
+  expect(typeof mod.goalControlDiagnostics).toBe("function");
+  const diagnostics = mod.goalControlDiagnostics;
+  if (!diagnostics) throw new Error("goalControlDiagnostics export missing");
+  return diagnostics(input);
+}
+
+describe("goal control diagnostics", () => {
+  test("explains idle single-goal start and hides chain-only checks", async () => {
+    const diagnostics = await controlDiagnostics({
+      busy: false,
+      hasSession: true,
+      hasLiveGoal: false,
+      liveStatus: null,
+      liveRunStalled: false,
+      hasRunnableChain: false,
+      hasObjective: true,
+      hasPendingHandoff: false,
+      hasTerminalGoal: false,
+      hasCorruptState: false,
+    });
+
+    expect(diagnostics.find((item) => item.id === "start")).toMatchObject({
+      state: "available",
+      labelKey: "session.goal.create.submit",
+      effectKey: "session.goal.diagnostics.effect.startGoal",
+      reasonKey: null,
+      command: "goal:set",
+    });
+    expect(diagnostics.find((item) => item.id === "check")).toMatchObject({
+      state: "hidden",
+      command: "chain:validate",
+    });
+  });
+
+  test("explains live lifecycle controls with backend effects", async () => {
+    const diagnostics = await controlDiagnostics({
+      busy: false,
+      hasSession: true,
+      hasLiveGoal: true,
+      liveStatus: "active",
+      liveRunStalled: false,
+      hasRunnableChain: false,
+      hasObjective: false,
+      hasPendingHandoff: false,
+      hasTerminalGoal: false,
+      hasCorruptState: false,
+    });
+
+    expect(diagnostics.find((item) => item.id === "start")).toMatchObject({
+      state: "blocked",
+      reasonKey: "session.goal.diagnostics.reason.liveGoal",
+    });
+    expect(diagnostics.find((item) => item.id === "pauseResume")).toMatchObject({
+      state: "available",
+      labelKey: "session.goal.action.pause",
+      effectKey: "session.goal.diagnostics.effect.pause",
+      command: "goal:pause",
+    });
+    expect(diagnostics.find((item) => item.id === "stop")).toMatchObject({
+      state: "available",
+      effectKey: "session.goal.diagnostics.effect.stop",
+      command: "goal:clear",
+    });
+    expect(diagnostics.find((item) => item.id === "restart")).toMatchObject({
+      state: "hidden",
+      command: "goal:restart",
+    });
+    expect(diagnostics.find((item) => item.id === "report")).toMatchObject({
+      state: "available",
+      command: "copy:goal-report",
+    });
+  });
+
+  test("explains paused, pending handoff, and terminal recovery controls", async () => {
+    const paused = await controlDiagnostics({
+      busy: false,
+      hasSession: true,
+      hasLiveGoal: true,
+      liveStatus: "paused",
+      liveRunStalled: false,
+      hasRunnableChain: false,
+      hasObjective: false,
+      hasPendingHandoff: true,
+      hasTerminalGoal: false,
+      hasCorruptState: false,
+    });
+
+    expect(paused.find((item) => item.id === "pauseResume")).toMatchObject({
+      state: "available",
+      labelKey: "session.goal.action.resume",
+      effectKey: "session.goal.diagnostics.effect.resume",
+      command: "goal:resume",
+    });
+    expect(paused.find((item) => item.id === "restart")).toMatchObject({
+      state: "available",
+      command: "goal:restart",
+    });
+    expect(paused.find((item) => item.id === "handoff")).toMatchObject({
+      state: "blocked",
+      reasonKey: "session.goal.diagnostics.reason.pendingHandoff",
+    });
+
+    const terminal = await controlDiagnostics({
+      busy: false,
+      hasSession: true,
+      hasLiveGoal: false,
+      liveStatus: "achieved",
+      liveRunStalled: false,
+      hasRunnableChain: false,
+      hasObjective: false,
+      hasPendingHandoff: false,
+      hasTerminalGoal: true,
+      hasCorruptState: false,
+    });
+
+    expect(terminal.find((item) => item.id === "reset")).toMatchObject({
+      state: "available",
+      effectKey: "session.goal.diagnostics.effect.reset",
+      command: "goal:fresh",
+    });
+    expect(terminal.find((item) => item.id === "report")).toMatchObject({
+      state: "available",
+      command: "copy:goal-report",
+    });
   });
 });
 
