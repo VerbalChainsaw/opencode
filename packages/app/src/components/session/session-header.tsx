@@ -19,7 +19,7 @@ import { useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { focusTerminalById } from "@/pages/session/helpers"
+import { focusTerminalById, sessionPanelTabShown, toggleSessionPanelTab } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
@@ -160,6 +160,24 @@ export function SessionHeader() {
     tabs().setActive("goal")
     if (!view().reviewPanel.opened()) view().reviewPanel.open()
   }
+  const reviewShown = createMemo(() =>
+    sessionPanelTabShown({
+      panelOpen: view().reviewPanel.opened(),
+      activeTab: tabs().active(),
+      tab: "review",
+    }),
+  )
+  const toggleReview = () => {
+    toggleSessionPanelTab({
+      panelOpen: view().reviewPanel.opened(),
+      activeTab: tabs().active(),
+      tab: "review",
+      openTab: (tab) => tabs().open(tab),
+      setActive: (tab) => tabs().setActive(tab),
+      openPanel: () => view().reviewPanel.open(),
+      closePanel: () => view().reviewPanel.close(),
+    })
+  }
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -260,8 +278,8 @@ export function SessionHeader() {
     statusLabel: language.t("status.popover.trigger"),
     reviewLabel: language.t("command.review.toggle"),
     reviewKeybind: command.keybind("review.toggle"),
-    reviewOpened: view().reviewPanel.opened(),
-    onReviewToggle: () => view().reviewPanel.toggle(),
+    reviewOpened: reviewShown(),
+    onReviewToggle: toggleReview,
   }))
 
   const selectApp = (app: OpenApp) => {
@@ -506,12 +524,12 @@ export function SessionHeader() {
                         <Button
                           variant="ghost"
                           class="group/review-toggle titlebar-icon w-8 h-6 p-0 box-border"
-                          onClick={() => view().reviewPanel.toggle()}
+                          onClick={toggleReview}
                           aria-label={language.t("command.review.toggle")}
-                          aria-expanded={view().reviewPanel.opened()}
+                          aria-expanded={reviewShown()}
                           aria-controls="review-panel"
                         >
-                          <Icon size="small" name={view().reviewPanel.opened() ? "review-active" : "review"} />
+                          <Icon size="small" name={reviewShown() ? "review-active" : "review"} />
                         </Button>
                       </TooltipKeybind>
 

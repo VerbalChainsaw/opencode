@@ -199,8 +199,8 @@ describe("home mission-control contract", () => {
     expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?loading=\{sessionLoad\.isLoading/)
     // Active goals card passes loading tied to goalLoad.
     expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?loading=\{goalLoad\.isLoading/)
-    // Needs attention card passes loading tied to goalLoad.
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?loading=\{goalLoad\.isLoading/)
+    // Needs attention depends on both session and goal sources, so it uses the shared memo.
+    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?loading=\{attentionLoading\(\)\}/)
   })
 
   test("home metric details switch to idle copy when counts are zero", async () => {
@@ -231,6 +231,8 @@ describe("home mission-control contract", () => {
     const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
     expect(attentionCard).toBeTruthy()
     expect(attentionCard![0]).toContain("attentionCount()")
+    expect(src).toContain("const attentionLoading = createMemo")
+    expect(attentionCard![0]).toContain("disabled={attentionCount() === 0 || attentionLoading()}")
 
     const aside = src.match(/<For each=\{attentionRecords\(\)\.slice\(0, 3\)\}>[\s\S]{0,2500}/)
     expect(aside).toBeTruthy()
@@ -344,12 +346,13 @@ describe("home mission-control contract", () => {
     const src = await home()
     const selectProject = src.match(/function selectProject\(conn: ServerConnection\.Any, directory: string\)\s*\{([\s\S]*?)\n  \}/)
     expect(selectProject).toBeTruthy()
-    expect(selectProject![1]).toContain("directories(project).some")
+    expect(selectProject![1]).toContain("resolveHomeServerProjects(ctx.projects.list(), ctx.sync.data.project)")
+    expect(selectProject![1]).toContain("findHomeProjectByDirectory")
     expect(selectProject![1]).toContain("ctx.projects.open(project.worktree)")
     expect(selectProject![1]).toContain("ctx.projects.touch(project.worktree)")
     expect(selectProject![1]).toContain("setSelection({ server: key, directory: project.worktree })")
     expect(selectProject![1]).not.toContain("toggleHomeProjectSelection")
-    expect(selectProject![1]).not.toContain(".projects.list()")
+    expect(selectProject![1]).not.toContain("projects().find")
   })
 
   test("selected project sessions are visibly scoped and resettable", async () => {
@@ -484,7 +487,7 @@ describe("home mission-control contract", () => {
   test("LegacyHome renders persisted opened projects instead of a five-item backend recency slice", async () => {
     const src = await home()
     const legacy = src.slice(src.indexOf("function LegacyHome"))
-    expect(legacy).toContain("mergeHomeProjectLists")
+    expect(legacy).toContain("resolveHomeServerProjects")
     expect(legacy).toContain("ctx?.projects.list()")
     expect(legacy).toContain('language.t("home.projects")')
     expect(legacy).not.toContain(".slice(0, 5)")

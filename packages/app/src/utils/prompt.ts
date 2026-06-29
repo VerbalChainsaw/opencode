@@ -49,6 +49,113 @@ function textPartValue(parts: Part[]) {
   }, undefined)
 }
 
+function nonImagePromptLength(prompt: Prompt) {
+  return prompt.reduce((total, part) => total + (part.type === "image" ? 0 : part.content.length), 0)
+}
+
+function pushPromptText(result: Prompt, content: string, position: { current: number }) {
+  if (!content) return
+  const last = result[result.length - 1]
+  if (last?.type === "text") {
+    last.content += content
+    last.end += content.length
+    position.current += content.length
+    return
+  }
+  result.push({
+    type: "text",
+    content,
+    start: position.current,
+    end: position.current + content.length,
+  })
+  position.current += content.length
+}
+
+function pushPromptPart(
+  result: Prompt,
+  part: Exclude<Prompt[number], ImageAttachmentPart>,
+  position: { current: number },
+) {
+  if (part.type === "text") {
+    pushPromptText(result, part.content, position)
+    return
+  }
+
+  const content = part.content
+  if (part.type === "file") {
+    result.push({
+      ...part,
+      start: position.current,
+      end: position.current + content.length,
+    })
+  }
+  if (part.type === "agent") {
+    result.push({
+      ...part,
+      start: position.current,
+      end: position.current + content.length,
+    })
+  }
+  position.current += content.length
+}
+
+export function insertTextIntoPrompt(prompt: Prompt, text: string, cursor = nonImagePromptLength(prompt)) {
+  const images = prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
+  const inline = prompt.filter((part): part is Exclude<Prompt[number], ImageAttachmentPart> => part.type !== "image")
+  const clampedCursor = Math.max(0, Math.min(cursor, nonImagePromptLength(prompt)))
+  const result: Prompt = []
+  const position = { current: 0 }
+  let inserted = false
+
+  const insert = () => {
+    if (inserted || !text) return
+    pushPromptText(result, text, position)
+    inserted = true
+  }
+
+  for (const part of inline) {
+    const partLength = part.content.length
+    const end = position.current + partLength
+
+    if (!inserted && clampedCursor <= end) {
+      if (part.type === "text") {
+        const offset = Math.max(0, Math.min(clampedCursor - position.current, partLength))
+        pushPromptText(result, part.content.slice(0, offset), position)
+        insert()
+        pushPromptText(result, part.content.slice(offset), position)
+        continue
+      }
+
+      if (clampedCursor <= position.current) {
+        insert()
+      }
+      pushPromptPart(result, part, position)
+      if (clampedCursor > position.current - partLength) {
+        insert()
+      }
+      continue
+    }
+
+    pushPromptPart(result, part, position)
+  }
+
+  insert()
+
+  if (result.length === 0) {
+    result.push({
+      type: "text",
+      content: "",
+      start: 0,
+      end: 0,
+    })
+  }
+
+  return {
+    prompt: images.length > 0 ? [...result, ...images] : result,
+    cursor: clampedCursor + text.length,
+  }
+}
+
 /**
  * Extract prompt content from message parts for restoring into the prompt input.
  * This is used by undo to restore the original user prompt.

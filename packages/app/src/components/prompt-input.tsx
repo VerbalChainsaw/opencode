@@ -72,7 +72,7 @@ import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/
 import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
-import { promptPlaceholder } from "./prompt-input/placeholder"
+import { promptActionTabIndex, promptPlaceholder } from "./prompt-input/placeholder"
 import { useDirectoryPicker } from "./directory-picker"
 import { showToast } from "@/utils/toast"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
@@ -1335,10 +1335,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     (p) => p,
   )
 
-  const designPlaceholder = () => {
-    if (store.mode === "shell") return placeholder()
-    return "Ask anything, / for commands, @ for context..."
-  }
+  const designPlaceholder = createMemo(() =>
+    promptPlaceholder({
+      mode: store.mode,
+      commentCount: commentCount(),
+      example: suggest() ? (store.mode === "shell" ? "git status" : language.t(EXAMPLES[store.placeholder])) : "",
+      suggest: suggest(),
+      surface: "design",
+      t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
+    }),
+  )
 
   const modelControlState = createMemo<ComposerModelControlState>(() => ({
     loading: providersLoading(),
@@ -1589,7 +1595,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       style={buttons()}
                       onClick={pick}
                       disabled={store.mode !== "normal"}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
+                      tabIndex={promptActionTabIndex({ mode: store.mode, hiddenInShell: true })}
                       aria-label={language.t("prompt.action.attachFile")}
                     />
                   </TooltipKeybind>
@@ -1639,7 +1645,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     data-action="prompt-submit"
                     type="submit"
                     disabled={!working() && blank()}
-                    tabIndex={store.mode === "normal" ? undefined : -1}
+                    tabIndex={promptActionTabIndex({ mode: store.mode })}
                     icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
                     variant="primary"
                     class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
@@ -1782,7 +1788,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       data-action="prompt-submit"
                       type="submit"
                       disabled={!working() && blank()}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
+                      tabIndex={promptActionTabIndex({ mode: store.mode })}
                       icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
                       variant="primary"
                       class="size-8"
@@ -1813,7 +1819,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       style={buttons()}
                       onClick={pick}
                       disabled={store.mode !== "normal"}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
+                      tabIndex={promptActionTabIndex({ mode: store.mode, hiddenInShell: true })}
                       aria-label={language.t("prompt.action.attachFile")}
                     >
                       <Icon name="plus" class="size-4.5" />

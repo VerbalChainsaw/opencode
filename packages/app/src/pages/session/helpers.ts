@@ -24,6 +24,39 @@ export function shouldShowFileTree(input: { desktopV2: boolean; showFileTree: bo
   return input.opened && (!input.desktopV2 || input.showFileTree)
 }
 
+export function sessionPanelTabShown(input: {
+  panelOpen: boolean
+  activeTab: string | undefined
+  tab: string
+}) {
+  return input.panelOpen && input.activeTab === input.tab
+}
+
+export function toggleSessionPanelTab(input: {
+  panelOpen: boolean
+  activeTab: string | undefined
+  tab: string
+  openTab: (tab: string) => void | Promise<void>
+  setActive: (tab: string) => void
+  openPanel: () => void
+  closePanel: () => void
+}) {
+  if (
+    sessionPanelTabShown({
+      panelOpen: input.panelOpen,
+      activeTab: input.activeTab,
+      tab: input.tab,
+    })
+  ) {
+    input.closePanel()
+    return
+  }
+
+  void input.openTab(input.tab)
+  input.setActive(input.tab)
+  if (!input.panelOpen) input.openPanel()
+}
+
 export function toastOffsetRight(input: {
   desktopSidePanelOpen: boolean
   desktopReviewOpen: boolean
@@ -151,6 +184,34 @@ export const focusTerminalById = (id: string) => {
 }
 
 const skip = new Set(["Alt", "Control", "Meta", "Shift"])
+
+const interactiveTargetSelector = [
+  "a[href]",
+  "button",
+  "input",
+  "select",
+  "summary",
+  "textarea",
+  '[role="button"]',
+  '[role="checkbox"]',
+  '[role="combobox"]',
+  '[role="link"]',
+  '[role="listbox"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '[role="radio"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[role="switch"]',
+  '[role="tab"]',
+  '[role="textbox"]',
+].join(", ")
+
+export function isSessionInteractiveTarget(target: EventTarget | null | undefined) {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  return target.closest(interactiveTargetSelector) !== null
+}
 
 export const shouldFocusTerminalOnKeyDown = (event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">) => {
   if (skip.has(event.key)) return false

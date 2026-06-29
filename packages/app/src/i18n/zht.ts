@@ -230,6 +230,7 @@ export const dict = {
   "prompt.placeholder.shell": "輸入 shell 命令... {{example}}",
   "prompt.placeholder.normal": '隨便問點什麼... "{{example}}"',
   "prompt.placeholder.simple": "隨便問點什麼...",
+  "prompt.placeholder.design": "隨便問點什麼，輸入 / 查看指令，輸入 @ 新增內容…",
   "prompt.placeholder.summarizeComments": "摘要評論…",
   "prompt.placeholder.summarizeComment": "摘要這則評論…",
   "prompt.mode.shell": "Shell",

@@ -1207,12 +1207,20 @@ describe("goal panel mission-control contracts", () => {
 
   test("permission approval dock is viewport-clamped so approval actions stay reachable", async () => {
     const permissionDock = await sourceText("./composer/session-permission-dock.tsx")
+    const questionDock = await sourceText("./composer/session-question-dock.tsx")
+    const promptHeight = await sourceText("./composer/session-prompt-max-height.ts")
     const messagePartCss = await sourceText("../../../../ui/src/components/message-part.css")
 
-    expect(permissionDock).toContain("createResizeObserver")
+    expect(promptHeight).toContain("computeDockPromptMaxHeight")
+    expect(promptHeight).toContain("createResizeObserver")
+    expect(promptHeight).toContain('document.querySelector(".scroll-view__viewport")')
+    expect(permissionDock).toContain("useDockPromptMaxHeight")
     expect(permissionDock).toContain("--permission-prompt-max-height")
+    expect(questionDock).toContain("useDockPromptMaxHeight")
+    expect(questionDock).toContain("--question-prompt-max-height")
     expect(permissionDock).toContain('ref={(el) => (root = el)}')
     expect(messagePartCss).toContain('max-height: var(--permission-prompt-max-height, 100dvh);')
+    expect(messagePartCss).toContain('max-height: var(--question-prompt-max-height, 100dvh);')
   })
 
   test("library add stays local and the action editor has no second add-to-chain path", async () => {

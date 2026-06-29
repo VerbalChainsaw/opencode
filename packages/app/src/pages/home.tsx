@@ -35,7 +35,6 @@ import {
   getProjectAvatarSource,
   homeProjectDirectories,
   homeProjectNavigation,
-  mergeHomeProjectLists,
   type HomeProjectSelection,
   projectForSession,
   sortedRootSessions,
@@ -54,9 +53,11 @@ import {
   buildHomeAttentionRecords,
   buildHomeGoalAttentionRecords,
   buildHomeGoalRecords,
+  findHomeProjectByDirectory,
   groupSessions,
   isHomeSessionLive,
   mergeHomeAttentionRecords,
+  resolveHomeServerProjects,
   type HomeAttentionRecord,
   type HomeGoalRecord,
   type HomeSessionGroup,
@@ -156,7 +157,7 @@ function HomeDesign() {
   })
   const focusedSync = () => focusedServerCtx()?.sync ?? sync
   const openedProjects = createMemo(() => focusedServerCtx()?.projects.list() ?? layout.projects.list())
-  const projects = createMemo(() => mergeHomeProjectLists(openedProjects(), focusedSync().data.project))
+  const projects = createMemo(() => resolveHomeServerProjects(openedProjects(), focusedSync().data.project))
   const selectedProject = createMemo(() => projects().find((project) => project.worktree === state.selection.directory))
   const newSessionProject = createMemo(
     () =>
@@ -199,7 +200,6 @@ function HomeDesign() {
       const goalInput = {
         projectDirectories: projectDirectories(),
         projects: projects(),
-        directories,
         readGoal,
       }
       const [goals, attention] = await Promise.all([
@@ -266,6 +266,9 @@ function HomeDesign() {
     )
   })
   const attentionCount = createMemo(() => attentionRecords().length)
+  const attentionLoading = createMemo(
+    () => (sessionLoad.isLoading && sessionLoad.data === undefined) || (goalLoad.isLoading && goalLoad.data === undefined),
+  )
   const liveSessionDetail = createMemo(() =>
     liveSessionCount() > 0 ? language.t("home.metrics.liveSessions.detail") : language.t("home.metrics.liveSessions.detail.idle"),
   )
@@ -325,9 +328,12 @@ function HomeDesign() {
 
   function selectProject(conn: ServerConnection.Any, directory: string) {
     const key = ServerConnection.key(conn)
-    const project = projects().find((project) => directories(project).some((candidate) => pathKey(candidate) === pathKey(directory)))
-    if (!project) return
     const ctx = global.createServerCtx(conn)
+    const project = findHomeProjectByDirectory(
+      resolveHomeServerProjects(ctx.projects.list(), ctx.sync.data.project),
+      directory,
+    )
+    if (!project) return
     ctx.projects.open(project.worktree)
     ctx.projects.touch(project.worktree)
     setSelection({ server: key, directory: project.worktree })
@@ -457,14 +463,16 @@ function HomeDesign() {
 
   function clearAttentionRecord(record: HomeAttentionRecord) {
     const conn = focusedServer()
-    if (!conn || ServerConnection.key(conn) !== server.key) return
+    if (!conn || ServerConnection.key(conn) !== server.key) return false
     if (record.session) {
       notification.session.markViewed(record.session.id)
-      return
+      return true
     }
-    directories(record.project)
+    const directoriesToClear = directories(record.project)
       .filter((directory) => notification.project.unseenCount(directory) > 0)
-      .forEach((directory) => notification.project.markViewed(directory))
+    if (directoriesToClear.length === 0) return false
+    directoriesToClear.forEach((directory) => notification.project.markViewed(directory))
+    return true
   }
 
   function openAttentionRecord(record: HomeAttentionRecord) {
@@ -661,11 +669,11 @@ function HomeDesign() {
               <HomeMetricCard
                 label={language.t("home.metrics.needsAttention")}
                 value={String(attentionCount())}
-                loading={goalLoad.isLoading && goalLoad.data === undefined}
+                loading={attentionLoading()}
                 detail={attentionDetail()}
                 icon="help"
                 tone="warning"
-                disabled={attentionCount() === 0 || (goalLoad.isLoading && goalLoad.data === undefined)}
+                disabled={attentionCount() === 0 || attentionLoading()}
                 onClick={() => openAttentionDialog()}
               />
             </div>
@@ -1041,13 +1049,20 @@ function GoalsDialogBody(props: {
 function AttentionDialogBody(props: {
   records: HomeAttentionRecord[]
   language: ReturnType<typeof useLanguage>
-  onClear: (record: HomeAttentionRecord) => void
+  onClear: (record: HomeAttentionRecord) => boolean
   onOpen: (record: HomeAttentionRecord) => void
 }) {
+  const [state, setState] = createStore({ records: props.records })
+
+  function clearRecord(record: HomeAttentionRecord) {
+    if (!props.onClear(record)) return
+    setState("records", (current) => current.filter((item) => item.id !== record.id))
+  }
+
   return (
     <div class="flex flex-col gap-1 p-1">
       <Show
-        when={props.records.length > 0}
+        when={state.records.length > 0}
         fallback={
           <div class="px-2 py-6 text-center text-v2-text-text-muted text-13-regular">
             {props.language.t("home.attention.empty")}
@@ -1055,7 +1070,7 @@ function AttentionDialogBody(props: {
         }
       >
         <ul class="flex flex-col gap-1">
-          <For each={props.records}>
+          <For each={state.records}>
             {(record) => (
               <li>
                 <div class="flex items-stretch gap-1">
@@ -1082,7 +1097,7 @@ function AttentionDialogBody(props: {
                     <button
                       type="button"
                       class="flex items-center gap-1 rounded-md border border-v2-border-border-muted px-2 py-1 text-[12px] text-v2-text-text-muted transition-colors hover:border-border-strong hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
-                      onClick={() => props.onClear(record)}
+                      onClick={() => clearRecord(record)}
                       aria-label={props.language.t("home.attention.clear", { reason: record.reason })}
                     >
                       {props.language.t("home.attention.clear.short")}
@@ -1152,6 +1167,7 @@ function HomeProjectColumn(props: {
               const key = ServerConnection.key(item)
               const healthy = () => !!global.servers.health[key]?.healthy
               const serverCtx = global.createServerCtx(item)
+              const serverProjects = () => resolveHomeServerProjects(serverCtx.projects.list(), serverCtx.sync.data.project)
               return (
                 <div class="flex min-h-0 flex-1 min-w-0 flex-col gap-1.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <HomeServerRow
@@ -1167,7 +1183,7 @@ function HomeProjectColumn(props: {
                   />
                   <Show when={healthy()}>
                     <div class="mx-3 h-px bg-v2-border-border-base" />
-                    <HomeProjectList {...props} server={item} projects={serverCtx.projects.list()} />
+                    <HomeProjectList {...props} server={item} projects={serverProjects()} />
                   </Show>
                 </div>
               )
@@ -1748,7 +1764,7 @@ function LegacyHome() {
   })
   const projects = createMemo(() => {
     const ctx = currentServerCtx()
-    return mergeHomeProjectLists(ctx?.projects.list() ?? [], ctx?.sync.data.project ?? sync.data.project)
+    return resolveHomeServerProjects(ctx?.projects.list() ?? [], ctx?.sync.data.project ?? sync.data.project)
   })
   const projectSync = () => currentServerCtx()?.sync ?? sync
 

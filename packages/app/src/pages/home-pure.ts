@@ -1,6 +1,6 @@
 import type { PermissionRequest, QuestionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { LocalProject } from "@/context/layout"
-import { displayName } from "@/pages/layout/helpers"
+import { displayName, mergeHomeProjectLists } from "@/pages/layout/helpers"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { DEFAULT_STALL_MINUTES, goalIdleMinutes, isGoalStalled } from "@/pages/session/goal-panel-lifecycle"
 import { cleanText, type GoalState } from "@/pages/session/goal-panel-pure"
@@ -86,12 +86,27 @@ export type HomeLanguage = {
   t: (key: string | number, args?: Record<string, string | number | boolean>) => string
 }
 
-function homeProjectForDirectory(
-  directory: string,
-  projects: LocalProject[],
-  directories: (project: LocalProject) => string[],
+type HomeProjectEntry = {
+  id?: string
+  worktree: string
+  expanded?: boolean
+  sandboxes?: string[]
+}
+
+export function resolveHomeServerProjects<TOpened extends HomeProjectEntry, TKnown extends HomeProjectEntry>(
+  opened: TOpened[],
+  known: TKnown[],
 ) {
-  return projects.find((project) => directories(project).some((candidate) => pathKey(candidate) === pathKey(directory)))
+  return mergeHomeProjectLists(opened, known)
+}
+
+export function findHomeProjectByDirectory<TProject extends { worktree: string; sandboxes?: string[] }>(
+  projects: readonly TProject[],
+  directory: string,
+) {
+  return projects.find((project) =>
+    [project.worktree, ...(project.sandboxes ?? [])].some((candidate) => pathKey(candidate) === pathKey(directory)),
+  )
 }
 
 function homeGoalSessionID(state: GoalState) {
@@ -105,12 +120,11 @@ function homeGoalSessionID(state: GoalState) {
 export async function buildHomeGoalRecords(input: {
   projectDirectories: string[]
   projects: LocalProject[]
-  directories: (project: LocalProject) => string[]
   readGoal: (directory: string) => Promise<{ state: GoalState | null }>
 }) {
   const loaded = await Promise.all(
     input.projectDirectories.map(async (directory): Promise<HomeGoalRecord | null> => {
-      const project = homeProjectForDirectory(directory, input.projects, input.directories)
+      const project = findHomeProjectByDirectory(input.projects, directory)
       if (!project) return null
 
       const store = await input.readGoal(directory)
@@ -161,7 +175,6 @@ function goalLastMovement(state: GoalState) {
 export async function buildHomeGoalAttentionRecords(input: {
   projectDirectories: string[]
   projects: LocalProject[]
-  directories: (project: LocalProject) => string[]
   readGoal: (directory: string) => Promise<{ state: GoalState | null }>
   now?: number
   stalledAfterMinutes?: number
@@ -170,7 +183,7 @@ export async function buildHomeGoalAttentionRecords(input: {
   const stalledAfterMinutes = input.stalledAfterMinutes ?? DEFAULT_STALL_MINUTES
   const loaded = await Promise.all(
     input.projectDirectories.map(async (directory): Promise<HomeAttentionRecord | null> => {
-      const project = homeProjectForDirectory(directory, input.projects, input.directories)
+      const project = findHomeProjectByDirectory(input.projects, directory)
       if (!project) return null
 
       const store = await input.readGoal(directory)

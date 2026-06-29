@@ -1,18 +1,24 @@
-import { For, Show, onCleanup, onMount } from "solid-js"
+import { For, Show } from "solid-js"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@opencode-ai/ui/dock-prompt"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
+import { useDockPromptMaxHeight } from "./session-prompt-max-height"
 
 export function SessionPermissionDock(props: {
   request: PermissionRequest
   responding: boolean
   onDecide: (response: "once" | "always" | "reject") => void
-}) {
+  }) {
   const language = useLanguage()
   let root: HTMLDivElement | undefined
+
+  useDockPromptMaxHeight({
+    root: () => root,
+    cssVar: "--permission-prompt-max-height",
+    minHeight: 220,
+  })
 
   const toolDescription = () => {
     const key = `settings.permissions.tool.${props.request.permission}.description`
@@ -20,51 +26,6 @@ export function SessionPermissionDock(props: {
     if (value === key) return ""
     return value
   }
-
-  const measure = () => {
-    if (!root) return
-
-    const scroller = document.querySelector(".scroll-view__viewport")
-    const head = scroller instanceof HTMLElement ? scroller.firstElementChild : undefined
-    const top =
-      head instanceof HTMLElement && head.classList.contains("sticky") ? head.getBoundingClientRect().bottom : 0
-    if (!top) {
-      root.style.removeProperty("--permission-prompt-max-height")
-      return
-    }
-
-    const dock = root.closest('[data-component="session-prompt-dock"]')
-    if (!(dock instanceof HTMLElement)) return
-
-    const dockBottom = dock.getBoundingClientRect().bottom
-    const below = Math.max(0, dockBottom - root.getBoundingClientRect().bottom)
-    const gap = 8
-    const max = Math.max(220, Math.floor(dockBottom - top - gap - below))
-    root.style.setProperty("--permission-prompt-max-height", `${max}px`)
-  }
-
-  onMount(() => {
-    let raf: number | undefined
-    const update = () => {
-      if (raf !== undefined) cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => {
-        raf = undefined
-        measure()
-      })
-    }
-
-    update()
-    window.addEventListener("resize", update)
-
-    const dock = root?.closest('[data-component="session-prompt-dock"]')
-    const scroller = document.querySelector(".scroll-view__viewport")
-    createResizeObserver([dock, scroller], update)
-
-    onCleanup(() => {
-      window.removeEventListener("resize", update)
-      if (raf !== undefined) cancelAnimationFrame(raf)
-    })
-  })
 
   return (
     <DockPrompt

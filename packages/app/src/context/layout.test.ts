@@ -8,6 +8,7 @@ import {
   restorableOpenProjects,
   shouldRestoreOpenProject,
   staleOpenProjectDirectories,
+  unconfirmedOpenProjectDirectories,
 } from "./layout-helpers"
 
 describe("layout session-key helpers", () => {
@@ -111,5 +112,18 @@ describe("layout project restore helpers", () => {
     expect(shouldRestoreOpenProject("C:/Repos/local-only", known)).toBe(true)
     expect(staleOpenProjectDirectories(opened, known)).toEqual([])
     expect(restorableOpenProjects(opened, known)).toEqual(opened)
+  })
+
+  test("surfaces unconfirmed local-only projects for existence validation", () => {
+    const known = knownProjectDirectoryKeys([{ worktree: "C:/Repos/known" }])
+    const pending = new Set(["C:/Repos/pending"])
+
+    expect(
+      unconfirmedOpenProjectDirectories(
+        [{ worktree: "C:/Repos/known" }, { worktree: "C:/Repos/local-only" }, { worktree: "C:/Repos/pending" }],
+        known,
+        pending,
+      ),
+    ).toEqual(["C:/Repos/local-only"])
   })
 })

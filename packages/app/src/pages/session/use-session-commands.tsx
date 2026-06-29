@@ -15,7 +15,7 @@ import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@/utils/toast"
 import { findLast } from "@opencode-ai/core/util/array"
-import { createSessionTabs } from "@/pages/session/helpers"
+import { createSessionTabs, toggleSessionPanelTab } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { formatServerError } from "@/utils/server-errors"
 import { abortWorkingSessionTurn } from "@/utils/session-abort"
@@ -90,6 +90,17 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const showAllFiles = () => {
     if (layout.fileTree.tab() !== "changes") return
     layout.fileTree.setTab("all")
+  }
+  const toggleReview = () => {
+    toggleSessionPanelTab({
+      panelOpen: view().reviewPanel.opened(),
+      activeTab: tabs().active(),
+      tab: "review",
+      openTab: (tab) => tabs().open(tab),
+      setActive: (tab) => tabs().setActive(tab),
+      openPanel: () => view().reviewPanel.open(),
+      closePanel: () => view().reviewPanel.close(),
+    })
   }
 
   const selectionPreview = (path: string, selection: FileSelection) => {
@@ -478,7 +489,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "review.toggle",
       title: language.t("command.review.toggle"),
       keybind: "mod+shift+r",
-      onSelect: () => view().reviewPanel.toggle(),
+      onSelect: toggleReview,
     }),
     ...(shown()
       ? [

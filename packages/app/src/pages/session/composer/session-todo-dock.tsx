@@ -2,7 +2,7 @@ import type { Todo } from "@opencode-ai/sdk/v2"
 import { AnimatedNumber } from "@opencode-ai/ui/animated-number"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { DockTray } from "@opencode-ai/ui/dock-surface"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Icon } from "@opencode-ai/ui/icon"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
@@ -99,19 +99,14 @@ export function SessionTodoDock(props: {
         "overflow-y": "hidden",
         "max-height": `${Math.max(78, full() - value() * (full() - 78))}px`,
       }}
-    >
-      <div ref={contentRef}>
-        <div
+      >
+        <div ref={contentRef}>
+        <button
+          type="button"
           data-action="session-todo-toggle"
-          class="pl-3 pr-2 py-2 flex items-center gap-2 overflow-visible"
-          role="button"
-          tabIndex={0}
+          class="w-full pl-3 pr-2 py-2 flex items-center gap-2 overflow-visible text-left"
+          aria-expanded={!props.collapsed}
           onClick={props.onToggle}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return
-            event.preventDefault()
-            props.onToggle()
-          }}
         >
           <span
             class="text-14-regular text-text-strong cursor-default inline-flex items-baseline shrink-0 overflow-visible"
@@ -157,26 +152,18 @@ export function SessionTodoDock(props: {
               truncate
             />
           </div>
-          <div class="ml-auto">
-            <IconButton
-              data-action="session-todo-toggle-button"
-              data-collapsed={props.collapsed ? "true" : "false"}
-              icon="chevron-down"
+          <span
+            class="ml-auto inline-flex items-center justify-center"
+            data-collapsed={props.collapsed ? "true" : "false"}
+            aria-hidden="true"
+          >
+            <Icon
+              name="chevron-down"
               size="normal"
-              variant="ghost"
               style={{ transform: `rotate(${turn() * 180}deg)` }}
-              onMouseDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onClick={(event) => {
-                event.stopPropagation()
-                props.onToggle()
-              }}
-              aria-label={props.collapsed ? props.expandLabel : props.collapseLabel}
             />
-          </div>
-        </div>
+          </span>
+        </button>
 
         <div
           data-slot="session-todo-list"

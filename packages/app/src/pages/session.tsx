@@ -44,6 +44,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
+import { setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
 import {
@@ -51,6 +52,7 @@ import {
   createSessionTabs,
   createSizing,
   focusTerminalById,
+  isSessionInteractiveTarget,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
   toastOffsetRight,
@@ -67,7 +69,7 @@ import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
-import { extractPromptFromParts } from "@/utils/prompt"
+import { extractPromptFromParts, insertTextIntoPrompt } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
 import { abortWorkingSessionTurn } from "@/utils/session-abort"
@@ -823,11 +825,6 @@ export default function Page() {
     saveLabel: language.t("common.save"),
   }))
 
-  const isEditableTarget = (target: EventTarget | null | undefined) => {
-    if (!(target instanceof HTMLElement)) return false
-    return /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName) || target.isContentEditable
-  }
-
   const deepActiveElement = () => {
     let current: Element | null = document.activeElement
     while (current instanceof HTMLElement && current.shadowRoot?.activeElement) {
@@ -844,11 +841,11 @@ export default function Page() {
     const protectedTarget = path.some(
       (item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null,
     )
-    if (protectedTarget || isEditableTarget(target)) return
+    if (protectedTarget || isSessionInteractiveTarget(target)) return
 
     if (activeElement) {
       const isProtected = activeElement.closest("[data-prevent-autofocus]")
-      const isInput = isEditableTarget(activeElement)
+      const isInput = isSessionInteractiveTarget(activeElement)
       if (isProtected || isInput) return
     }
     if (dialog.active) return
@@ -870,9 +867,10 @@ export default function Page() {
       return
     }
 
-    if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
+    if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey || event.altKey)) {
       if (composer.blocked() || isChildSession()) return
-      inputRef?.focus()
+      event.preventDefault()
+      primeInput(event.key)
     }
   }
 
@@ -926,6 +924,17 @@ export default function Page() {
   const focusInput = () => {
     if (isChildSession()) return
     inputRef?.focus()
+  }
+
+  const primeInput = (key: string) => {
+    if (!inputRef) return
+    const next = insertTextIntoPrompt(prompt.current(), key, prompt.cursor())
+    prompt.set(next.prompt, next.cursor)
+    requestAnimationFrame(() => {
+      if (!inputRef) return
+      inputRef.focus()
+      setCursorPosition(inputRef, next.cursor)
+    })
   }
 
   useSessionCommands({

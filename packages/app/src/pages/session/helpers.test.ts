@@ -8,10 +8,13 @@ import {
   focusTerminalById,
   getTabReorderIndex,
   goalTabCloseable,
+  isSessionInteractiveTarget,
+  sessionPanelTabShown,
   shouldAutoOpenGoalTab,
   shouldDefaultOpenGoalTab,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
+  toggleSessionPanelTab,
 } from "./helpers"
 
 describe("shouldShowFileTree", () => {
@@ -19,6 +22,90 @@ describe("shouldShowFileTree", () => {
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: false, opened: true })).toBe(false)
     expect(shouldShowFileTree({ desktopV2: false, showFileTree: false, opened: true })).toBe(true)
     expect(shouldShowFileTree({ desktopV2: true, showFileTree: true, opened: true })).toBe(true)
+  })
+})
+
+describe("sessionPanelTabShown", () => {
+  test("requires the panel to be open and the requested tab to be active", () => {
+    expect(
+      sessionPanelTabShown({
+        panelOpen: true,
+        activeTab: "review",
+        tab: "review",
+      }),
+    ).toBe(true)
+
+    expect(
+      sessionPanelTabShown({
+        panelOpen: true,
+        activeTab: "goal",
+        tab: "review",
+      }),
+    ).toBe(false)
+
+    expect(
+      sessionPanelTabShown({
+        panelOpen: false,
+        activeTab: "review",
+        tab: "review",
+      }),
+    ).toBe(false)
+  })
+})
+
+describe("toggleSessionPanelTab", () => {
+  test("closes the panel when the requested tab is already shown", () => {
+    const calls: string[] = []
+
+    toggleSessionPanelTab({
+      panelOpen: true,
+      activeTab: "review",
+      tab: "review",
+      openTab: (tab) => {
+        calls.push(`open-tab:${tab}`)
+      },
+      setActive: (tab) => calls.push(`set-active:${tab}`),
+      openPanel: () => calls.push("open-panel"),
+      closePanel: () => calls.push("close-panel"),
+    })
+
+    expect(calls).toEqual(["close-panel"])
+  })
+
+  test("opens the panel and targets the requested tab when a different tab is showing", () => {
+    const calls: string[] = []
+
+    toggleSessionPanelTab({
+      panelOpen: true,
+      activeTab: "goal",
+      tab: "review",
+      openTab: (tab) => {
+        calls.push(`open-tab:${tab}`)
+      },
+      setActive: (tab) => calls.push(`set-active:${tab}`),
+      openPanel: () => calls.push("open-panel"),
+      closePanel: () => calls.push("close-panel"),
+    })
+
+    expect(calls).toEqual(["open-tab:review", "set-active:review"])
+  })
+
+  test("opens both the tab and panel when the panel is currently closed", () => {
+    const calls: string[] = []
+
+    toggleSessionPanelTab({
+      panelOpen: false,
+      activeTab: undefined,
+      tab: "review",
+      openTab: (tab) => {
+        calls.push(`open-tab:${tab}`)
+      },
+      setActive: (tab) => calls.push(`set-active:${tab}`),
+      openPanel: () => calls.push("open-panel"),
+      closePanel: () => calls.push("close-panel"),
+    })
+
+    expect(calls).toEqual(["open-tab:review", "set-active:review", "open-panel"])
   })
 })
 
@@ -151,12 +238,44 @@ describe("mission-control session shell contracts", () => {
     expect(branch![1]).toMatch(/reviewPanel\.close/)
   })
 
+  test("review toggle targets the review tab instead of treating the whole panel as active", async () => {
+    const source = await Bun.file(
+      new URL("../../components/session/session-header.tsx", import.meta.url),
+    ).text()
+
+    expect(source).toContain('tab: "review"')
+    expect(source).toContain("reviewOpened: reviewShown()")
+    expect(source).toContain("onReviewToggle: toggleReview")
+    expect(source).toContain("onClick={toggleReview}")
+    expect(source).toContain("aria-expanded={reviewShown()}")
+    expect(source).toContain('{reviewShown() ? "review-active" : "review"}')
+    expect(source).not.toContain("onClick={() => view().reviewPanel.toggle()}")
+    expect(source).not.toContain("reviewOpened: view().reviewPanel.opened()")
+    expect(source).not.toContain("onReviewToggle: () => view().reviewPanel.toggle()")
+  })
+
+  test("review command palette toggle uses tab-aware panel routing", async () => {
+    const source = await Bun.file(new URL("./use-session-commands.tsx", import.meta.url)).text()
+
+    expect(source).toContain("toggleSessionPanelTab")
+    expect(source).toContain('tab: "review"')
+    expect(source).not.toContain('onSelect: () => view().reviewPanel.toggle()')
+  })
+
   test("global toast regions use the session right-panel offset variable", async () => {
     const localLegacy = await Bun.file(new URL("../../../../ui/src/components/toast.css", import.meta.url)).text()
     const v2 = await Bun.file(new URL("../../../../ui/src/v2/components/toast-v2.css", import.meta.url)).text()
 
     expect(localLegacy).toContain("var(--oc-toast-region-right, 32px)")
     expect(v2).toContain("var(--oc-toast-region-right, 32px)")
+  })
+
+  test("todo dock toggle is a real button instead of a nested fake button plus icon button", async () => {
+    const source = await Bun.file(new URL("./composer/session-todo-dock.tsx", import.meta.url)).text()
+    expect(source).toMatch(/<button\s+type="button"[\s\S]*data-action="session-todo-toggle"/)
+    expect(source).toContain('aria-expanded={!props.collapsed}')
+    expect(source).not.toContain('role="button"')
+    expect(source).not.toContain("IconButton")
   })
 })
 
@@ -299,6 +418,30 @@ describe("shouldFocusTerminalOnKeyDown", () => {
   test("keeps plain typing focused on terminal", () => {
     expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "a" }))).toBe(true)
     expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "A", shiftKey: true }))).toBe(true)
+  })
+})
+
+describe("isSessionInteractiveTarget", () => {
+  test("treats custom role buttons as interactive targets", () => {
+    document.body.innerHTML = `<div role="button" tabindex="0"><span id="label">Queued messages</span></div>`
+    const label = document.getElementById("label")
+
+    expect(isSessionInteractiveTarget(label)).toBe(true)
+  })
+
+  test("treats native links and contenteditable surfaces as interactive targets", () => {
+    document.body.innerHTML = `<a id="link" href="/docs">Docs</a><div id="editor" contenteditable="true">Edit</div>`
+    const link = document.getElementById("link")
+    const editor = document.getElementById("editor")
+
+    expect(isSessionInteractiveTarget(link)).toBe(true)
+    expect(isSessionInteractiveTarget(editor)).toBe(true)
+  })
+
+  test("ignores plain static containers", () => {
+    const node = document.createElement("div")
+
+    expect(isSessionInteractiveTarget(node)).toBe(false)
   })
 })
 

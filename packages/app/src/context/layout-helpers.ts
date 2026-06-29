@@ -83,6 +83,20 @@ export function staleOpenProjectDirectories(
     .map((project) => project.worktree)
 }
 
+export function unconfirmedOpenProjectDirectories(
+  projects: readonly OpenProjectDirectory[],
+  known: ReadonlySet<string>,
+  pending: ReadonlySet<string> = new Set(),
+) {
+  return projects.flatMap((project) => {
+    const key = pathKey(project.worktree)
+    if (!key) return []
+    if (known.has(key)) return []
+    if (pending.has(key)) return []
+    return [project.worktree]
+  })
+}
+
 export function restorableOpenProjects<T extends OpenProjectDirectory>(
   projects: readonly T[],
   known: ReadonlySet<string>,

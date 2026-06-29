@@ -6,7 +6,9 @@ import {
   buildHomeAttentionRecords,
   buildHomeGoalAttentionRecords,
   buildHomeGoalRecords,
+  findHomeProjectByDirectory,
   mergeHomeAttentionRecords,
+  resolveHomeServerProjects,
   groupSessions,
   type HomeNotification,
 } from "./home-pure"
@@ -135,7 +137,6 @@ describe("home pure data builders", () => {
     const result = await buildHomeGoalRecords({
       projectDirectories: ["C:/beta", "C:/done", "C:/alpha", "C:/missing"],
       projects: [alpha, beta, archived],
-      directories: (item) => [item.worktree, ...(item.sandboxes ?? [])],
       readGoal: async (directory) => ({ state: states[directory as keyof typeof states] ?? null }),
     })
 
@@ -190,7 +191,6 @@ describe("home pure data builders", () => {
     const result = await buildHomeGoalAttentionRecords({
       projectDirectories: ["C:/alpha", "C:/beta", "C:/gamma", "C:/delta", "C:/epsilon"],
       projects: [alpha, beta, gamma, delta, epsilon],
-      directories: (item) => [item.worktree, ...(item.sandboxes ?? [])],
       now,
       stalledAfterMinutes: 10,
       readGoal: async (directory) => ({ state: states[directory as keyof typeof states] ?? null }),
@@ -263,6 +263,21 @@ describe("home pure data builders", () => {
     ])
 
     expect(result.map((record) => record.kind)).toEqual(["goal-limit", "retry", "response"])
+  })
+
+  test("resolves visible server projects from opened state plus live metadata and matches sandbox directories", () => {
+    const opened = [{ worktree: "C:/alpha", expanded: false }]
+    const known = [
+      { id: "p-alpha", name: "Alpha", worktree: "C:/alpha", sandboxes: ["C:/alpha-sandbox"] },
+      { id: "p-beta", name: "Beta", worktree: "C:/beta" },
+    ]
+
+    const resolved = resolveHomeServerProjects(opened, known)
+
+    expect(resolved.map((project) => project.worktree)).toEqual(["C:/alpha", "C:/beta"])
+    expect(resolved[0]).toMatchObject({ id: "p-alpha", name: "Alpha", expanded: false })
+    expect(findHomeProjectByDirectory(resolved, "C:/alpha-sandbox")).toMatchObject({ id: "p-alpha" })
+    expect(findHomeProjectByDirectory(resolved, "C:/beta")).toMatchObject({ id: "p-beta" })
   })
 
   test("groups sessions deterministically and uses the selected project title for an older-only board", () => {

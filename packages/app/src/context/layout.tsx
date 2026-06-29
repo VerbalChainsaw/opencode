@@ -13,7 +13,7 @@ import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
-import { pathKey } from "@/utils/path-key"
+import { pathKey, type PathKey } from "@/utils/path-key"
 import type { ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { migrateLegacySessionStateKeys, ServerScope, SessionStateKey } from "@/utils/server-scope"
 import {
@@ -24,6 +24,7 @@ import {
   restorableOpenProjects,
   shouldRestoreOpenProject,
   staleOpenProjectDirectories,
+  unconfirmedOpenProjectDirectories,
 } from "./layout-helpers"
 
 export { createSessionKeyReader, ensureSessionKey, pruneSessionKeys }
@@ -35,6 +36,12 @@ const DEFAULT_SIDEBAR_WIDTH = 344
 const DEFAULT_FILE_TREE_WIDTH = 200
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
+
+function isWorkspaceNotFound(error: unknown) {
+  const status = (error as { cause?: { status?: unknown } } | undefined)?.cause?.status
+  return status === 404
+}
+
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 
 export function getAvatarColors(key?: string) {
@@ -468,6 +475,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     }
 
     const pendingProjectOpens = new Set<string>()
+    const validatingUnknownProjects = new Set<PathKey>()
+    const confirmedUnknownProjects = new Set<PathKey>()
     const knownProjectKeys = createMemo(() => knownProjectDirectoryKeys(serverSync.data.project))
 
     createEffect(() => {
@@ -498,6 +507,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       for (const key of Array.from(pendingProjectOpens)) {
         if (known.has(key)) pendingProjectOpens.delete(key)
       }
+
+      for (const key of Array.from(confirmedUnknownProjects)) {
+        if (known.has(key)) confirmedUnknownProjects.delete(key)
+      }
     })
 
     createEffect(() => {
@@ -512,6 +525,43 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           server.projects.close(directory)
         }
       })
+    })
+
+    createEffect(() => {
+      if (!ready()) return
+      if (!serverSync.ready) return
+
+      const openKeys = new Set(server.projects.list().map((project) => pathKey(project.worktree)))
+      for (const key of Array.from(confirmedUnknownProjects)) {
+        if (!openKeys.has(key)) confirmedUnknownProjects.delete(key)
+      }
+
+      const unknown = unconfirmedOpenProjectDirectories(server.projects.list(), knownProjectKeys(), pendingProjectOpens)
+      for (const directory of unknown) {
+        const key = pathKey(directory)
+        if (!key) continue
+        if (validatingUnknownProjects.has(key)) continue
+        if (confirmedUnknownProjects.has(key)) continue
+
+        validatingUnknownProjects.add(key)
+        const client = serverSdk.createClient({ directory, throwOnError: true })
+
+        void client.path
+          .get()
+          .then(() => {
+            confirmedUnknownProjects.add(key)
+          })
+          .catch((error) => {
+            if (!isWorkspaceNotFound(error)) return
+            if (pendingProjectOpens.has(key)) return
+            if (knownProjectKeys().has(key)) return
+            if (!server.projects.list().some((project) => pathKey(project.worktree) === key)) return
+            server.projects.close(directory)
+          })
+          .finally(() => {
+            validatingUnknownProjects.delete(key)
+          })
+      }
     })
 
     const openProjects = createMemo(() =>
