@@ -621,6 +621,7 @@ export const dict = {
   "home.goals.empty": "No active goals right now. Start or resume a session to set one.",
   "home.attention.title": "Needs Attention",
   "home.attention.empty": "No outstanding alerts right now.",
+  "home.settings.loadFailed": "Settings couldn't load. Reload the app and try again.",
   "home.attention.clear": "Clear {{reason}}",
   "home.attention.clear.short": "Clear",
 

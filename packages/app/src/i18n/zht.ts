@@ -533,6 +533,7 @@ export const dict = {
   "home.goals.empty": "目前沒有活動目標。請新增或恢復工作階段並設定目標。",
   "home.attention.title": "需要處理",
   "home.attention.empty": "目前沒有待處理提醒。",
+  "home.settings.loadFailed": "設定載入失敗。請重新載入應用程式後再試。",
   "home.attention.clear": "清除 {{reason}}",
   "home.attention.clear.short": "清除",
 

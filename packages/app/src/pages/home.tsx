@@ -537,9 +537,22 @@ function HomeDesign() {
   }
 
   function openSettings() {
-    void import("@/components/settings-v2").then((x) => {
-      dialog.show(() => <x.DialogSettings />)
-    })
+    void import("@/components/settings-v2")
+      .then((x) => {
+        dialog.show(() => <x.DialogSettings />)
+      })
+      .catch((error) => {
+        // A failed dynamic import (chunk load error) must not leave the
+        // Settings button looking dead. Surface it instead of swallowing.
+        console.error("[home] failed to open settings:", error)
+        dialog.show(() => (
+          <Dialog title={language.t("sidebar.settings")}>
+            <div class="px-4 py-3 text-[13px] leading-5 text-v2-text-text-muted">
+              {language.t("home.settings.loadFailed")}
+            </div>
+          </Dialog>
+        ))
+      })
   }
 
   function openHelp() {

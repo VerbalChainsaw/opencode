@@ -538,6 +538,7 @@ export const dict = {
   "home.goals.empty": "当前没有活动目标。请新建或恢复会话并设置目标。",
   "home.attention.title": "需要处理",
   "home.attention.empty": "当前没有待处理提醒。",
+  "home.settings.loadFailed": "设置加载失败。请重新加载应用后重试。",
   "home.attention.clear": "清除 {{reason}}",
   "home.attention.clear.short": "清除",
 
