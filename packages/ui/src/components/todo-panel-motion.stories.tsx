@@ -197,10 +197,10 @@ export const Playground = {
     }
 
     const collapsed = () =>
-      !!composerRef?.querySelector('[data-action="session-todo-toggle-button"][data-collapsed="true"]')
+      !!composerRef?.querySelector('[data-action="session-todo-toggle"][aria-expanded="false"]')
 
     const setCollapsed = (value: boolean) => {
-      const button = composerRef?.querySelector('[data-action="session-todo-toggle-button"]')
+      const button = composerRef?.querySelector('[data-action="session-todo-toggle"]')
       if (!(button instanceof HTMLButtonElement)) return
       if (collapsed() === value) return
       button.click()

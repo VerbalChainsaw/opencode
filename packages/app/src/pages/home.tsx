@@ -1053,6 +1053,7 @@ function AttentionDialogBody(props: {
   onOpen: (record: HomeAttentionRecord) => void
 }) {
   const [state, setState] = createStore({ records: props.records })
+  createEffect(() => setState("records", props.records))
 
   function clearRecord(record: HomeAttentionRecord) {
     if (!props.onClear(record)) return
