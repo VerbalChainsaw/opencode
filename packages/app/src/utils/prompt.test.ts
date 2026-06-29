@@ -91,4 +91,47 @@ describe("insertTextIntoPrompt", () => {
       { type: "image", id: "img-1", filename: "shot.png", mime: "image/png", dataUrl: "data:image/png;base64,AAA" },
     ])
   })
+
+  test("inserts text at the exact start of a non-text part", () => {
+    const prompt: Prompt = [
+      { type: "text", content: "run ", start: 0, end: 4 },
+      { type: "file", path: "src/app.ts", content: "@src/app.ts", start: 4, end: 15 },
+      { type: "text", content: " now", start: 15, end: 19 },
+    ]
+
+    const result = insertTextIntoPrompt(prompt, "!", 4)
+
+    expect(result.cursor).toBe(5)
+    expect(result.prompt).toEqual([
+      { type: "text", content: "run !", start: 0, end: 5 },
+      { type: "file", path: "src/app.ts", content: "@src/app.ts", start: 5, end: 16 },
+      { type: "text", content: " now", start: 16, end: 20 },
+    ])
+  })
+
+  test("clamps cursor past the end of inline content", () => {
+    const prompt: Prompt = [{ type: "text", content: "ab", start: 0, end: 2 }]
+
+    const result = insertTextIntoPrompt(prompt, "X", 99)
+
+    expect(result.cursor).toBe(3)
+    expect(result.prompt).toEqual([{ type: "text", content: "abX", start: 0, end: 3 }])
+  })
+
+  test("inserts into a prompt that contains an agent mention", () => {
+    const prompt: Prompt = [
+      { type: "text", content: "hey ", start: 0, end: 4 },
+      { type: "agent", name: "build", content: "@build", start: 4, end: 10 },
+    ]
+
+    // cursor inside the agent mention — insertion should land AFTER the agent
+    const result = insertTextIntoPrompt(prompt, "!", 7)
+
+    expect(result.cursor).toBe(8)
+    expect(result.prompt).toEqual([
+      { type: "text", content: "hey ", start: 0, end: 4 },
+      { type: "agent", name: "build", content: "@build", start: 4, end: 10 },
+      { type: "text", content: "!", start: 10, end: 11 },
+    ])
+  })
 })
