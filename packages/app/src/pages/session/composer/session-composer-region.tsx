@@ -18,6 +18,7 @@ import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
+import { GoalComposerBadge, useComposerGoalIndicator } from "@/pages/session/goal-composer-badge"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -58,6 +59,16 @@ export function SessionComposerRegion(props: {
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
+
+  // AutoGoal composer badge (variants A+B): operator-colored step dots + k/N,
+  // plus the composer left band. Polls goal state + chain independently; renders
+  // only when a goal is live so the default composer is untouched when idle.
+  const goalIndicator = useComposerGoalIndicator()
+  const goalLive = createMemo(() => goalIndicator().kind !== "idle")
+  function openGoalTab() {
+    layout.tabs(route.sessionKey).setActive("goal")
+    if (!view.reviewPanel.opened()) view.reviewPanel.open()
+  }
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
   const showComposer = createMemo(() => !props.state.blocked() || child())
@@ -250,6 +261,24 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${-lift()}px`,
               }}
             >
+              {/* AutoGoal flair (A+B): left band tinted to the active chain
+                  step's operator tone, and a step-dot badge above the input.
+                  Only present while a goal is live. */}
+              <Show when={goalLive()}>
+                <span
+                  aria-hidden
+                  data-component="goal-composer-band"
+                  class="pointer-events-none absolute -left-2 top-1 bottom-1 w-[3px] rounded-full"
+                  style={{ "background-color": goalIndicator().bandColor }}
+                />
+                <div class="mb-1.5 flex items-center justify-end px-0.5">
+                  <GoalComposerBadge
+                    indicator={goalIndicator()}
+                    onOpen={openGoalTab}
+                    disabled={!route.params.id}
+                  />
+                </div>
+              </Show>
               <Show when={props.followup?.items.length}>
                 <SessionFollowupDock
                   items={props.followup!.items}
