@@ -117,18 +117,27 @@ function findBash() {
  * by Git Bash (via msys2's POSIX translation), so a single code
  * path works.
  */
-function scriptArgForBash() {
-  if (process.platform === "win32") {
-    // Convert `C:\Users\foo\bar.sh` -> `/mnt/c/Users/foo/bar.sh`
-    // for the WSL bash launcher (which sees the Windows filesystem
-    // mounted at /mnt/<drive>). Git Bash accepts both forms via
-    // msys2; the /mnt/c form is also accepted there.
-    return script
-      .replace(/^([A-Za-z]):([\\/])/, (_, drive, sep) => `/mnt/${drive.toLowerCase()}${sep}`)
-      .split(win32.sep)
-      .join(posix.sep);
-  }
-  return script;
+function isMsysBash(exe) {
+  // Detect msys2 / Git Bash by asking it to print its `uname -s`.
+  // WSL bash reports "Linux"; msys2 reports "MINGW64_NT-*" or "MSYS_NT-*".
+  // The Git Bash install at `C:\Program Files\Git\bin\bash.exe` is msys2
+  // and does NOT mount the Windows filesystem at /mnt/c — it uses /c/.
+  // The PATH-bash on a default Windows install may be either: if Git for
+  // Windows is installed before WSL, PATH-bash is msys2; if WSL is
+  // installed first, PATH-bash is the WSL launcher. Probe to be sure.
+  const probe = spawnSync(exe, ["-c", "uname -s"], { encoding: "utf-8" });
+  const out = (probe.stdout ?? "").trim();
+  return /^(MINGW|MSYS|CYGWIN)/i.test(out);
+}
+
+function scriptArgForBash(bashExe) {
+  if (process.platform !== "win32") return script;
+  // WSL bash sees Windows at /mnt/<drive>; msys2 / Git Bash sees it at /<drive>/.
+  const prefix = isMsysBash(bashExe) ? posix.sep : "/mnt";
+  return script
+    .replace(/^([A-Za-z]):([\\/])/, (_, drive, sep) => `${prefix}${drive.toLowerCase()}${sep}`)
+    .split(win32.sep)
+    .join(posix.sep);
 }
 
 /**
@@ -144,7 +153,7 @@ function runScript(bash, cwdOverride) {
   // before spawn because spawn reads cwd synchronously).
   process.chdir(target);
   try {
-    return spawnSync(bash.exe, [scriptArgForBash()], {
+    return spawnSync(bash.exe, [scriptArgForBash(bash.exe)], {
       cwd: target,
       encoding: "utf-8",
       timeout: 10_000,
