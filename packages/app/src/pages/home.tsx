@@ -922,8 +922,36 @@ function HomeDesign() {
                       </div>
                     </Show>
                   </div>
-                </section>
-              </aside>
+                  </section>
+                  <section data-component="home-quick-actions" class={`${HOME_PANEL} mt-2 flex flex-col p-2.5`}>
+                    <div aria-hidden class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(110,92,255,0.12),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%)]" />
+                    <div class="relative flex min-w-0 flex-col">
+                      <span class={HOME_SECTION_LABEL}>{language.t("home.actions.quickAccess")}</span>
+                      <div class="mt-2 flex flex-col gap-1">
+                        <button type="button" class={HOME_ROW} onClick={focusSessionSearchControl}>
+                          <span class="flex min-w-0 items-center gap-2">
+                            <IconV2 name="search" size="small" />
+                            <span class="truncate">{language.t("home.actions.search.detail")}</span>
+                          </span>
+                        </button>
+                        <button type="button" class={HOME_ROW} onClick={openNewSession}>
+                          <span class="flex min-w-0 items-center gap-2">
+                            <IconV2 name="plus" size="small" />
+                            <span class="truncate">{language.t("home.actions.newSession.detail")}</span>
+                          </span>
+                        </button>
+                        <Show when={latestRecord()}>
+                          <button type="button" class={HOME_ROW} onClick={openLatestSession}>
+                            <span class="flex min-w-0 items-center gap-2">
+                              <IconV2 name="status-active" size="small" />
+                              <span class="truncate">{language.t("home.actions.resumeLast.detail")}</span>
+                            </span>
+                          </button>
+                        </Show>
+                      </div>
+                    </div>
+                  </section>
+                </aside>
             </div>
           </div>
         </section>
