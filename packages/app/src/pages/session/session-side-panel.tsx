@@ -34,7 +34,7 @@ import {
   shouldShowFileTree,
   type Sizing,
 } from "@/pages/session/helpers"
-import { GoalPanel, useGoal } from "@/pages/session/goal-panel"
+import { GoalPanel, goalStateForSession, useGoal } from "@/pages/session/goal-panel"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
@@ -170,6 +170,7 @@ export function SessionSidePanel(props: {
   // "cleared" — at which point the close-when-visible effect removes
   // the tab so the panel falls back to the next available focus.
   const goal = useGoal()
+  const visibleGoalState = createMemo(() => goalStateForSession(goal.store.state, params.id))
   const [goalTabState, setGoalTabState] = createStore({
     previousID: null as string | null,
     dismissedID: null as string | null,
@@ -177,17 +178,18 @@ export function SessionSidePanel(props: {
     defaultedSessionKey: null as string | null,
   })
   const currentGoalID = createMemo(() => {
-    const state = goal.store.state
+    const state = visibleGoalState()
     if (!state || state.status === "cleared") return null
     return state.id
   })
   const goalVisibilityKey = createMemo(() => {
     if (!goal.store.loaded) return "loading"
     if (goal.store.corrupt) return "corrupt"
-    if (goal.store.state === null) return "empty"
+    const state = visibleGoalState()
+    if (state === null) return "empty"
     // A cleared goal keeps the panel visible (it now shows the empty state +
     // the run in the History timeline) — clearing must not blank the panel.
-    return `goal:${goal.store.state.id}`
+    return `goal:${state.id}`
   })
   const goalVisible = createMemo(() => {
     // An explicit open (the header Goal toggle sets the active tab to "goal")
@@ -200,7 +202,7 @@ export function SessionSidePanel(props: {
   })
   // A live goal (active/paused) can't be closed — the run controls must stay
   // reachable rather than hiding behind the header's reopen icon.
-  const goalCloseable = createMemo(() => goalTabCloseable(goal.store.state?.status))
+  const goalCloseable = createMemo(() => goalTabCloseable(visibleGoalState()?.status))
   const closeGoalTab = () => {
     if (!goalCloseable()) return
     const visibilityKey = goalVisibilityKey()
@@ -402,7 +404,7 @@ export function SessionSidePanel(props: {
                           >
                             <div class="flex items-center gap-1.5">
                               <div>{language.t("session.tab.goal")}</div>
-                              <Show when={goal.store.state?.status === "paused"}>
+                              <Show when={visibleGoalState()?.status === "paused"}>
                                 <div aria-hidden>⏸</div>
                               </Show>
                             </div>

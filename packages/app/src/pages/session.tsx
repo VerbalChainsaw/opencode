@@ -404,7 +404,10 @@ export default function Page() {
       (next, prev) => {
         if (!prev) return
         if (next.dir === prev.dir && next.id === prev.id) return
-        if (prev.id && !next.id) local.session.reset()
+        if (prev.id && !next.id) { local.session.reset() }
+        if (prev.id && next.id && next.id !== prev.id) {
+          try { sync.session.evict(prev.id) } catch { /* effect must survive evict errors */ }
+        }
       },
       { defer: true },
     ),

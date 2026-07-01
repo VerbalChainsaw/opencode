@@ -39,3 +39,10 @@ AUTOGOAL_CHAIN_REPAIR_PROOF/
 AUTOGOAL_CHAIN_REPAIR_PROOF.zip
 center-audit-*.json
 center-audit-*.md
+
+# Local multi-agent / Tessl projection noise
+.claude/
+.agents/
+.cursor/
+.tmp/
+.github/skills/

@@ -16,7 +16,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, rmSync, existsSync, readFileSync as rf } from "node:fs";
+import { mkdirSync, readFileSync, mkdtempSync, rmSync, existsSync, readFileSync as rf, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,7 +121,7 @@ test("server.ts: exports recordStepEvaluation(directory, turnIndex, evaluation)"
 
 test("detectConstraintStop: reports the time limit when elapsed minutes hit the cap", async () => {
   const { detectConstraintStop } = await import("../dist/server.js");
-  const now = Date.now();
+  const now = 1_700_000_000_000;
   const result = detectConstraintStop({
     version: 1,
     id: "goal-1",
@@ -138,9 +138,56 @@ test("detectConstraintStop: reports the time limit when elapsed minutes hit the 
     evaluationHistory: [],
     constraints: { maxTurns: 20, maxTimeMinutes: 30, maxTokens: 100000 },
     metadata: {},
-  });
+  }, now);
   assert.equal(result.exceeded, true);
   assert.match(result.reason, /Time limit reached/);
+});
+
+test("clearExceededActiveGoal: clears an overdue active goal without a session.idle event", async () => {
+  const { clearExceededActiveGoal } = await import("../dist/server.js");
+  const dir = mkdtempSync(join(tmpdir(), "opengoal-timeout-"));
+  const now = 1_700_000_000_000;
+  try {
+    mkdirSync(join(dir, ".opencode"), { recursive: true });
+    writeFileSync(join(dir, ".opencode", ".goal-state.json"), JSON.stringify({
+      version: 1,
+      id: "goal-timeout",
+      condition: "do not run forever",
+      command: null,
+      status: "active",
+      createdAt: now - 21 * 60_000,
+      startedAt: now - 21 * 60_000,
+      completedAt: null,
+      pausedAt: null,
+      resumedAt: null,
+      turnsEvaluated: 0,
+      tokensUsed: 0,
+      lastEvaluation: null,
+      evaluationHistory: [],
+      constraints: { maxTurns: 20, maxTimeMinutes: 20, maxTokens: 100000 },
+      metadata: { setBy: "user", sessionId: "ses_timeout" },
+    }, null, 2));
+
+    const result = await clearExceededActiveGoal(dir, now);
+    const next = JSON.parse(readFileSync(join(dir, ".opencode", ".goal-state.json"), "utf-8"));
+    const archiveLines = readFileSync(join(dir, ".opencode", "goal-archive.jsonl"), "utf-8").trim().split("\n");
+
+    assert.equal(result.status, "cleared");
+    assert.equal(next.status, "cleared");
+    assert.equal(next.completedAt, now);
+    assert.equal(next.lastEvaluation.timestamp, now);
+    assert.match(next.lastEvaluation.reason, /Time limit reached: 21\/20 minutes/);
+    assert.equal(archiveLines.length, 1);
+    assert.equal(JSON.parse(archiveLines[0]).outcome, "cleared");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("server.ts: starts a guarded constraint watchdog inside the plugin server", () => {
+  assert.match(serverSrc, /const CONSTRAINT_WATCHDOG_MS = 15_000/);
+  assert.match(serverSrc, /let constraintWatchdogRunning = false/);
+  assert.match(serverSrc, /setInterval\(\(\) => \{/);
+  assert.match(serverSrc, /clearExceededActiveGoal\(directory, Date\.now\(\)\)/);
+  assert.match(serverSrc, /constraintWatchdog\.unref\?\.\(\)/);
 });
 
 test("recordStepEvaluation: writes a met event to step-timeline.jsonl", async () => {

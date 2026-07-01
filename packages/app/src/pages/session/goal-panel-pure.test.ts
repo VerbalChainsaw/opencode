@@ -25,6 +25,7 @@ import {
   chainStepVisibleSourceForState,
   DEFAULT_TEMPLATE_BUTTONS,
   goalControlQuotedArg,
+  isFreshGoalWorkspace,
   runtimePinAvailability,
   type GoalActionDraftState,
   type GoalChainDraftStep,
@@ -215,6 +216,68 @@ describe("goal control diagnostics", () => {
       state: "available",
       command: "copy:goal-report",
     });
+  });
+});
+
+describe("fresh goal workspace", () => {
+  test("treats a brand-new session as a clean idle canvas", () => {
+    expect(
+      isFreshGoalWorkspace({
+        hasLiveGoal: false,
+        hasTerminalGoal: false,
+        archivedRuns: 0,
+        hasPendingHandoff: false,
+        unreachable: false,
+        hasControlError: false,
+        objective: "",
+        command: "",
+        chainSteps: 0,
+      }),
+    ).toBe(true);
+  });
+
+  test("drops out of the clean idle canvas once composition or runtime state exists", () => {
+    expect(
+      isFreshGoalWorkspace({
+        hasLiveGoal: false,
+        hasTerminalGoal: false,
+        archivedRuns: 0,
+        hasPendingHandoff: false,
+        unreachable: false,
+        hasControlError: false,
+        objective: "Ship the fix",
+        command: "",
+        chainSteps: 0,
+      }),
+    ).toBe(false);
+
+    expect(
+      isFreshGoalWorkspace({
+        hasLiveGoal: false,
+        hasTerminalGoal: false,
+        archivedRuns: 0,
+        hasPendingHandoff: false,
+        unreachable: false,
+        hasControlError: false,
+        objective: "",
+        command: "",
+        chainSteps: 1,
+      }),
+    ).toBe(false);
+
+    expect(
+      isFreshGoalWorkspace({
+        hasLiveGoal: true,
+        hasTerminalGoal: false,
+        archivedRuns: 0,
+        hasPendingHandoff: false,
+        unreachable: false,
+        hasControlError: false,
+        objective: "",
+        command: "",
+        chainSteps: 0,
+      }),
+    ).toBe(false);
   });
 });
 

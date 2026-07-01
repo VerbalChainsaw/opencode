@@ -79,13 +79,20 @@ const START_GOAL_PROMPT =
 
 function errorText(error: unknown) {
   if (error instanceof Error) {
-    // The opencode HTTP API returns typed errors as JSON bodies like
-    // { _tag: "GoalControlError", data: { message: "<reason>" } }. If the
-    // SDK surfaces the response body in error.message, parse it for the
-    // real reason instead of dumping the full envelope string.
     const parsed = tryParseGoalControlErrorBody(error.message)
     if (parsed) return parsed
-    return error.message
+    // Effect-TS wraps errors as "Effect.tryPromise: <detail>" or just
+    // "Effect.tryPromise" with the real cause on error.cause. Unwrap so
+    // the user sees the actionable message, not the framework envelope.
+    let msg = error.message
+    if (msg.startsWith("Effect.")) {
+      const colonIdx = msg.indexOf(": ")
+      if (colonIdx > 0) msg = msg.slice(colonIdx + 2)
+      else if (error.cause instanceof Error) msg = error.cause.message
+      else if (error.cause) msg = String(error.cause)
+      else msg = "request failed"
+    }
+    return msg
   }
   return String(error)
 }
@@ -220,6 +227,15 @@ function formatAbortWarning(label: "Goal cleared" | "Goal paused", warnings: str
   return `${label}, but ${uniqueMessages(warnings).join("; ")}`
 }
 
+function formatFailedControlAbortContext(attempted: boolean, warnings: string[]) {
+  const status = attempted
+    ? "active session tree abort completed before control and after control"
+    : "active session tree abort was unavailable"
+  const unique = uniqueMessages(warnings)
+  if (unique.length === 0) return status
+  return `${status}; abort warnings: ${unique.join("; ")}`
+}
+
 async function executeGoalCommandWithHardAbort(
   client: GoalCommandClient,
   input: {
@@ -254,10 +270,7 @@ async function executeGoalCommandWithHardAbort(
     return { ok: true } as const
   }
 
-  if (warnings.length > 0) {
-    return { ok: false, error: `${result.error}; ${formatAbortWarning(label, warnings)}` } as const
-  }
-  return { ok: false, error: `${result.error}; active session tree aborted before control and after control` } as const
+  return { ok: false, error: `${result.error}; ${formatFailedControlAbortContext(before.attempted, warnings)}` } as const
 }
 
 export function goalSteerPrompt(note: string) {

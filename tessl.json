@@ -1,0 +1,9 @@
+{
+  "name": "opencode-source",
+  "mode": "vendored",
+  "dependencies": {
+    "yoriiis/frontend-code-review": {
+      "version": "1.0.0"
+    }
+  }
+}

@@ -267,6 +267,34 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("diagnosticReasonLabel")
   })
 
+  test("clean new-session goal view does not mount diagnostics until runtime or draft state gives them meaning", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain("const showControlDiagnostics = createMemo")
+    expect(src).toContain("const freshGoalCanvas = createMemo")
+    expect(src).toContain("!!liveGoal()")
+    expect(src).toContain("!!unarchivedTerminalGoal()")
+    expect(src).toContain("hasRunnableChain()")
+    expect(src).toContain("!!chainDraft.objective.trim()")
+    expect(src).toContain("!!handoff().handoff")
+    expect(src).toContain("!!props.goal.store.corrupt")
+    expect(src).toContain("!!props.goal.store.unreachable")
+    expect(src).toContain("isFreshGoalWorkspace({")
+    expect(src).toContain('objective: chainDraft.objective')
+    expect(src).toContain('command: newCommand()')
+    expect(src).toContain('chainSteps: visibleStepCount()')
+    expect(src).toContain("<Show when={showControlDiagnostics() && !freshGoalCanvas() && visibleControlDiagnostics().length > 0}>")
+    expect(src).not.toContain("<Show when={!freshGoalCanvas() && visibleControlDiagnostics().length > 0}>")
+  })
+
+  test("clean new-session goal view keeps the method rail visible for starter actions", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('data-component="goal-method-library-rail"')
+    expect(src).toContain('data-testid="action-editor"')
+    expect(src).not.toContain('<Show when={!freshGoalCanvas()}>')
+    expect(src).not.toContain('class={freshGoalCanvas() ? "col-span-full flex min-w-0 flex-col gap-3" : "flex min-w-0 flex-col gap-3"}')
+    expect(src).toContain('class="flex min-w-0 flex-col gap-3"')
+  })
+
   test("create goal starts the agent after state is written, but shared controls stay turnless", async () => {
     const src = await goalPanelSource()
     const createGoal = src.match(/const createGoal = async \(\) => \{[\s\S]*?\n  \}/)
@@ -440,18 +468,22 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("session.goal.template.empty")
     expect(src).toContain("session.goal.chainBuilder.steps")
     expect(src).toContain(
-      'class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"',
+      'class="grid min-h-0 min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"',
     )
+    expect(src).not.toContain('class={freshGoalCanvas() ? "col-span-full flex min-w-0 flex-col gap-3" : "flex min-w-0 flex-col gap-3"}')
     expect(src).toContain('class="flex min-w-0 flex-col gap-3"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"')
     expect(src).toContain(
-      'class="grid h-[min(100%,calc(100vh-9rem))] min-h-[520px] min-w-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-hidden"',
+      'class="grid max-h-[320px] min-w-0 flex-shrink-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-y-auto overflow-x-hidden overscroll-contain"',
     )
     expect(src).not.toContain('class="grid min-w-0 grid-cols-1 gap-2"')
     expect(src).not.toMatch(/xl:grid-cols-\[minmax\(620px,1fr\)_minmax\(360px,420px\)\]/)
     expect(src).not.toContain("xl:col-span-2")
     expect(src).toMatch(/data-component="goal-chain-builder"[\s\S]*data-component="goal-chain-builder-header-strip"[\s\S]*data-component="goal-global-budget"[\s\S]*data-component="goal-playbook-chain-pane"/)
-    expect(src).toMatch(/data-testid="chain-workspace"[\s\S]*data-testid="chain-builder"[\s\S]*data-component="goal-method-library-rail"/)
+    // Action rail is pinned as a bottom dock so starter actions are visible
+    // without scrolling on a narrow viewport — see styles on
+    // data-component="goal-method-library-rail".
+    expect(src).not.toContain('class="grid h-[min(100%,calc(100vh-9rem))] min-h-[520px] min-w-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-hidden"')
     expect(src).toContain('data-component="goal-status-card"')
     expect(src).toContain('class={unarchivedTerminalGoal() ? "col-span-full h-fit" : "hidden"}')
     expect(src).toContain("templateCategory")
@@ -546,7 +578,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("masterMinutes")
     expect(src).toContain("chainBudgetSummary")
     expect(src).toContain("readStoredChainDraft(props.sessionID)")
-    expect(src).toContain("writeStoredChainDraft(props.sessionID")
+    expect(src).toContain("writeStoredChainDraft(loadedDraftSessionID")
     expect(src).toContain("const [loadedDraftSessionID, setLoadedDraftSessionID] = createSignal(props.sessionID)")
     expect(src).toContain("const next = readStoredChainDraft(sessionID)")
     expect(src).toContain("setLoadedDraftSessionID(sessionID)")
@@ -583,12 +615,13 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-status-card"')
     expect(src).toContain('class={unarchivedTerminalGoal() ? "col-span-full h-fit" : "hidden"}')
     expect(src).toContain(
-      'class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"',
+      'class="grid min-h-0 min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"',
     )
+    expect(src).not.toContain('class={freshGoalCanvas() ? "col-span-full flex min-w-0 flex-col gap-3" : "flex min-w-0 flex-col gap-3"}')
     expect(src).toContain('class="flex min-w-0 flex-col gap-3"')
     expect(src).not.toContain('class="grid min-h-0 min-w-0 grid-cols-1 gap-3 overflow-x-hidden"')
     expect(src).toContain(
-      'class="grid h-[min(100%,calc(100vh-9rem))] min-h-[520px] min-w-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-hidden"',
+      'class="grid max-h-[320px] min-w-0 flex-shrink-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-y-auto overflow-x-hidden overscroll-contain"',
     )
     expect(src).not.toContain('class="grid min-w-0 grid-cols-1 gap-2"')
     expect(src).toContain("grid-cols-[repeat(auto-fit,minmax(112px,1fr))]")
@@ -625,8 +658,11 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('data-component="goal-chain-step-icon"')
     expect(src).toContain('data-component="goal-chain-step-meta"')
     expect(src).toContain('data-component="goal-chain-step-budget"')
-    expect(src).toContain("grid-cols-[30px_minmax(26px,1fr)]")
-    expect(src).toContain("grid-cols-[22px_minmax(30px,1fr)]")
+    expect(src).toContain("grid w-[172px] shrink-0 grid-cols-[minmax(82px,1fr)_minmax(82px,1fr)]")
+    expect(src).toContain("grid-cols-[34px_minmax(32px,1fr)]")
+    expect(src).toContain("grid-cols-[28px_minmax(32px,1fr)]")
+    expect(src).toContain("min-w-8 appearance-none")
+    expect(src).toContain("[&::-webkit-inner-spin-button]:appearance-none")
     expect(src).toContain("flex min-w-[108px] shrink-0 items-center justify-end gap-1")
     expect(src).toContain("title={stepRuntimeTitle(step)}")
     expect(src).toContain('data-component="goal-chain-step-actions"')
@@ -728,11 +764,22 @@ describe("goal panel mission-control contracts", () => {
 
   test("active goals with stale activity render a waiting state instead of claiming active work", async () => {
     const src = await goalPanelSource()
+    const en = await sourceText("../../i18n/en.ts")
     expect(src).toContain("const latestActivityAt = createMemo")
     expect(src).toContain("isGoalStalled(liveRunStatus() ?? undefined, latestActivityAt(), now())")
     expect(src).toContain("goalIdleMinutes(latestActivityAt(), now())")
     expect(src).toContain('if (status === "active") return liveRunStalled() ? "stalled" : "running"')
     expect(src).toContain('liveRunStalled() ? language.t("session.goal.chainBuilder.stalledButton")')
+    expect(en).toContain('"session.goal.activity.empty": "Waiting for the first activity event."')
+  })
+
+  test("paused and overdue display math does not keep ticking or show fake remaining time", async () => {
+    const src = await goalPanelSource()
+    expect(src).toContain('if (s.status === "paused" && typeof s.pausedAt === "number" && s.pausedAt > 0) return s.pausedAt')
+    expect(src).toContain('if (s.status === "paused") return now()')
+    expect(src).toContain('const timeMins = s.constraints.maxTimeMinutes > 0 ? s.constraints.maxTimeMinutes - elapsedMs() / 60_000 : null')
+    expect(src).toContain('language.t("session.goal.stats.timeOver")')
+    expect(src).not.toContain('const timeMins = s.constraints.maxTimeMinutes > 0 ? Math.max(0, s.constraints.maxTimeMinutes - elapsedMs() / 60_000) : null')
   })
 
   test("chain builder empty state names the real execution boundary instead of implying drag and drop", async () => {
@@ -799,7 +846,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain('class="min-h-[240px]"')
     expect(src).toContain('class="min-h-[280px]"')
     expect(src).toContain("grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)]")
-    expect(src).toContain("h-[min(100%,calc(100vh-9rem))]")
+    expect(src).toContain("max-h-[320px]")
     expect(src).toContain("overflow-y-auto overscroll-contain")
     expect(src).not.toContain("xl:h-[calc(100vh-8rem)]")
     expect(src).toContain("flex h-full min-h-0 min-w-0 flex-col p-2")
@@ -932,7 +979,7 @@ describe("goal panel mission-control contracts", () => {
     expect(src).toContain("min-h-7 shrink-0 px-2.5 text-11-medium leading-tight")
     expect(src).toContain("grid-cols-[24px_32px_minmax(0,1fr)]")
     expect(src).toContain('data-component="goal-chain-step-meta"')
-    expect(src).toContain("grid-cols-[minmax(58px,1fr)_minmax(58px,1fr)]")
+    expect(src).toContain("grid-cols-[minmax(82px,1fr)_minmax(82px,1fr)]")
     expect(src).toContain('data-component="goal-running-inline-panel"')
     expect(src).toContain("runningInlinePanelStyle")
     expect(src).toContain('role="progressbar"')
@@ -2818,8 +2865,11 @@ describe("stopGoalRun", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "native goal control bridge is unavailable; active session tree aborted before control and after control",
+      error: "native goal control bridge is unavailable; active session tree abort completed before control and after control",
     })
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error("expected stop failure")
+    expect(result.error).not.toContain("Goal cleared, but")
     expect(aborted).toEqual([
       { sessionID: "child-1", directory: "C:\\repo\\project" },
       { sessionID: "session-1", directory: "C:\\repo\\project" },
@@ -2940,8 +2990,11 @@ describe("pauseGoalRun", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "native goal control bridge is unavailable; active session tree aborted before control and after control",
+      error: "native goal control bridge is unavailable; active session tree abort completed before control and after control",
     })
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error("expected pause failure")
+    expect(result.error).not.toContain("Goal paused, but")
     expect(aborted).toEqual([{ sessionID: "session-1" }, { sessionID: "session-1" }])
   })
 })

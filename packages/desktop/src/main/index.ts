@@ -59,6 +59,7 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+let userInitiatedStop = false
 
 const pendingDeepLinks: string[] = []
 
@@ -79,6 +80,7 @@ function emitDeepLinks(urls: string[]) {
 
 async function killSidecar() {
   if (!server) return
+  userInitiatedStop = true
   const current = server
   server = null
   await current.stop()
@@ -312,43 +314,73 @@ const main = Effect.gen(function* () {
   const url = `http://${hostname}:${port}`
   const password = randomUUID()
 
-  const loadingTask = yield* Effect.gen(function* () {
-    logger.log("sidecar connection started", { url })
+  // ponytail: respawn the sidecar on any exit we didn't request. Backoff
+  // + cap so a hard-crash loop can't run away. The state we set when
+  // `killSidecar()` is the only thing distinguishing "user quit" from
+  // "sidecar died on its own."
+  const RESPAWN_BACKOFF_MS = 1500
+  const RESPAWN_MAX_ATTEMPTS = 5
+  let respawnAttempts = 0
+  let respawnTimer: NodeJS.Timeout | undefined
+  let respawning = false
+  const scheduleRespawn = () => {
+    if (respawning) return
+    if (respawnTimer) return
+    if (userInitiatedStop) return
+    if (respawnAttempts >= RESPAWN_MAX_ATTEMPTS) {
+      writeLog("utility", "sidecar respawn exhausted", { attempts: respawnAttempts }, "error")
+      return
+    }
+    const attempt = ++respawnAttempts
+    const delayMs = RESPAWN_BACKOFF_MS * attempt
+    writeLog("utility", "sidecar respawn scheduled", { attempt, delayMs }, "warn")
+    respawnTimer = setTimeout(() => {
+      respawnTimer = undefined
+      if (userInitiatedStop) return
+      if (!server) return
+      respawning = true
+      bootSidecar().catch((error) => {
+        writeLog("utility", "sidecar respawn failed", { attempt, error: String(error) }, "error")
+      }).finally(() => {
+        respawning = false
+      })
+    }, delayMs)
+  }
 
+  const bootSidecar = async () => {
+    logger.log("sidecar connection started", { url })
     ensureLoopbackNoProxy()
     useEnvProxy()
-
     logger.log("spawning sidecar", { url })
-    const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
-        userDataPath: app.getPath("userData"),
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
-      }),
-    )
+    const { listener, health } = await spawnLocalServer(hostname, port, password, {
+      userDataPath: app.getPath("userData"),
+      onStdout: (message) => writeLog("server", "stdout", { message }),
+      onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+      onExit: (code) => {
+        writeLog("utility", "sidecar exited", { code }, "warn")
+        // If `userInitiatedStop` is true, `killSidecar()` already set
+        // `server` to null and posted the stop message; any exit we see
+        // here is the user quitting. Otherwise treat as crash and respawn.
+        if (!userInitiatedStop && server) scheduleRespawn()
+      },
+    })
     server = listener
-    yield* Deferred.succeed(serverReady, {
+    userInitiatedStop = false
+    respawnAttempts = 0
+    Effect.runSync(Deferred.succeed(serverReady, {
       url,
       username: "opencode",
       password,
-    })
-
+    }))
     if (process.platform === "win32") {
       void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
     }
+    await health.wait
+      .then(() => logger.log("loading task finished"))
+      .catch((e) => logger.error("sidecar health check failed", e.toString()))
+  }
 
-    yield* Effect.promise(() => health.wait).pipe(
-      Effect.timeout("30 seconds"),
-      Effect.catch((e) =>
-        Effect.sync(() => {
-          logger.error("sidecar health check failed", e.toString())
-        }),
-      ),
-    )
-
-    logger.log("loading task finished")
-  }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
+  const loadingTask = yield* Effect.forkChild(Effect.promise(bootSidecar).pipe(forwardInitializationFailure(serverReady)))
 
   yield* Fiber.await(loadingTask)
 

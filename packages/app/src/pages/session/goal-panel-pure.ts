@@ -1572,6 +1572,28 @@ export function goalControlDiagnostics(input: {
   ]
 }
 
+export function isFreshGoalWorkspace(input: {
+  hasLiveGoal: boolean
+  hasTerminalGoal: boolean
+  archivedRuns: number
+  hasPendingHandoff: boolean
+  unreachable: boolean
+  hasControlError: boolean
+  objective: string
+  command: string
+  chainSteps: number
+}) {
+  if (input.hasLiveGoal) return false
+  if (input.hasTerminalGoal) return false
+  if (input.archivedRuns > 0) return false
+  if (input.hasPendingHandoff) return false
+  if (input.unreachable) return false
+  if (input.hasControlError) return false
+  if (input.objective.trim().length > 0) return false
+  if (input.command.trim().length > 0) return false
+  return input.chainSteps <= 0
+}
+
 function clampPositiveInteger(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return Math.max(0, Math.round(fallback))
   return Math.max(0, Math.round(value))

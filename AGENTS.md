@@ -4,6 +4,14 @@ Codex / Claude Code session-load file. Loaded at session start.
 Covers the monorepo surface: this repo (GUI + AutoGoal plugin + Desktop shell).
 Current as of 2026-06-22. Sources cited inline.
 
+## Tessl repo-local context
+
+If `tessl.json` exists in this repo, inspect installed plugin skills under
+`.tessl/plugins/**/SKILL.md` before non-trivial work. Do not assume
+`.tessl/RULES.md` exists — this repo may use skill-only Tessl plugins.
+The current repo-local Tessl plugin surface is part of the working context,
+not optional decoration.
+
 ---
 
 ## AutoGoal repository authority

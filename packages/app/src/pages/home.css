@@ -1,0 +1,129 @@
+@layer components {
+  [data-component="home-shell"] {
+    --bg-app: #05070d;
+    --bg-shell: color-mix(in srgb, var(--v2-background-bg-deep) 64%, #03050b 36%);
+    --bg-panel:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
+      color-mix(in srgb, var(--v2-background-bg-layer-01) 74%, rgba(6, 10, 18, 0.96));
+    --bg-panel-hover:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+      color-mix(in srgb, var(--v2-background-bg-layer-02) 74%, rgba(9, 13, 22, 0.98));
+    --bg-panel-elevated:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+      color-mix(in srgb, var(--v2-background-bg-layer-02) 82%, rgba(10, 15, 26, 0.99));
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-medium: rgba(255, 255, 255, 0.12);
+    --text-primary: color-mix(in srgb, var(--v2-text-text-base) 96%, white 4%);
+    --text-secondary: color-mix(in srgb, var(--v2-text-text-base) 76%, var(--v2-text-text-muted));
+    --text-muted: color-mix(in srgb, var(--v2-text-text-muted) 88%, rgba(255, 255, 255, 0.12));
+    --accent-primary: #707cff;
+    --accent-secondary: #63c9ff;
+    --accent-warning: #ffbf5a;
+    --shadow-soft:
+      0 28px 64px rgba(0, 0, 0, 0.28),
+      0 10px 28px rgba(0, 0, 0, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+    --radius-xl: 24px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    color: var(--text-primary);
+    font-feature-settings: "cv01", "ss03";
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"],
+  [data-component="home-shell"] [data-component="icon-button-v2"],
+  [data-component="home-shell"] [data-component="home-metric-card"],
+  [data-component="home-shell"] [data-component="home-project-row"],
+  [data-component="home-shell"] [data-component="home-session-row"],
+  [data-component="home-shell"] [data-component="home-session-search-row"],
+  [data-component="home-shell"] [data-component="home-control-tile"] {
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      transform 140ms ease,
+      opacity 140ms ease,
+      box-shadow 140ms ease,
+      color 140ms ease;
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"][data-size="normal"] {
+    height: 34px;
+    padding-inline: 14px;
+    border-radius: var(--radius-sm);
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"][data-size="large"] {
+    height: 36px;
+    padding-inline: 15px;
+    border-radius: var(--radius-sm);
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"][data-variant="neutral"] {
+    border: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"][data-variant="contrast"] {
+    box-shadow:
+      0 14px 30px rgba(74, 86, 195, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"][data-variant="ghost-muted"],
+  [data-component="home-shell"] [data-component="icon-button-v2"][data-variant="ghost-muted"] {
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+  }
+
+  [data-component="home-shell"] [data-component="icon-button-v2"][data-size="large"] {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"]:is(:hover, [data-state="hover"]):not(:disabled),
+  [data-component="home-shell"] [data-component="icon-button-v2"]:is(:hover, [data-state="hover"]):not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled),
+  [data-component="home-shell"] [data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled) {
+    border-color: var(--border-subtle);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  [data-component="home-shell"] [data-component="button-v2"][data-variant="neutral"]:is(:hover, [data-state="hover"]):not(:disabled) {
+    border-color: var(--border-medium);
+    background: rgba(255, 255, 255, 0.055);
+  }
+
+  [data-component="home-shell"] [data-component="home-metric-card"][data-tone="default"] [data-slot="home-metric-glow"] {
+    background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--accent-primary) 18%, transparent), transparent 38%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 28%);
+  }
+
+  [data-component="home-shell"] [data-component="home-metric-card"][data-tone="warning"] [data-slot="home-metric-glow"] {
+    background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--accent-warning) 22%, transparent), transparent 38%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 28%);
+  }
+
+  [data-component="home-shell"] [data-component="home-control-tile"][data-emphasis="true"] {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 74%);
+  }
+
+  [data-component="home-shell"] [data-component="home-project-tree"] [data-selected] {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent-primary) 18%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+}

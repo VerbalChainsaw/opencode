@@ -69,63 +69,55 @@ describe("home mission-control contract", () => {
     }
   })
 
-  test("defines the primary action box labels (routed through i18n)", async () => {
-    // The home page action box renders four primary action buttons
-    // (New Session / Resume Last / Open Goal / Open Project). After
-    // the i18n refactor, the button labels are NOT hardcoded English
-    // — they're routed through the language.t() layer using
-    // home.actions.* keys. This test asserts the i18n key references
-    // exist in the source (so a future refactor can't quietly drop
-    // them) and that no raw English label appears in the button label
-    // markup.
+  test("defines the surviving primary action labels through i18n", async () => {
+    // The dashboard keeps only the actions that still earn their space in
+    // the hero / board chrome. They must stay routed through language.t().
     const src = await home()
-    // The i18n key references must be present in the source.
     for (const key of [
       "home.actions.newSession",
       "home.actions.resumeLast",
-      "home.actions.openGoal",
-      "home.actions.openGoal.disabled",
       "home.actions.openProject",
     ]) {
       expect(src).toContain(key)
     }
-    // And none of the labels appear as raw `>Label<` markup.
-    for (const label of ["New Session", "Resume Last", "Open Goal", "Open Project"]) {
+    for (const label of ["New Session", "Resume Last", "Open Project"]) {
       const pattern = new RegExp(`>\\s*${label}\\s*<`)
       expect(pattern.test(src)).toBe(false)
     }
+    expect(src).not.toContain('home.actions.openGoal.disabled')
   })
 
-  test("ships the latestGoalRecord memo for the Open Goal button", async () => {
+  test("ships the active-goal records memo for the goals surfaces", async () => {
     expect(await hasTopLevel("HomeDesign")).toBe(true)
-    expect(await uses("latestGoalRecord")).toBe(true)
+    expect(await uses("activeGoalRecords")).toBe(true)
   })
 
-  test("home quick actions prioritize Open Goal when goal state exists", async () => {
+  test("home removes the redundant control deck and keeps attention as the only side pod", async () => {
     const src = await home()
-    const actionsStart = src.indexOf('data-component="home-actions-panel"')
-    const actionsEnd = src.indexOf('data-component="home-attention-panel"', actionsStart)
-    expect(actionsStart).toBeGreaterThan(-1)
-    expect(actionsEnd).toBeGreaterThan(actionsStart)
-    const actions = src.slice(actionsStart, actionsEnd)
-    expect(actions).toContain('data-action="home-sidebar-open-goal"')
-    expect(actions).toMatch(/data-action="home-sidebar-open-goal"[\s\S]*variant=\{latestGoalRecord\(\) \? "contrast" : "ghost-muted"\}/)
-    expect(actions).toContain('aria-describedby={!latestGoalRecord() ? "home-open-goal-disabled-reason" : undefined}')
-    expect(actions).toContain('data-component="home-open-goal-disabled-reason"')
-    expect(actions).toContain('language.t("home.actions.openGoal.disabled")')
-    expect(actions.indexOf('data-action="home-sidebar-open-goal"')).toBeLessThan(actions.indexOf('data-action="home-sidebar-new-session"'))
+    expect(src).not.toContain('data-component="home-actions-panel"')
+    expect(src).not.toContain('data-component="home-open-goal-disabled-reason"')
+    expect(src).toContain('data-component="home-attention-panel"')
+    expect(src).toContain('attentionRecords().slice(0, 4)')
   })
 
-  test("home opening window has the OpenCode brand strip and primary action buttons", async () => {
+  test("home opening window keeps the branded shell, responsive layout, and primary utilities", async () => {
     const src = await home()
+    expect(src).toContain('data-component="home-shell"')
     expect(src).toContain('data-component="home-brand-strip"')
     expect(src).toContain("<Logo")
     expect(src).toContain('language.t("app.name.desktop")')
     expect(src).toContain('language.t("home.header.subtitle")')
+    expect(src).toContain("rounded-[var(--radius-xl)]")
+    expect(src).toContain("max-w-[1360px]")
+    expect(src).toContain("lg:grid-cols-[252px_minmax(0,1fr)]")
+    expect(src).toContain("tracking-[-0.05em]")
+    expect(src).toContain("const HOME_PANEL_GLOW =")
+    expect(src).toContain("shadow-[var(--shadow-soft)]")
     expect(src).toContain('data-action="home-primary-new-session"')
     expect(src).toContain('data-action="home-primary-open-project"')
     expect(src).toContain('data-action="home-header-settings"')
     expect(src).toContain('data-action="home-header-help"')
+    expect(src).not.toContain('liveSessionCount()}</span>')
     expect(src).toMatch(/data-action="home-primary-new-session"[\s\S]{0,350}onClick=\{openNewSession\}/)
     expect(src).toMatch(/data-action="home-primary-open-project"[\s\S]{0,450}chooseProject\(focusedServer\(\)!\)/)
     expect(src).toMatch(/data-action="home-header-settings"[\s\S]{0,350}onClick=\{openSettings\}/)
@@ -234,7 +226,7 @@ describe("home mission-control contract", () => {
     expect(src).toContain("const attentionLoading = createMemo")
     expect(attentionCard![0]).toContain("disabled={attentionCount() === 0 || attentionLoading()}")
 
-    const aside = src.match(/<For each=\{attentionRecords\(\)\.slice\(0, 3\)\}>[\s\S]{0,2500}/)
+    const aside = src.match(/<For each=\{attentionRecords\(\)\.slice\(0, 4\)\}>[\s\S]{0,2500}/)
     expect(aside).toBeTruthy()
     expect(aside![0]).toMatch(/openAttentionRecord\(record\)/)
     expect(aside![0]).toContain("record.reason")
@@ -339,7 +331,7 @@ describe("home mission-control contract", () => {
     expect(sessionsCard).toBeTruthy()
     expect(sessionsCard![0]).toMatch(/onClick=\{/)
     // Specifically: it must trigger the search, not a dialog
-    expect(sessionsCard![0]).toMatch(/setState\("searchFocused"/)
+    expect(sessionsCard![0]).toContain("onClick={focusSessionSearchControl}")
   })
 
   test("project selection opens the owning project and keeps it selected", async () => {
@@ -463,9 +455,9 @@ describe("home mission-control contract", () => {
     expect(board).toContain("flex")
     expect(board).toContain("flex-col")
     expect(board).toContain("overflow-hidden")
-    expect(board).toContain("min-h-[240px]")
+    expect(board).toContain("min-h-[300px]")
     expect(board).toContain('data-component="home-live-board-scroll"')
-    expect(src).toContain("grid-rows-[minmax(240px,1fr)_auto]")
+    expect(src).toContain("xl:grid-cols-[minmax(0,1fr)_224px]")
     expect(board).toMatch(/<ScrollView[^>]*class="[^"]*min-h-0[^"]*flex-1[^"]*overflow-hidden/)
   })
 
@@ -473,13 +465,15 @@ describe("home mission-control contract", () => {
     const src = await home()
     const tree = src.slice(src.indexOf('data-component="home-project-tree"'), src.indexOf('data-component="home-project-row"'))
     expect(tree).toContain('data-component="home-project-tree"')
-    expect(tree).toContain("rounded-lg")
+    expect(src).toContain("const HOME_PANEL =")
+    expect(src).toContain("const HOME_PANEL_GLOW =")
+    expect(tree).toContain("class={`${HOME_PANEL} flex min-h-0 flex-1 min-w-0 flex-col gap-1.5 p-2`}")
+    expect(tree).toContain("class={HOME_PANEL_GLOW}")
     expect(tree).toContain("flex-1")
-    expect(tree).toContain("overflow-hidden")
     expect(src).toContain("overflow-y-auto")
-    expect(tree).toContain("border-v2-border-border-base")
     expect(tree).toContain("props.projects.length")
-    expect(src).toContain("data-[selected]:border-l-sky-400")
+    expect(src).toContain("data-[selected]:border-[color:var(--border-medium)]")
+    expect(src).toContain("data-[selected]:[background:var(--bg-panel-elevated)]")
     expect(src).toContain("border border-transparent")
     expect(src).toContain("props.unseenCount > 0")
   })
@@ -506,12 +500,35 @@ describe("home mission-control contract", () => {
 
   test("home polish uses consistent rounded panels and neutral warning surfaces", async () => {
     const src = await home()
-    expect(src).toContain('data-component="home-actions-panel" class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01')
-    expect(src).toContain('data-component="home-attention-panel" class="rounded-lg border border-v2-border-border-base border-l-amber-400/60 bg-v2-background-bg-layer-01')
+    expect(src).not.toContain('data-component="home-actions-panel"')
+    expect(src).toContain('data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-3`}')
     expect(src).toContain('data-component="home-live-board"')
-    expect(src).toContain("rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01")
-    expect(src).not.toMatch(/rounded-\[(10|12|6|5|3)px\]/)
+    expect(src).toContain('class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3.5 pb-3.5 pt-3.5 xl:min-h-0`}')
+    expect(src).toContain("rounded-[var(--radius-xl)]")
+    expect(src).toContain("rounded-[var(--radius-md)]")
     expect(src).not.toContain("bg-amber-500/8")
     expect(src).not.toContain("bg-amber-500/12")
+    expect(src).not.toContain("border-l-amber-400/60")
+  })
+
+  test("attention rail copy stays readable instead of truncating inside cramped panels", async () => {
+    const src = await home()
+    const attention = src.slice(src.indexOf('data-component="home-attention-panel"'), src.indexOf("function HomeMetricCard"))
+    expect(attention).toContain("whitespace-normal break-words text-[12px] leading-5 text-[color:var(--text-primary)]")
+    expect(attention).toContain("whitespace-normal break-words text-[11px] leading-5 text-[color:var(--text-muted)]")
+  })
+
+  test("top metric tiles stay squat and sleek instead of ballooning vertically", async () => {
+    const src = await home()
+    expect(src).toContain('min-h-[88px]')
+    expect(src).toContain('text-[30px]')
+  })
+
+  test("live board and side rails are denser so more records fit on screen", async () => {
+    const src = await home()
+    expect(src).toContain('class={`${HOME_ROW} h-9 gap-2.5 rounded-none bg-transparent px-4 py-2 pl-3.5`}')
+    expect(src).toContain('attentionRecords().slice(0, 4)')
+    expect(src).toContain('class="group/project relative flex h-9 min-w-0 items-center')
+    expect(src).toContain('class="group/server relative flex h-8 min-w-0 items-center')
   })
 })

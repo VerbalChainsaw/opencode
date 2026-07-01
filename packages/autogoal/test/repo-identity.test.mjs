@@ -133,9 +133,9 @@ function isMsysBash(exe) {
 function scriptArgForBash(bashExe) {
   if (process.platform !== "win32") return script;
   // WSL bash sees Windows at /mnt/<drive>; msys2 / Git Bash sees it at /<drive>/.
-  const prefix = isMsysBash(bashExe) ? posix.sep : "/mnt";
+  const drivePrefix = isMsysBash(bashExe) ? posix.sep : "/mnt/";
   return script
-    .replace(/^([A-Za-z]):([\\/])/, (_, drive, sep) => `${prefix}${drive.toLowerCase()}${sep}`)
+    .replace(/^([A-Za-z]):[\\/]/, (_, drive) => `${drivePrefix}${drive.toLowerCase()}/`)
     .split(win32.sep)
     .join(posix.sep);
 }

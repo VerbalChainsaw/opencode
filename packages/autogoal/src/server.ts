@@ -108,6 +108,8 @@ const CONFIG = {
   debug: process.env.OPENGOAL_DEBUG === "1" || process.env.OPENGOAL_DEBUG === "true",
 };
 
+const CONSTRAINT_WATCHDOG_MS = 15_000;
+
 // Minimal fallback template; the real work happens in command.execute.before.
 // If a host ever runs this text, keep it inert: slash command state changes are
 // already applied by the hook and must not become a second conversational goal.
@@ -807,16 +809,70 @@ export function recordStepEvaluation(
   appendStepTimelineEvent(directory, ev);
 }
 
-export function detectConstraintStop(state: GoalState): { exceeded: boolean; reason: string } {
+export function detectConstraintStop(state: GoalState, now: number = Date.now()): { exceeded: boolean; reason: string } {
   const c = state.constraints;
   if (state.turnsEvaluated >= c.maxTurns)
     return { exceeded: true, reason: `Turn limit reached: ${state.turnsEvaluated}/${c.maxTurns} turns` };
-  const elapsedMin = (Date.now() - state.startedAt) / 60_000;
+  const elapsedMin = (now - state.startedAt) / 60_000;
   if (elapsedMin >= c.maxTimeMinutes)
     return { exceeded: true, reason: `Time limit reached: ${Math.round(elapsedMin)}/${c.maxTimeMinutes} minutes` };
   if (c.maxTokens > 0 && state.tokensUsed >= c.maxTokens)
     return { exceeded: true, reason: `Token limit reached: ${state.tokensUsed}/${c.maxTokens} tokens` };
   return { exceeded: false, reason: "" };
+}
+
+function recordEvaluation(state: GoalState, evaluation: GoalEvaluation): void {
+  state.turnsEvaluated++;
+  state.lastEvaluation = evaluation;
+  state.evaluationHistory.push(evaluation);
+  if (state.evaluationHistory.length > 10) state.evaluationHistory.shift();
+}
+
+export type ConstraintClearResult =
+  | { status: "cleared"; reason: string; state: GoalState }
+  | { status: "not-exceeded" }
+  | { status: "stale" }
+  | { status: "corrupt"; reason: string }
+
+export async function clearExceededActiveGoal(
+  directory: string,
+  now: number = Date.now(),
+  expectedGoalId?: string,
+): Promise<ConstraintClearResult> {
+  return withStateLock(directory, () => {
+    const freshResult = readGoalStateResult(directory);
+    if (freshResult.kind === "corrupt") return { status: "corrupt", reason: freshResult.reason } as const;
+    const f = freshResult.kind === "ok" ? freshResult.value : null;
+    if (!f || f.status !== "active") return { status: "stale" } as const;
+    if (expectedGoalId && f.id !== expectedGoalId) return { status: "stale" } as const;
+    const constraint = detectConstraintStop(f, now);
+    if (!constraint.exceeded) return { status: "not-exceeded" } as const;
+
+    const evaluation: GoalEvaluation = {
+      met: false,
+      reason: constraint.reason,
+      confidence: 1.0,
+      timestamp: now,
+      evaluatorType: "deterministic",
+    };
+    f.status = "cleared";
+    f.completedAt = now;
+    recordEvaluation(f, evaluation);
+    recordStepEvaluation(directory, {
+      at: evaluation.timestamp,
+      turn: Math.max(0, f.turnsEvaluated - 1),
+      label: "constraint-clear",
+      evaluation: {
+        met: false,
+        blocked: false,
+        reason: evaluation.reason,
+        evaluatorType: evaluation.evaluatorType,
+      },
+    });
+    writeGoalStateAtomic(directory, f);
+    appendGoalArchive(directory, f, "cleared");
+    return { status: "cleared", reason: constraint.reason, state: f } as const;
+  });
 }
 
 /**
@@ -1614,13 +1670,6 @@ export const server: Plugin = async ({ client, directory }) => {
     });
   }
 
-  function recordEvaluation(state: GoalState, evaluation: GoalEvaluation): void {
-    state.turnsEvaluated++;
-    state.lastEvaluation = evaluation;
-    state.evaluationHistory.push(evaluation);
-    if (state.evaluationHistory.length > 10) state.evaluationHistory.shift();
-  }
-
   // v0.7.0 (A4) — write a step-timeline event alongside every recorded
   // evaluation. Calls the exported recordStepEvaluation (which itself
   // delegates to the best-effort appendStepTimelineEvent). The turn
@@ -1651,29 +1700,39 @@ export const server: Plugin = async ({ client, directory }) => {
     state: GoalState,
     now: number,
   ): Promise<{ cleared: true; reason: string; state: GoalState } | { cleared: false } | null> {
-    return withStateLock(directory, () => {
-      const freshResult = readGoalStateResult(directory);
-      if (freshResult.kind === "corrupt") {
-        log("error", "skipping constraint check: goal state file is corrupt", {
-          goalId: state.id,
-          reason: freshResult.reason,
-          quarantined: listCorruptArtifacts(directory)[0] ?? null,
-        });
-        return null;
-      }
-      const f = freshResult.kind === "ok" ? freshResult.value : null;
-      if (!f || f.status !== "active" || f.id !== state.id) return null;
-      const constraint = detectConstraintStop(f);
-      if (!constraint.exceeded) return { cleared: false };
-      f.status = "cleared";
-      f.completedAt = now;
-      f.lastEvaluation = { met: false, reason: constraint.reason, confidence: 1.0, timestamp: now, evaluatorType: "deterministic" };
-      recordEvaluation(f, f.lastEvaluation);
-      recordTimelineFor(f, f.lastEvaluation, "constraint-clear");
-      writeGoalStateAtomic(directory, f);
-      return { cleared: true, reason: constraint.reason, state: f };
-    });
+    const result = await clearExceededActiveGoal(directory, now, state.id);
+    if (result.status === "corrupt") {
+      log("error", "skipping constraint check: goal state file is corrupt", {
+        goalId: state.id,
+        reason: result.reason,
+        quarantined: listCorruptArtifacts(directory)[0] ?? null,
+      });
+      return null;
+    }
+    if (result.status === "stale") return null;
+    if (result.status === "not-exceeded") return { cleared: false };
+    return { cleared: true, reason: result.reason, state: result.state };
   }
+
+  let constraintWatchdogRunning = false;
+  const constraintWatchdog = setInterval(() => {
+    if (constraintWatchdogRunning) return;
+    constraintWatchdogRunning = true;
+    void clearExceededActiveGoal(directory, Date.now())
+      .then((result) => {
+        if (result.status !== "cleared") return;
+        fireWebhook(result.state, "active");
+        const sessionId = result.state.metadata.sessionId;
+        if (sessionId) void notify(sessionId, "Goal stopped", result.reason, "warning");
+      })
+      .catch((error) => {
+        log("error", "constraint watchdog failed", { error: String(error) });
+      })
+      .finally(() => {
+        constraintWatchdogRunning = false;
+      });
+    }, 30_000);
+  constraintWatchdog.unref?.();
 
   // Checks the latest assistant transcript for a GOAL_BLOCKED marker. If found,
   // pauses the goal and returns the paused state. If not found, returns the

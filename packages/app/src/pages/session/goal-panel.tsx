@@ -90,6 +90,7 @@ import {
   handoffOriginLabel,
   goalControlQuotedArg,
   goalInterruptionWarningKey,
+  isFreshGoalWorkspace,
   isGoalPinnedModel,
   steerDraftDisposition,
   templateModelFromSnapshot,
@@ -161,11 +162,11 @@ const ACTION_SKILL_LIMIT = 8
 // same shape.
 export type GoalStore = import("./goal-panel-pure").GoalStore
 
-function goalStateForSession(state: GoalState | null, sessionID?: string) {
+export function goalStateForSession(state: GoalState | null, sessionID?: string) {
   if (!state || !sessionID) return state
   const metadata = (state as GoalState & { metadata?: { sessionId?: unknown } }).metadata
   const owner = typeof metadata?.sessionId === "string" ? cleanText(metadata.sessionId).trim() : ""
-  if (!owner) return state
+  if (!owner) return null
   return owner === sessionID ? state : null
 }
 
@@ -1660,7 +1661,12 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
 
   createEffect(() => {
-    writeStoredChainDraft(props.sessionID, {
+    // Use loadedDraftSessionID instead of props.sessionID so the draft
+    // always persists to the session it was loaded for, not the one that
+    // happens to be active when the effect fires. Using the reactive prop
+    // could write Session A's draft into Session B's storage key if the
+    // session ID changes before the effect body runs.
+    writeStoredChainDraft(loadedDraftSessionID(), {
       // AG-P0-04 — persist `source` so the explicit-empty state survives
       // a reload. Without this, a reload of a `{source: "draft", steps: []}`
       // would round-trip through defaultChainDraft() and become
@@ -2788,10 +2794,22 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   })
   onCleanup(() => clearInterval(elapsedTickTimer))
 
+  // The "end" instant for elapsed-time display. A PAUSED goal must FREEZE at
+  // pausedAt — otherwise the clock keeps ticking while paused (observed: a
+  // paused goal showing "53:07/20m"). The server advances startedAt by the
+  // paused duration on resume, so once active again `now - startedAt` is the
+  // true working time; while paused we clamp the end to pausedAt.
+  const effectiveGoalEnd = (s: GoalState): number => {
+    if (s.completedAt != null) return s.completedAt
+    if (s.status === "paused" && typeof s.pausedAt === "number" && s.pausedAt > 0) return s.pausedAt
+    if (s.status === "paused") return now()
+    return hasLiveGoal() ? elapsedTick() : now()
+  }
+
   const progressElapsed = createMemo(() => {
     const s = state()
     if (!s) return 0
-    return Math.max(0, (s.completedAt ?? (hasLiveGoal() ? elapsedTick() : now())) - s.startedAt)
+    return Math.max(0, effectiveGoalEnd(s) - s.startedAt)
   })
 
   const progressPct = createMemo(() => {
@@ -2842,8 +2860,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const elapsedMs = createMemo(() => {
     const s = state()
     if (!s) return 0
-    const end = s.completedAt ?? (hasLiveGoal() ? elapsedTick() : now())
-    return Math.max(0, end - s.startedAt)
+    return Math.max(0, effectiveGoalEnd(s) - s.startedAt)
   })
 
   const elapsedMinutes = createMemo(() => Math.round(elapsedMs() / 60_000))
@@ -3168,9 +3185,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const constraintHeadroom = createMemo(() => {
     const s = state()
     if (!s || !hasLiveGoal()) return null
-    const turns = s.constraints.maxTurns > 0 ? Math.max(0, s.constraints.maxTurns - s.turnsEvaluated) : null
-    const timeMins = s.constraints.maxTimeMinutes > 0 ? Math.max(0, s.constraints.maxTimeMinutes - elapsedMs() / 60_000) : null
-    const tokens = s.constraints.maxTokens > 0 ? Math.max(0, s.constraints.maxTokens - s.tokensUsed) : null
+    const turns = s.constraints.maxTurns > 0 ? s.constraints.maxTurns - s.turnsEvaluated : null
+    const timeMins = s.constraints.maxTimeMinutes > 0 ? s.constraints.maxTimeMinutes - elapsedMs() / 60_000 : null
+    const tokens = s.constraints.maxTokens > 0 ? s.constraints.maxTokens - s.tokensUsed : null
     if (turns === null && timeMins === null && tokens === null) return null
     return { turns, timeMins, tokens }
   })
@@ -3436,7 +3453,29 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
       hasCorruptState: !!props.goal.store.corrupt,
     }),
   )
+  const showControlDiagnostics = createMemo(() =>
+    !!liveGoal() ||
+    !!unarchivedTerminalGoal() ||
+    hasRunnableChain() ||
+    !!chainDraft.objective.trim() ||
+    !!handoff().handoff ||
+    !!props.goal.store.corrupt ||
+    !!props.goal.store.unreachable,
+  )
   const visibleControlDiagnostics = createMemo(() => controlDiagnostics().filter((item) => item.state !== "hidden"))
+  const freshGoalCanvas = createMemo(() =>
+    isFreshGoalWorkspace({
+      hasLiveGoal: !!liveGoal(),
+      hasTerminalGoal: !!unarchivedTerminalGoal(),
+      archivedRuns: archive().length,
+      hasPendingHandoff: !!handoff().handoff,
+      unreachable: !!props.goal.store.unreachable,
+      hasControlError: !!controlError(),
+      objective: chainDraft.objective,
+      command: newCommand(),
+      chainSteps: visibleStepCount(),
+    }),
+  )
   const diagnosticStateLabel = (value: GoalControlDiagnosticState) => {
     switch (value) {
       case "available":
@@ -3614,7 +3653,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
   const outcomeLabel = (outcome: string) => outcomeLabelOf(outcome)
 
   return (
-    <div class="flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto" aria-label={language.t("session.tab.goal")}>
+    <div class="flex flex-col gap-3 p-4 flex-1 min-h-0" aria-label={language.t("session.tab.goal")}>
       <style>{`@keyframes goal-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }`}</style>
       <Show when={shortcutHelpOpen()}>
         <div
@@ -3697,11 +3736,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
           </div>
         </Match>
         <Match when={props.goal.store.loaded && !props.goal.store.corrupt}>
-          <div data-component="goal-playbook-workspace" class="flex min-h-0 min-w-0 flex-col gap-3 pb-2">
+          <div data-component="goal-playbook-workspace" class="flex min-h-0 min-w-0 flex-1 flex-col gap-3 pb-2">
             <div
               data-testid="chain-workspace"
               data-component="goal-chain-builder-workspace"
-              class="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"
+              class="grid min-h-0 min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] items-stretch gap-3 overflow-x-hidden overflow-y-auto overscroll-contain"
             >
               <section
                 data-testid="goal-status-card"
@@ -3903,7 +3942,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                   <span class="min-w-0 flex-1">{language.t("session.goal.backendUnreachable")}</span>
                 </div>
               </Show>
-              <Show when={visibleControlDiagnostics().length > 0}>
+              <Show when={showControlDiagnostics() && !freshGoalCanvas() && visibleControlDiagnostics().length > 0}>
                 <section
                   data-component="goal-control-diagnostics"
                   class="col-span-full rounded-lg border p-2.5"
@@ -4681,7 +4720,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                           "background-color": t() <= 2 ? "rgba(248, 113, 113, 0.12)" : "rgba(167, 139, 250, 0.1)",
                                         }}
                                       >
-                                        {t()} {language.t("session.goal.stats.turnsLeft")}
+                                        {Math.max(0, t())} {language.t("session.goal.stats.turnsLeft")}
                                       </span>
                                     )
                                   })()}
@@ -4697,7 +4736,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                           "background-color": m() < 1 ? "rgba(248, 113, 113, 0.12)" : "rgba(96, 165, 250, 0.1)",
                                         }}
                                       >
-                                        {m() < 1 ? "<1" : Math.round(m())}m {language.t("session.goal.stats.timeLeft")}
+                                        {m() <= 0
+                                          ? `${Math.round(Math.abs(m()))}m ${language.t("session.goal.stats.timeOver")}`
+                                          : `${m() < 1 ? "<1" : Math.round(m())}m ${language.t("session.goal.stats.timeLeft")}`}
                                       </span>
                                     )
                                   })()}
@@ -4713,7 +4754,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                           "background-color": tok() < 1000 ? "rgba(248, 113, 113, 0.12)" : "rgba(251, 191, 36, 0.1)",
                                         }}
                                       >
-                                        {formatTokens(tok())} {language.t("session.goal.stats.tokensLeft")}
+                                        {formatTokens(Math.max(0, tok()))} {language.t("session.goal.stats.tokensLeft")}
                                       </span>
                                     )
                                   })()}
@@ -5364,9 +5405,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                   >
                                     {actionCategoryShortLabel(inferActionCategory(step))}
                                   </span>
-                                  <span data-component="goal-chain-step-budget" class="grid w-[126px] shrink-0 grid-cols-[minmax(58px,1fr)_minmax(58px,1fr)] gap-1">
+                                  <span data-component="goal-chain-step-budget" class="grid w-[172px] shrink-0 grid-cols-[minmax(82px,1fr)_minmax(82px,1fr)] gap-1">
                                     <label
-                                      class="grid h-6 grid-cols-[30px_minmax(26px,1fr)] items-center gap-1"
+                                      class="grid h-6 grid-cols-[34px_minmax(32px,1fr)] items-center gap-1"
                                     >
                                       <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepTurns")}</span>
                                       <input
@@ -5378,11 +5419,11 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                         onInput={(event) =>
                                           updateDraftStepBudget(step.id, "maxTurns", event.currentTarget.value)
                                         }
-                                        class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                        class="h-6 w-full min-w-8 appearance-none rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                       />
                                     </label>
                                     <label
-                                      class="grid h-6 grid-cols-[22px_minmax(30px,1fr)] items-center gap-1"
+                                      class="grid h-6 grid-cols-[28px_minmax(32px,1fr)] items-center gap-1"
                                     >
                                       <span class="text-[9px] font-semibold uppercase text-sky-100/70">{language.t("session.goal.chainBuilder.stepMinutes")}</span>
                                       <input
@@ -5394,7 +5435,7 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                                         onInput={(event) =>
                                           updateDraftStepBudget(step.id, "maxTimeMinutes", event.currentTarget.value)
                                         }
-                                        class="h-6 w-full min-w-0 rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35"
+                                        class="h-6 w-full min-w-8 appearance-none rounded-md border border-sky-200/14 bg-sky-950/16 px-0.5 text-center text-11-medium font-semibold tabular-nums text-text-base outline-none focus:border-sky-200/35 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                       />
                                     </label>
                                   </span>
@@ -5745,11 +5786,9 @@ export function GoalPanel(props: { goal: { store: GoalStore; refresh: () => Prom
                 </GoalConsoleSection>
               </Show>
               </div>
-
-
                 <aside
                   data-component="goal-method-library-rail"
-                  class="grid h-[min(100%,calc(100vh-9rem))] min-h-[520px] min-w-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-hidden"
+                  class="grid max-h-[320px] min-w-0 flex-shrink-0 grid-cols-1 grid-rows-[minmax(220px,0.95fr)_minmax(260px,1.05fr)] gap-2 overflow-y-auto overflow-x-hidden overscroll-contain"
                 >
                   <GoalConsoleSection
                     zone="action-library"
