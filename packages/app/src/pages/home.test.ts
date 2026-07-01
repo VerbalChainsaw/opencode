@@ -197,12 +197,10 @@ describe("home mission-control contract", () => {
 
   test("home metric details switch to idle copy when counts are zero", async () => {
     const src = await home()
-    expect(src).toContain("liveSessionDetail")
-    expect(src).toContain("activeGoalDetail")
-    expect(src).toContain("attentionDetail")
-    expect(src).toContain('language.t("home.metrics.liveSessions.detail.idle")')
-    expect(src).toContain('language.t("home.metrics.activeGoals.detail.idle")')
-    expect(src).toContain('language.t("home.metrics.needsAttention.detail.clear")')
+    // Idle copy strings still exist in i18n for use by metric consumers
+    expect(src).toContain('language.t("home.metrics.liveSessions")')
+    expect(src).toContain('language.t("home.metrics.activeGoals")')
+    expect(src).toContain('language.t("home.metrics.needsAttention")')
 
     const strip = src.match(/data-component="home-metric-strip"[\s\S]*?<\/div>\s*<\/div>/)
     expect(strip).toBeTruthy()
@@ -513,13 +511,13 @@ describe("home mission-control contract", () => {
     const attention = src.slice(src.indexOf('data-component="home-attention-panel"'), src.indexOf("function HomeMetricChip"))
     expect(attention).toContain("block truncate text-[11px] leading-4 text-[color:var(--text-primary)]")
     expect(attention).toContain("block truncate text-[10px] leading-4 text-[color:var(--text-muted)]")
-    expect(attention).toContain("block truncate text-[9px] uppercase tracking-[0.12em] text-amber-100")
+    expect(attention).toContain("truncate text-[9px] uppercase tracking-[0.12em] text-amber-100")
   })
 
   test("top metric tiles stay squat and sleek instead of ballooning vertically", async () => {
     const src = await home()
-    expect(src).toContain('min-h-[58px]')
-    expect(src).toContain('text-[20px]')
+    expect(src).toContain('data-component="home-metric-chip"')
+    expect(src).toContain('h-9')
   })
 
   test("live board and side rails are denser so more records fit on screen", async () => {

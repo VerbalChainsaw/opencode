@@ -86,6 +86,8 @@ const HOME_SEARCH_RESULT_TITLE =
   "min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-4 tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:540]"
 const HOME_SEARCH_RESULT_META =
   "min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-4 tracking-[0.01em] text-[color:var(--text-muted)] [font-weight:450]"
+const HOME_QUICK_ACTION =
+  "flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 text-left text-[12px] tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:500] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] focus-visible:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none"
 
 let pendingHomeNavigation: { server: ServerConnection.Key; href: string } | undefined
 
@@ -283,15 +285,6 @@ function HomeDesign() {
   const attentionCount = createMemo(() => attentionRecords().length)
   const attentionLoading = createMemo(
     () => (sessionLoad.isLoading && sessionLoad.data === undefined) || (goalLoad.isLoading && goalLoad.data === undefined),
-  )
-  const liveSessionDetail = createMemo(() =>
-    liveSessionCount() > 0 ? language.t("home.metrics.liveSessions.detail") : language.t("home.metrics.liveSessions.detail.idle"),
-  )
-  const activeGoalDetail = createMemo(() =>
-    activeGoalCount() > 0 ? language.t("home.metrics.activeGoals.detail") : language.t("home.metrics.activeGoals.detail.idle"),
-  )
-  const attentionDetail = createMemo(() =>
-    attentionCount() > 0 ? language.t("home.metrics.needsAttention.detail") : language.t("home.metrics.needsAttention.detail.clear"),
   )
   const latestRecord = createMemo(() => records()[0])
 
@@ -500,7 +493,7 @@ function HomeDesign() {
       response: { label: "MSG", color: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" },
       project: { label: "PROJ", color: "bg-slate-500/15 text-slate-300 border-slate-500/25" },
     }
-    return map[kind]
+    return map[kind] ?? { label: kind.toUpperCase(), color: "bg-slate-500/15 text-slate-300 border-slate-500/25" }
   }
 
   function openAttentionRecord(record: HomeAttentionRecord) {
@@ -890,9 +883,11 @@ function HomeDesign() {
                                       <span class="block truncate text-[11px] leading-4 text-[color:var(--text-primary)] [font-weight:560]">
                                         {record.session ? sessionTitle(record.session.title) || record.session.id : record.projectName}
                                       </span>
-                                      <span class="mt-0.5 block truncate text-[9px] uppercase tracking-[0.12em] text-amber-100 [font-weight:620]">
-                                        {record.reason}
-                                        <span class={`ml-1.5 inline-flex items-center rounded border px-1 py-px text-[7px] leading-3 [font-weight:600] ${attentionKindBadge(record.kind).color}`}>
+                                      <span class="mt-0.5 flex items-center gap-1.5">
+                                        <span class="truncate text-[9px] uppercase tracking-[0.12em] text-amber-100 [font-weight:620]">
+                                          {record.reason}
+                                        </span>
+                                        <span class={`inline-flex shrink-0 items-center rounded border px-1 py-px text-[7px] leading-3 [font-weight:600] ${attentionKindBadge(record.kind).color}`}>
                                           {attentionKindBadge(record.kind).label}
                                         </span>
                                       </span>
@@ -926,16 +921,16 @@ function HomeDesign() {
                     <div class="relative flex min-w-0 flex-col">
                       <span class={HOME_SECTION_LABEL}>{language.t("home.actions.quickAccess")}</span>
                       <div class="mt-1.5 flex flex-col">
-                        <button type="button" class="flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 text-left text-[12px] tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:500] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] focus-visible:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none" onClick={focusSessionSearchControl}>
+                        <button type="button" class={HOME_QUICK_ACTION} onClick={focusSessionSearchControl}>
                           <IconV2 name="search" size="small" />
                           <span class="truncate">{language.t("home.actions.search.detail")}</span>
                         </button>
-                        <button type="button" class="flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 text-left text-[12px] tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:500] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] focus-visible:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none" onClick={openNewSession}>
+                        <button type="button" class={HOME_QUICK_ACTION} onClick={openNewSession}>
                           <IconV2 name="plus" size="small" />
                           <span class="truncate">{language.t("home.actions.newSession.detail")}</span>
                         </button>
                         <Show when={latestRecord()}>
-                          <button type="button" class="flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 text-left text-[12px] tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:500] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] focus-visible:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none" onClick={openLatestSession}>
+                          <button type="button" class={HOME_QUICK_ACTION} onClick={openLatestSession}>
                             <IconV2 name="status-active" size="small" />
                             <span class="truncate">{language.t("home.actions.resumeLast.detail")}</span>
                           </button>
@@ -1000,70 +995,6 @@ function HomeMetricChip(props: {
       <Show when={isInteractive()}>
         <span class="text-[10px] text-[color:var(--text-muted)] transition-colors group-hover:text-[color:var(--text-primary)]" aria-hidden>↗</span>
       </Show>
-    </button>
-  )
-}
-
-function HomeMetricCard(props: {
-  label: string
-  value: string
-  detail: string
-  icon: Parameters<typeof IconV2>[0]["name"]
-  tone?: "warning" | "default"
-  onClick?: () => void
-  disabled?: boolean
-  loading?: boolean
-}) {
-  const isInteractive = () => !!props.onClick && !props.disabled
-  const displayValue = () => (props.loading ? "—" : props.value)
-  return (
-    <button
-      type="button"
-      data-component="home-metric-card"
-      data-tone={props.tone ?? "default"}
-      class="group relative flex min-h-[58px] w-full flex-col items-stretch overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] px-2.5 py-1.5 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform,opacity] duration-[140ms] ease-out disabled:cursor-default disabled:opacity-80"
-      classList={{
-        "hover:-translate-y-px hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:shadow-[0_28px_64px_rgba(0,0,0,0.30),inset_0_1px_0_rgba(255,255,255,0.05)] focus-visible:-translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-medium)]":
-          isInteractive(),
-      }}
-      onClick={() => isInteractive() && props.onClick?.()}
-      disabled={!isInteractive() || props.loading}
-      aria-label={`${props.label}: ${displayValue()}. ${props.detail}`}
-    >
-      <div
-        aria-hidden
-        class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.32),transparent)]"
-      />
-      <div aria-hidden data-slot="home-metric-glow" class="pointer-events-none absolute inset-0" />
-      <div class="relative z-10 flex min-w-0 items-center justify-between gap-1.5">
-        <span class="flex min-w-0 items-center gap-1.5">
-          <span
-            class="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] text-[color:var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-            classList={{
-              "text-[color:var(--accent-warning)]": props.tone === "warning",
-              "text-[color:var(--accent-secondary)]": props.tone !== "warning",
-            }}
-            aria-hidden
-          >
-            <IconV2 name={props.icon} size="small" />
-          </span>
-          <span class="min-w-0 truncate text-[8px] uppercase tracking-[0.1em] text-[color:var(--text-secondary)] [font-weight:620]">
-            {props.label}
-          </span>
-        </span>
-      </div>
-      <div class="relative z-10 mt-1 flex flex-col items-center gap-1">
-        <div
-          class="text-[20px] leading-none tracking-[-0.04em] text-[color:var(--text-primary)] [font-weight:620] tabular-nums"
-          data-loading={props.loading ? "true" : undefined}
-          aria-busy={props.loading ? "true" : undefined}
-        >
-          {displayValue()}
-        </div>
-        <p class="text-center text-[8px] leading-3 text-[color:var(--text-muted)] [font-weight:500]">
-          {props.detail}
-        </p>
-      </div>
     </button>
   )
 }
