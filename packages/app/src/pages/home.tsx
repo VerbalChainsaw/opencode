@@ -706,6 +706,7 @@ function HomeDesign() {
                 label={language.t("home.projects")}
                 value={String(projects().length)}
                 loading={focusedSync().data === undefined}
+                detail={language.t("home.metrics.projects.detail")}
                 icon="folder-add-left"
                 disabled={projects().length === 0 || focusedSync().data === undefined}
                 onClick={() => openProjectsDialog()}
@@ -714,6 +715,7 @@ function HomeDesign() {
                 label={language.t("home.metrics.liveSessions")}
                 value={String(liveSessionCount())}
                 loading={sessionLoad.isLoading && sessionLoad.data === undefined}
+                detail={liveSessionCount() > 0 ? language.t("home.metrics.liveSessions.detail") : language.t("home.metrics.liveSessions.detail.idle")}
                 icon="status-active"
                 disabled={liveSessionCount() === 0 || (sessionLoad.isLoading && sessionLoad.data === undefined)}
                 onClick={focusSessionSearchControl}
@@ -722,6 +724,7 @@ function HomeDesign() {
                 label={language.t("home.metrics.activeGoals")}
                 value={String(activeGoalCount())}
                 loading={goalLoad.isLoading && goalLoad.data === undefined}
+                detail={activeGoalCount() > 0 ? language.t("home.metrics.activeGoals.detail") : language.t("home.metrics.activeGoals.detail.idle")}
                 icon="status"
                 disabled={goalLoad.isLoading && goalLoad.data === undefined}
                 onClick={() => openGoalsDialog()}
@@ -730,6 +733,7 @@ function HomeDesign() {
                 label={language.t("home.metrics.needsAttention")}
                 value={String(attentionCount())}
                 loading={attentionLoading()}
+                detail={attentionCount() > 0 ? language.t("home.metrics.needsAttention.detail") : language.t("home.metrics.needsAttention.detail.clear")}
                 icon="help"
                 tone="warning"
                 disabled={attentionCount() === 0 || attentionLoading()}
@@ -950,6 +954,7 @@ function HomeDesign() {
 function HomeMetricChip(props: {
   label: string
   value: string
+  detail?: string
   icon: Parameters<typeof IconV2>[0]["name"]
   tone?: "warning" | "default"
   onClick?: () => void
@@ -958,6 +963,9 @@ function HomeMetricChip(props: {
 }) {
   const isInteractive = () => !!props.onClick && !props.disabled
   const displayValue = () => (props.loading ? "—" : props.value)
+  const ariaLabel = () => props.detail
+    ? `${props.label}: ${displayValue()}. ${props.detail}`
+    : `${props.label}: ${displayValue()}`
   return (
     <button
       type="button"
@@ -970,7 +978,8 @@ function HomeMetricChip(props: {
       }}
       onClick={() => isInteractive() && props.onClick?.()}
       disabled={!isInteractive() || props.loading}
-      aria-label={`${props.label}: ${displayValue()}`}
+      aria-label={ariaLabel()}
+      title={props.detail}
     >
       <span
         class="flex size-4 shrink-0 items-center justify-center rounded-[3px] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)]"
