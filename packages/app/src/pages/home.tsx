@@ -681,7 +681,7 @@ function HomeDesign() {
               </div>
             </div>
 
-            <div data-component="home-metric-strip" class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+            <div data-component="home-metric-strip" class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {/* v0.7.3 / audit June 2026: pass `loading` to each metric
                   card so the count stabilizes while the underlying
                   data source is still in transit. Without this, the
@@ -732,11 +732,11 @@ function HomeDesign() {
             <div class="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_224px]">
               <section
                 data-component="home-live-board"
-                class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3.5 pb-3.5 pt-3.5 xl:min-h-0`}
+                class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3 pb-3 pt-3 xl:min-h-0`}
               >
                 <div aria-hidden class={HOME_PANEL_GLOW} />
                 <div aria-hidden class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]" />
-                <div class="mb-2.5 flex items-center justify-between gap-2.5 px-1">
+                <div class="mb-2 flex items-center justify-between gap-2 px-1">
                   <div class="min-w-0">
                     <div class="truncate text-[15px] leading-5 text-[color:var(--text-primary)] [font-weight:560]">
                       {sessionBoardTitle()}
@@ -753,7 +753,7 @@ function HomeDesign() {
                     <Show when={selectedProject()}>
                       <button
                         type="button"
-                        class="rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-muted)] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:text-[color:var(--text-primary)] hover:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none focus-visible:text-[color:var(--text-primary)] focus-visible:-translate-y-px"
+                        class="rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-[color:var(--text-muted)] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:text-[color:var(--text-primary)] hover:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none focus-visible:text-[color:var(--text-primary)] focus-visible:-translate-y-px"
                         onClick={() => setSelection({ server: state.selection.server })}
                       >
                         {language.t("home.sessions.showAllProjects")}
@@ -762,7 +762,7 @@ function HomeDesign() {
                     <Show when={latestRecord()}>
                       <button
                         type="button"
-                        class="rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-muted)] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:text-[color:var(--text-primary)] hover:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none focus-visible:text-[color:var(--text-primary)] focus-visible:-translate-y-px"
+                        class="rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-[color:var(--text-muted)] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:text-[color:var(--text-primary)] hover:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none focus-visible:text-[color:var(--text-primary)] focus-visible:-translate-y-px"
                         onClick={openLatestSession}
                       >
                         {language.t("home.actions.resumeLast")}
@@ -833,7 +833,7 @@ function HomeDesign() {
               </section>
 
               <aside data-component="home-command-rail" class="flex min-h-0 flex-col">
-                <section data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-3`}>
+                <section data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-2.5`}>
                   <div aria-hidden class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,191,90,0.16),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_24%)]" />
                   <div class="relative flex min-h-0 flex-1 flex-col">
                     <div class="min-w-0">
@@ -857,26 +857,26 @@ function HomeDesign() {
                           <For each={attentionRecords().slice(0, 4)}>
                             {(record) => (
                               <li>
-                                <div class="flex min-w-0 items-stretch gap-2.5 px-3 py-2.5">
+                                <div class="flex min-w-0 items-stretch gap-2 px-2 py-2">
                                   <button
                                     type="button"
-                                    class="flex min-w-0 flex-1 items-start gap-2.5 rounded-[var(--radius-sm)] border border-transparent px-0 text-left transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-amber-300/18 hover:text-[color:var(--text-primary)] focus-visible:-translate-y-px focus-visible:border-amber-300/24 focus-visible:outline-none"
+                                    class="flex min-w-0 flex-1 items-start gap-2 rounded-[var(--radius-sm)] border border-transparent px-0 text-left transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-amber-300/18 hover:text-[color:var(--text-primary)] focus-visible:-translate-y-px focus-visible:border-amber-300/24 focus-visible:outline-none"
                                     onClick={() => openAttentionRecord(record)}
                                   >
-                                    <span class="mt-1 flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-amber-300/16 bg-amber-300/10 text-amber-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" aria-hidden>
+                                    <span class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-amber-300/16 bg-amber-300/10 text-amber-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" aria-hidden>
                                       <IconV2 name="help" size="small" />
                                     </span>
                                     <span class="min-w-0 flex-1">
-                                      <span class="block whitespace-normal break-words text-[12px] leading-5 text-[color:var(--text-primary)] [font-weight:560]">
+                                      <span class="block truncate text-[11px] leading-4 text-[color:var(--text-primary)] [font-weight:560]">
                                         {record.session ? sessionTitle(record.session.title) || record.session.id : record.projectName}
                                       </span>
-                                      <span class="mt-1 block text-[10px] uppercase tracking-[0.14em] text-amber-100 [font-weight:620]">
+                                      <span class="mt-0.5 block truncate text-[9px] uppercase tracking-[0.12em] text-amber-100 [font-weight:620]">
                                         {record.reason}
                                       </span>
                                       <Show when={record.detail}>
-                                        <span class="mt-1 block whitespace-normal break-words text-[11px] leading-5 text-[color:var(--text-muted)]">{record.detail}</span>
+                                        <span class="mt-0.5 block truncate text-[10px] leading-4 text-[color:var(--text-muted)]">{record.detail}</span>
                                       </Show>
-                                      <span class="mt-1.5 block whitespace-normal break-words text-[11px] text-[color:var(--text-muted)]">{record.projectName}</span>
+                                      <span class="mt-0.5 block truncate text-[10px] text-[color:var(--text-muted)]">{record.projectName}</span>
                                     </span>
                                   </button>
                                   <Show when={record.clearable}>
@@ -934,7 +934,7 @@ function HomeMetricCard(props: {
       type="button"
       data-component="home-metric-card"
       data-tone={props.tone ?? "default"}
-      class="group relative flex min-h-[88px] w-full flex-col items-stretch overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] px-3.5 py-3 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform,opacity] duration-[140ms] ease-out disabled:cursor-default disabled:opacity-80"
+      class="group relative flex min-h-[68px] w-full flex-col items-stretch overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] px-3 py-2 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform,opacity] duration-[140ms] ease-out disabled:cursor-default disabled:opacity-80"
       classList={{
         "hover:-translate-y-px hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:shadow-[0_28px_64px_rgba(0,0,0,0.30),inset_0_1px_0_rgba(255,255,255,0.05)] focus-visible:-translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-medium)]":
           isInteractive(),
@@ -948,10 +948,10 @@ function HomeMetricCard(props: {
         class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.32),transparent)]"
       />
       <div aria-hidden data-slot="home-metric-glow" class="pointer-events-none absolute inset-0" />
-      <div class="relative z-10 flex min-w-0 items-center justify-between gap-2.5">
-        <span class="flex min-w-0 items-center gap-2">
+      <div class="relative z-10 flex min-w-0 items-center justify-between gap-1.5">
+        <span class="flex min-w-0 items-center gap-1.5">
           <span
-            class="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] text-[color:var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            class="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] text-[color:var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
             classList={{
               "text-[color:var(--accent-warning)]": props.tone === "warning",
               "text-[color:var(--accent-secondary)]": props.tone !== "warning",
@@ -960,25 +960,25 @@ function HomeMetricCard(props: {
           >
             <IconV2 name={props.icon} size="small" />
           </span>
-          <span class="min-w-0 truncate text-[10px] uppercase tracking-[0.16em] text-[color:var(--text-secondary)] [font-weight:620]">
+          <span class="min-w-0 truncate text-[9px] uppercase tracking-[0.12em] text-[color:var(--text-secondary)] [font-weight:620]">
             {props.label}
           </span>
         </span>
         <Show when={isInteractive()}>
-          <span class="shrink-0 text-[11px] text-[color:var(--text-muted)] transition-colors group-hover:text-[color:var(--text-primary)]" aria-hidden>
+          <span class="shrink-0 text-[10px] text-[color:var(--text-muted)] transition-colors group-hover:text-[color:var(--text-primary)]" aria-hidden>
             ↗
           </span>
         </Show>
       </div>
-      <div class="relative z-10 mt-3 flex min-w-0 items-end justify-between gap-3">
+      <div class="relative z-10 mt-1.5 flex min-w-0 items-end justify-between gap-2">
         <div
-          class="text-[30px] leading-none tracking-[-0.06em] text-[color:var(--text-primary)] [font-weight:620] tabular-nums"
+          class="text-[24px] leading-none tracking-[-0.05em] text-[color:var(--text-primary)] [font-weight:620] tabular-nums"
           data-loading={props.loading ? "true" : undefined}
           aria-busy={props.loading ? "true" : undefined}
         >
           {displayValue()}
         </div>
-        <p class="min-w-0 max-w-[58%] text-right text-[10px] leading-4 text-[color:var(--text-muted)] [font-weight:500]">
+        <p class="min-w-0 max-w-[60%] overflow-hidden text-ellipsis whitespace-nowrap text-right text-[9px] leading-4 text-[color:var(--text-muted)] [font-weight:500]">
           {props.detail}
         </p>
       </div>

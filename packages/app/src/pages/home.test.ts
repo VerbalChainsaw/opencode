@@ -501,9 +501,9 @@ describe("home mission-control contract", () => {
   test("home polish uses consistent rounded panels and neutral warning surfaces", async () => {
     const src = await home()
     expect(src).not.toContain('data-component="home-actions-panel"')
-    expect(src).toContain('data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-3`}')
+    expect(src).toContain('data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-2.5`}')
     expect(src).toContain('data-component="home-live-board"')
-    expect(src).toContain('class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3.5 pb-3.5 pt-3.5 xl:min-h-0`}')
+    expect(src).toContain('class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3 pb-3 pt-3 xl:min-h-0`}')
     expect(src).toContain("rounded-[var(--radius-xl)]")
     expect(src).toContain("rounded-[var(--radius-md)]")
     expect(src).not.toContain("bg-amber-500/8")
@@ -511,17 +511,18 @@ describe("home mission-control contract", () => {
     expect(src).not.toContain("border-l-amber-400/60")
   })
 
-  test("attention rail copy stays readable instead of truncating inside cramped panels", async () => {
+  test("attention rail copy stays compact instead of wrapping into a paragraph", async () => {
     const src = await home()
     const attention = src.slice(src.indexOf('data-component="home-attention-panel"'), src.indexOf("function HomeMetricCard"))
-    expect(attention).toContain("whitespace-normal break-words text-[12px] leading-5 text-[color:var(--text-primary)]")
-    expect(attention).toContain("whitespace-normal break-words text-[11px] leading-5 text-[color:var(--text-muted)]")
+    expect(attention).toContain("block truncate text-[11px] leading-4 text-[color:var(--text-primary)]")
+    expect(attention).toContain("block truncate text-[10px] leading-4 text-[color:var(--text-muted)]")
+    expect(attention).toContain("block truncate text-[9px] uppercase tracking-[0.12em] text-amber-100")
   })
 
   test("top metric tiles stay squat and sleek instead of ballooning vertically", async () => {
     const src = await home()
-    expect(src).toContain('min-h-[88px]')
-    expect(src).toContain('text-[30px]')
+    expect(src).toContain('min-h-[68px]')
+    expect(src).toContain('text-[24px]')
   })
 
   test("live board and side rails are denser so more records fit on screen", async () => {
