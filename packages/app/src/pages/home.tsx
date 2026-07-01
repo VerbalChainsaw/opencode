@@ -638,7 +638,7 @@ function HomeDesign() {
               <div class="relative flex min-w-0 flex-col gap-2 px-4 py-3 md:px-5 md:py-4">
                 <div class="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
                   <div class="flex min-w-0 items-start gap-3">
-                    <Logo class="h-9 w-[200px] opacity-95" />
+                    <Logo class="h-7 w-[156px] opacity-95" />
                     <div class="min-w-0">
                       <h1 class="truncate text-[20px] leading-6 tracking-[-0.03em] text-[color:var(--text-primary)] [font-weight:610] md:text-[24px] md:leading-7">
                         {language.t("home.header.kicker")}
@@ -701,7 +701,7 @@ function HomeDesign() {
               </div>
             </div>
 
-            <div data-component="home-metric-strip" class="flex flex-wrap items-center gap-1.5">
+            <div data-component="home-metric-strip" class="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               <HomeMetricChip
                 label={language.t("home.projects")}
                 value={String(projects().length)}
