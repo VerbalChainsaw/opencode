@@ -497,6 +497,8 @@ export const dict = {
   "home.empty.description": "透過開啟本地專案開始使用",
   "home.title": "首頁",
   "home.header.kicker": "任務控制台",
+  "home.header.title": "OpenCode",
+  "home.header.edition": "Verbal Chainsaw Edition",
   "home.header.subtitle": "專案、工作階段、目標——一個控制台。",
   "home.projects": "專案",
   "home.project.add": "新增專案",

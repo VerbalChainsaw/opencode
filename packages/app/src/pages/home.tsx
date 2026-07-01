@@ -58,6 +58,7 @@ import {
   isHomeSessionLive,
   mergeHomeAttentionRecords,
   resolveHomeServerProjects,
+  type HomeAttentionKind,
   type HomeAttentionRecord,
   type HomeGoalRecord,
   type HomeSessionGroup,
@@ -479,6 +480,20 @@ function HomeDesign() {
     return true
   }
 
+  function attentionKindBadge(kind: HomeAttentionKind): { label: string; color: string } {
+    const map: Record<HomeAttentionKind, { label: string; color: string }> = {
+      permission: { label: "PERM", color: "bg-amber-500/15 text-amber-300 border-amber-500/25" },
+      question: { label: "Q&A", color: "bg-sky-500/15 text-sky-300 border-sky-500/25" },
+      "goal-limit": { label: "LIMIT", color: "bg-red-500/15 text-red-300 border-red-500/25" },
+      "goal-stalled": { label: "STALL", color: "bg-orange-500/15 text-orange-300 border-orange-500/25" },
+      retry: { label: "RETRY", color: "bg-purple-500/15 text-purple-300 border-purple-500/25" },
+      error: { label: "ERR", color: "bg-red-600/15 text-red-400 border-red-600/25" },
+      response: { label: "MSG", color: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" },
+      project: { label: "PROJ", color: "bg-slate-500/15 text-slate-300 border-slate-500/25" },
+    }
+    return map[kind]
+  }
+
   function openAttentionRecord(record: HomeAttentionRecord) {
     const conn = focusedServer()
     if (!conn) return
@@ -618,16 +633,18 @@ function HomeDesign() {
                 class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(110,92,255,0.18),transparent_34%),linear-gradient(135deg,rgba(94,106,210,0.14),transparent_48%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent_44%)]"
               />
               <div aria-hidden class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.32),transparent)]" />
-              <div class="relative flex min-w-0 flex-col gap-4 px-5 py-4 md:px-6 md:py-5">
-                <div class="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                  <div class="flex min-w-0 items-start gap-3">
+              <div class="relative flex min-w-0 flex-col gap-3 px-4 py-3 md:px-5 md:py-4">
+                <div class="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                  <div class="flex min-w-0 items-start gap-2">
                     <div class="min-w-0">
                       <Logo class="h-6 w-[134px] opacity-95" />
-                      <div class={`${HOME_SECTION_LABEL} mt-2.5`}>{language.t("home.header.kicker")}</div>
-                      <h1 class="mt-2 truncate text-[24px] leading-7 tracking-[-0.05em] text-[color:var(--text-primary)] [font-weight:610] md:text-[28px] md:leading-8">
-                        {language.t("app.name.desktop")}
+                      <h1 class="mt-2 truncate text-[18px] leading-5 tracking-[-0.03em] text-[color:var(--text-primary)] [font-weight:610] md:text-[22px] md:leading-6">
+                        {language.t("home.header.kicker")}
                       </h1>
-                      <p class="mt-2 max-w-[520px] text-[13px] leading-5 text-[color:var(--text-muted)]">
+                      <div class="mt-0.5 text-[9px] italic tracking-[0.1em] text-[color:var(--text-muted)] [font-weight:560]">
+                        {language.t("home.header.edition")}
+                      </div>
+                      <p class="mt-1 max-w-[520px] text-[12px] leading-4 text-[color:var(--text-muted)]">
                         {language.t("home.header.subtitle")}
                       </p>
                     </div>
@@ -681,7 +698,7 @@ function HomeDesign() {
               </div>
             </div>
 
-            <div data-component="home-metric-strip" class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div data-component="home-metric-strip" class="grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
               {/* v0.7.3 / audit June 2026: pass `loading` to each metric
                   card so the count stabilizes while the underlying
                   data source is still in transit. Without this, the
@@ -738,8 +755,13 @@ function HomeDesign() {
                 <div aria-hidden class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]" />
                 <div class="mb-2 flex items-center justify-between gap-2 px-1">
                   <div class="min-w-0">
-                    <div class="truncate text-[15px] leading-5 text-[color:var(--text-primary)] [font-weight:560]">
+                    <div class="flex items-center gap-2 truncate text-[15px] leading-5 text-[color:var(--text-primary)] [font-weight:560]">
                       {sessionBoardTitle()}
+                      <Show when={records().length > 0}>
+                        <span class="inline-flex shrink-0 items-center rounded-full border border-[color:var(--border-subtle)] bg-white/5 px-1.5 py-px text-[9px] tabular-nums leading-4 text-[color:var(--text-muted)] [font-weight:540]">
+                          {records().length}
+                        </span>
+                      </Show>
                     </div>
                     <Show when={selectedProjectName()}>
                       {(project) => (
@@ -872,6 +894,9 @@ function HomeDesign() {
                                       </span>
                                       <span class="mt-0.5 block truncate text-[9px] uppercase tracking-[0.12em] text-amber-100 [font-weight:620]">
                                         {record.reason}
+                                        <span class={`ml-1.5 inline-flex items-center rounded border px-1 py-px text-[7px] leading-3 [font-weight:600] ${attentionKindBadge(record.kind).color}`}>
+                                          {attentionKindBadge(record.kind).label}
+                                        </span>
                                       </span>
                                       <Show when={record.detail}>
                                         <span class="mt-0.5 block truncate text-[10px] leading-4 text-[color:var(--text-muted)]">{record.detail}</span>
@@ -934,7 +959,7 @@ function HomeMetricCard(props: {
       type="button"
       data-component="home-metric-card"
       data-tone={props.tone ?? "default"}
-      class="group relative flex min-h-[68px] w-full flex-col items-stretch overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] px-3 py-2 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform,opacity] duration-[140ms] ease-out disabled:cursor-default disabled:opacity-80"
+      class="group relative flex min-h-[58px] w-full flex-col items-stretch overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] px-2.5 py-1.5 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform,opacity] duration-[140ms] ease-out disabled:cursor-default disabled:opacity-80"
       classList={{
         "hover:-translate-y-px hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:shadow-[0_28px_64px_rgba(0,0,0,0.30),inset_0_1px_0_rgba(255,255,255,0.05)] focus-visible:-translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-medium)]":
           isInteractive(),
@@ -951,7 +976,7 @@ function HomeMetricCard(props: {
       <div class="relative z-10 flex min-w-0 items-center justify-between gap-1.5">
         <span class="flex min-w-0 items-center gap-1.5">
           <span
-            class="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] text-[color:var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            class="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] text-[color:var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
             classList={{
               "text-[color:var(--accent-warning)]": props.tone === "warning",
               "text-[color:var(--accent-secondary)]": props.tone !== "warning",
@@ -960,25 +985,20 @@ function HomeMetricCard(props: {
           >
             <IconV2 name={props.icon} size="small" />
           </span>
-          <span class="min-w-0 truncate text-[9px] uppercase tracking-[0.12em] text-[color:var(--text-secondary)] [font-weight:620]">
+          <span class="min-w-0 truncate text-[8px] uppercase tracking-[0.1em] text-[color:var(--text-secondary)] [font-weight:620]">
             {props.label}
           </span>
         </span>
-        <Show when={isInteractive()}>
-          <span class="shrink-0 text-[10px] text-[color:var(--text-muted)] transition-colors group-hover:text-[color:var(--text-primary)]" aria-hidden>
-            ↗
-          </span>
-        </Show>
       </div>
-      <div class="relative z-10 mt-1.5 flex min-w-0 items-end justify-between gap-2">
+      <div class="relative z-10 mt-1 flex flex-col items-center gap-1">
         <div
-          class="text-[24px] leading-none tracking-[-0.05em] text-[color:var(--text-primary)] [font-weight:620] tabular-nums"
+          class="text-[20px] leading-none tracking-[-0.04em] text-[color:var(--text-primary)] [font-weight:620] tabular-nums"
           data-loading={props.loading ? "true" : undefined}
           aria-busy={props.loading ? "true" : undefined}
         >
           {displayValue()}
         </div>
-        <p class="min-w-0 max-w-[60%] overflow-hidden text-ellipsis whitespace-nowrap text-right text-[9px] leading-4 text-[color:var(--text-muted)] [font-weight:500]">
+        <p class="text-center text-[8px] leading-3 text-[color:var(--text-muted)] [font-weight:500]">
           {props.detail}
         </p>
       </div>
@@ -1330,7 +1350,7 @@ function HomeProjectRow(props: {
 }) {
   const [state, setState] = createStore({ menuOpen: false })
   return (
-    <div class="group/project relative flex h-9 min-w-0 items-center rounded-[var(--radius-md)]">
+    <div class="group/project relative flex h-8 min-w-0 items-center rounded-[var(--radius-md)]">
       <button
         type="button"
         data-component="home-project-row"
@@ -1543,7 +1563,7 @@ function HomeSessionSearch(props: {
               width: "calc(100% + 16px)",
             }}
           >
-            <div class="flex flex-col pt-11">
+            <div class="flex flex-col pt-9">
               <div id={HOME_SESSION_SEARCH_RESULTS_ID} role="listbox" class="flex flex-col gap-3 pb-4 pt-4">
                 <Show
                   when={!props.loading}
@@ -1591,7 +1611,7 @@ function HomeSessionSearch(props: {
           </div>
         </Show>
         <label
-          class="relative z-20 flex h-12 w-full items-center gap-3 rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] py-1 pl-3 pr-2 text-[color:var(--text-muted)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-[background-color,border-color,box-shadow] duration-[140ms] ease-out"
+          class="relative z-20 flex h-10 w-full items-center gap-2.5 rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] py-1 pl-2.5 pr-2 text-[color:var(--text-muted)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-[background-color,border-color,box-shadow] duration-[140ms] ease-out"
           classList={{
             "hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] focus-within:border-[color:var(--border-medium)] focus-within:[background:var(--bg-panel-hover)] focus-within:shadow-[0_0_0_1px_rgba(99,201,255,0.10),0_18px_44px_rgba(0,0,0,0.22)]":
               !props.open,
@@ -1745,7 +1765,7 @@ function HomeSessionRow(props: {
     <button
       type="button"
       data-component="home-session-row"
-      class={`${HOME_ROW} h-9 gap-2.5 rounded-none bg-transparent px-4 py-2 pl-3.5`}
+      class={`${HOME_ROW} h-8 gap-2 rounded-none bg-transparent px-3 py-1.5 pl-3`}
       onClick={() => props.openSession(props.record.session)}
     >
       <HomeSessionLeading
@@ -1778,7 +1798,7 @@ function HomeSessionSkeleton(props: { label: string }) {
         <div class={HOME_SECTION_LABEL}>{props.label}</div>
       </div>
       <div class="overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] divide-y divide-white/5" aria-hidden="true">
-        <For each={[0, 1, 2, 3]}>{() => <div class="h-9 [background:var(--bg-panel-elevated)] opacity-70" />}</For>
+        <For each={[0, 1, 2, 3]}>{() => <div class="h-8 [background:var(--bg-panel-elevated)] opacity-70" />}</For>
       </div>
     </div>
   )

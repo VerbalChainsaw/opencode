@@ -54,14 +54,14 @@
   }
 
   [data-component="home-shell"] [data-component="button-v2"][data-size="normal"] {
-    height: 34px;
-    padding-inline: 14px;
+    height: 30px;
+    padding-inline: 10px;
     border-radius: var(--radius-sm);
   }
 
   [data-component="home-shell"] [data-component="button-v2"][data-size="large"] {
-    height: 36px;
-    padding-inline: 15px;
+    height: 32px;
+    padding-inline: 12px;
     border-radius: var(--radius-sm);
   }
 
@@ -84,8 +84,8 @@
   }
 
   [data-component="home-shell"] [data-component="icon-button-v2"][data-size="large"] {
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border-radius: var(--radius-sm);
   }
 

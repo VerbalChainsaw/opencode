@@ -502,6 +502,8 @@ export const dict = {
   "home.empty.description": "通过打开本地项目开始使用",
   "home.title": "主页",
   "home.header.kicker": "任务控制台",
+  "home.header.title": "OpenCode",
+  "home.header.edition": "Verbal Chainsaw Edition",
   "home.header.subtitle": "项目、会话、目标——一个控制台。",
   "home.projects": "项目",
   "home.project.add": "添加项目",
