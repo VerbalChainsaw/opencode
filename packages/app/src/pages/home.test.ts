@@ -107,7 +107,6 @@ describe("home mission-control contract", () => {
     expect(src).toContain("<Logo")
     expect(src).toContain('language.t("home.header.kicker")')
     expect(src).toContain('language.t("home.header.edition")')
-    expect(src).toContain('language.t("home.header.subtitle")')
     expect(src).toContain("rounded-[var(--radius-xl)]")
     expect(src).toContain("max-w-[1360px]")
     expect(src).toContain("lg:grid-cols-[252px_minmax(0,1fr)]")
@@ -149,19 +148,19 @@ describe("home mission-control contract", () => {
     expect(src).toMatch(/import\s+\{\s*Dialog\s*\}\s+from\s+["']@opencode-ai\/ui\/dialog["']/)
   })
 
-  test("HomeMetricCard is a real button (keyboard + a11y), not a div", async () => {
+  test("HomeMetricChip is a real button (keyboard + a11y), not a div", async () => {
     const src = await home()
     // The card root must be a <button type="button"> (not a <div) for
     // keyboard activation and aria-roles. Look for the pattern within
     // a bounded window after the function declaration so unrelated
     // <button> tags (in other functions or callers) don't satisfy this.
-    const idx = src.indexOf("function HomeMetricCard")
+    const idx = src.indexOf("function HomeMetricChip")
     expect(idx).toBeGreaterThan(-1)
     const slice = src.slice(idx, idx + 3000)
     expect(slice).toMatch(/<button[^>]*type="button"/)
   })
 
-  test("HomeMetricCard exposes a loading prop that shows a stable skeleton during data load (v0.7.3)", async () => {
+  test("HomeMetricChip exposes a loading prop that shows a stable skeleton during data load (v0.7.3)", async () => {
     // v0.7.3 / audit June 2026: when the underlying data source is
     // still loading, the metric must show a stable skeleton ("—")
     // instead of the live count. The live count flickers during boot
@@ -170,7 +169,7 @@ describe("home mission-control contract", () => {
     // reads as "different number of projects every time I open
     // the app". The "loading" prop gates the skeleton.
     const src = await home()
-    const idx = src.indexOf("function HomeMetricCard")
+    const idx = src.indexOf("function HomeMetricChip")
     expect(idx).toBeGreaterThan(-1)
     const slice = src.slice(idx, idx + 3000)
     // The function signature now accepts a `loading` prop.
@@ -207,9 +206,6 @@ describe("home mission-control contract", () => {
 
     const strip = src.match(/data-component="home-metric-strip"[\s\S]*?<\/div>\s*<\/div>/)
     expect(strip).toBeTruthy()
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?detail=\{liveSessionDetail\(\)\}/)
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?detail=\{activeGoalDetail\(\)\}/)
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?detail=\{attentionDetail\(\)\}/)
   })
 
   test("Needs Attention is backed by actionable session records", async () => {
@@ -221,7 +217,7 @@ describe("home mission-control contract", () => {
     expect(src).toContain("type HomeAttentionRecord")
     expect(src).toContain("attentionRecords")
 
-    const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
+    const attentionCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
     expect(attentionCard).toBeTruthy()
     expect(attentionCard![0]).toContain("attentionCount()")
     expect(src).toContain("const attentionLoading = createMemo")
@@ -276,7 +272,7 @@ describe("home mission-control contract", () => {
 
   test("Active Goals dialog uses localized purpose and empty-state copy", async () => {
     const src = await home()
-    const goalsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
+    const goalsCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
     expect(goalsCard).toBeTruthy()
     expect(goalsCard![0]).toContain("onClick={() => openGoalsDialog()}")
     expect(goalsCard![0]).toContain("disabled={goalLoad.isLoading && goalLoad.data === undefined}")
@@ -313,22 +309,22 @@ describe("home mission-control contract", () => {
     // corresponding function.
     const src = await home()
     // Projects card → openProjectsDialog
-    const projectsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.projects"\)\}[\s\S]*?\/>/)
+    const projectsCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.projects"\)\}[\s\S]*?\/>/)
     expect(projectsCard).toBeTruthy()
     expect(projectsCard![0]).toMatch(/onClick=\{[^}]*openProjectsDialog/)
 
     // Active Goals card → openGoalsDialog
-    const goalsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
+    const goalsCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
     expect(goalsCard).toBeTruthy()
     expect(goalsCard![0]).toMatch(/onClick=\{[^}]*openGoalsDialog/)
 
     // Needs Attention card → openAttentionDialog
-    const attentionCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
+    const attentionCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
     expect(attentionCard).toBeTruthy()
     expect(attentionCard![0]).toMatch(/onClick=\{[^}]*openAttentionDialog/)
 
     // Live Sessions card → focus the search input (not a dialog)
-    const sessionsCard = src.match(/<HomeMetricCard[\s\S]*?label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?\/>/)
+    const sessionsCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?\/>/)
     expect(sessionsCard).toBeTruthy()
     expect(sessionsCard![0]).toMatch(/onClick=\{/)
     // Specifically: it must trigger the search, not a dialog
@@ -514,7 +510,7 @@ describe("home mission-control contract", () => {
 
   test("attention rail copy stays compact instead of wrapping into a paragraph", async () => {
     const src = await home()
-    const attention = src.slice(src.indexOf('data-component="home-attention-panel"'), src.indexOf("function HomeMetricCard"))
+    const attention = src.slice(src.indexOf('data-component="home-attention-panel"'), src.indexOf("function HomeMetricChip"))
     expect(attention).toContain("block truncate text-[11px] leading-4 text-[color:var(--text-primary)]")
     expect(attention).toContain("block truncate text-[10px] leading-4 text-[color:var(--text-muted)]")
     expect(attention).toContain("block truncate text-[9px] uppercase tracking-[0.12em] text-amber-100")

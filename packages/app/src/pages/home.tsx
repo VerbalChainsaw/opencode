@@ -1,5 +1,5 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { batch, createEffect, createMemo, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
+  import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
@@ -151,6 +151,15 @@ function HomeDesign() {
     search: "",
     selection: { server: server.key } as HomeProjectSelection,
     searchFocused: false,
+  })
+  const [now, setNow] = createSignal(Date.now())
+  const formattedTime = createMemo(() => {
+    const d = new Date(now())
+    return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) + " UTC"
+  })
+  onMount(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    onCleanup(() => clearInterval(id))
   })
 
   const focusedServer = createMemo(
@@ -602,7 +611,7 @@ function HomeDesign() {
         aria-hidden
         class="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.88),transparent_82%)]"
       />
-      <div class="relative mx-auto grid h-full w-full max-w-[1360px] gap-4 px-5 pb-7 pt-2 md:px-6 lg:grid-cols-[252px_minmax(0,1fr)] xl:px-7">
+      <div class="relative mx-auto grid h-full w-full max-w-[1360px] gap-3 px-5 pb-5 pt-2 md:px-6 lg:grid-cols-[252px_minmax(0,1fr)] xl:px-7">
         <HomeProjectColumn
           projects={projects()}
           selected={state.selection}
@@ -625,28 +634,25 @@ function HomeDesign() {
           language={language}
         />
 
-        <section class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 lg:pt-8" aria-label={sessionBoardTitle()}>
-          <div class="flex min-h-0 flex-1 flex-col gap-4 pb-6">
+        <section class="min-h-0 min-w-0 flex-1 flex flex-col pt-4 lg:pt-5" aria-label={sessionBoardTitle()}>
+          <div class="flex min-h-0 flex-1 flex-col gap-3 pb-4">
             <div data-component="home-brand-strip" class={HOME_PANEL}>
               <div
                 aria-hidden
                 class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(110,92,255,0.18),transparent_34%),linear-gradient(135deg,rgba(94,106,210,0.14),transparent_48%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent_44%)]"
               />
               <div aria-hidden class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.32),transparent)]" />
-              <div class="relative flex min-w-0 flex-col gap-3 px-4 py-3 md:px-5 md:py-4">
-                <div class="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                  <div class="flex min-w-0 items-start gap-2">
+              <div class="relative flex min-w-0 flex-col gap-2 px-4 py-3 md:px-5 md:py-4">
+                <div class="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+                  <div class="flex min-w-0 items-start gap-3">
+                    <Logo class="h-9 w-[200px] opacity-95" />
                     <div class="min-w-0">
-                      <Logo class="h-6 w-[134px] opacity-95" />
-                      <h1 class="mt-2 truncate text-[18px] leading-5 tracking-[-0.03em] text-[color:var(--text-primary)] [font-weight:610] md:text-[22px] md:leading-6">
+                      <h1 class="truncate text-[20px] leading-6 tracking-[-0.03em] text-[color:var(--text-primary)] [font-weight:610] md:text-[24px] md:leading-7">
                         {language.t("home.header.kicker")}
                       </h1>
                       <div class="mt-0.5 text-[9px] italic tracking-[0.1em] text-[color:var(--text-muted)] [font-weight:560]">
                         {language.t("home.header.edition")}
                       </div>
-                      <p class="mt-1 max-w-[520px] text-[12px] leading-4 text-[color:var(--text-muted)]">
-                        {language.t("home.header.subtitle")}
-                      </p>
                     </div>
                   </div>
                   <div class="flex min-w-0 flex-wrap items-center gap-2 xl:max-w-[560px] xl:justify-end">
@@ -674,6 +680,10 @@ function HomeDesign() {
                       </ButtonV2>
                     </div>
                     <div class="flex items-center gap-1 rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                      <span class="px-2 text-[10px] tabular-nums text-[color:var(--text-muted)] [font-weight:500] select-none">
+                        {formattedTime()}
+                      </span>
+                      <div class="h-4 w-px bg-white/10" />
                       <ButtonV2
                         data-action="home-header-settings"
                         variant="ghost-muted"
@@ -698,47 +708,35 @@ function HomeDesign() {
               </div>
             </div>
 
-            <div data-component="home-metric-strip" class="grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
-              {/* v0.7.3 / audit June 2026: pass `loading` to each metric
-                  card so the count stabilizes while the underlying
-                  data source is still in transit. Without this, the
-                  strip flickers "3 → 7 → 4" during boot, which the
-                  user reads as "different number of projects every
-                  time I open the app". The `loading` flag flips to
-                  false once the source has settled on a stable value.
-              */}
-              <HomeMetricCard
+            <div data-component="home-metric-strip" class="flex flex-wrap items-center gap-1.5">
+              <HomeMetricChip
                 label={language.t("home.projects")}
                 value={String(projects().length)}
                 loading={focusedSync().data === undefined}
-                detail={language.t("home.metrics.projects.detail")}
                 icon="folder-add-left"
                 disabled={projects().length === 0 || focusedSync().data === undefined}
                 onClick={() => openProjectsDialog()}
               />
-              <HomeMetricCard
+              <HomeMetricChip
                 label={language.t("home.metrics.liveSessions")}
                 value={String(liveSessionCount())}
                 loading={sessionLoad.isLoading && sessionLoad.data === undefined}
-                detail={liveSessionDetail()}
                 icon="status-active"
                 disabled={liveSessionCount() === 0 || (sessionLoad.isLoading && sessionLoad.data === undefined)}
                 onClick={focusSessionSearchControl}
               />
-              <HomeMetricCard
+              <HomeMetricChip
                 label={language.t("home.metrics.activeGoals")}
                 value={String(activeGoalCount())}
                 loading={goalLoad.isLoading && goalLoad.data === undefined}
-                detail={activeGoalDetail()}
                 icon="status"
                 disabled={goalLoad.isLoading && goalLoad.data === undefined}
                 onClick={() => openGoalsDialog()}
               />
-              <HomeMetricCard
+              <HomeMetricChip
                 label={language.t("home.metrics.needsAttention")}
                 value={String(attentionCount())}
                 loading={attentionLoading()}
-                detail={attentionDetail()}
                 icon="help"
                 tone="warning"
                 disabled={attentionCount() === 0 || attentionLoading()}
@@ -923,29 +921,23 @@ function HomeDesign() {
                     </Show>
                   </div>
                   </section>
-                  <section data-component="home-quick-actions" class={`${HOME_PANEL} mt-2 flex flex-col p-2.5`}>
+                  <section data-component="home-quick-actions" class={`${HOME_PANEL} mt-1.5 flex flex-col p-2`}>
                     <div aria-hidden class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(110,92,255,0.12),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%)]" />
                     <div class="relative flex min-w-0 flex-col">
                       <span class={HOME_SECTION_LABEL}>{language.t("home.actions.quickAccess")}</span>
-                      <div class="mt-2 flex flex-col gap-1">
-                        <button type="button" class={HOME_ROW} onClick={focusSessionSearchControl}>
-                          <span class="flex min-w-0 items-center gap-2">
-                            <IconV2 name="search" size="small" />
-                            <span class="truncate">{language.t("home.actions.search.detail")}</span>
-                          </span>
+                      <div class="mt-1.5 flex flex-col">
+                        <button type="button" class="flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 text-left text-[12px] tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:500] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] focus-visible:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none" onClick={focusSessionSearchControl}>
+                          <IconV2 name="search" size="small" />
+                          <span class="truncate">{language.t("home.actions.search.detail")}</span>
                         </button>
-                        <button type="button" class={HOME_ROW} onClick={openNewSession}>
-                          <span class="flex min-w-0 items-center gap-2">
-                            <IconV2 name="plus" size="small" />
-                            <span class="truncate">{language.t("home.actions.newSession.detail")}</span>
-                          </span>
+                        <button type="button" class="flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 text-left text-[12px] tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:500] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] focus-visible:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none" onClick={openNewSession}>
+                          <IconV2 name="plus" size="small" />
+                          <span class="truncate">{language.t("home.actions.newSession.detail")}</span>
                         </button>
                         <Show when={latestRecord()}>
-                          <button type="button" class={HOME_ROW} onClick={openLatestSession}>
-                            <span class="flex min-w-0 items-center gap-2">
-                              <IconV2 name="status-active" size="small" />
-                              <span class="truncate">{language.t("home.actions.resumeLast.detail")}</span>
-                            </span>
+                          <button type="button" class="flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 text-left text-[12px] tracking-[0.01em] text-[color:var(--text-primary)] [font-weight:500] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] focus-visible:-translate-y-px focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:outline-none" onClick={openLatestSession}>
+                            <IconV2 name="status-active" size="small" />
+                            <span class="truncate">{language.t("home.actions.resumeLast.detail")}</span>
                           </button>
                         </Show>
                       </div>
@@ -960,6 +952,58 @@ function HomeDesign() {
   )
 }
 
+function HomeMetricChip(props: {
+  label: string
+  value: string
+  icon: Parameters<typeof IconV2>[0]["name"]
+  tone?: "warning" | "default"
+  onClick?: () => void
+  disabled?: boolean
+  loading?: boolean
+}) {
+  const isInteractive = () => !!props.onClick && !props.disabled
+  const displayValue = () => (props.loading ? "—" : props.value)
+  return (
+    <button
+      type="button"
+      data-component="home-metric-chip"
+      data-tone={props.tone ?? "default"}
+      class="group relative flex h-9 shrink-0 items-center gap-2 overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] px-2.5 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform] duration-[140ms] ease-out disabled:cursor-default disabled:opacity-70"
+      classList={{
+        "hover:-translate-y-px hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.05)] focus-visible:-translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-medium)]":
+          isInteractive(),
+      }}
+      onClick={() => isInteractive() && props.onClick?.()}
+      disabled={!isInteractive() || props.loading}
+      aria-label={`${props.label}: ${displayValue()}`}
+    >
+      <span
+        class="flex size-4 shrink-0 items-center justify-center rounded-[3px] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)]"
+        classList={{
+          "text-[color:var(--accent-warning)]": props.tone === "warning",
+          "text-[color:var(--accent-secondary)]": props.tone !== "warning",
+        }}
+        aria-hidden
+      >
+        <IconV2 name={props.icon} size="small" />
+      </span>
+      <span class="min-w-0 truncate text-[9px] uppercase tracking-[0.08em] text-[color:var(--text-secondary)] [font-weight:610]">
+        {props.label}
+      </span>
+      <span
+        class="tabular-nums text-[13px] leading-none tracking-[-0.02em] text-[color:var(--text-primary)] [font-weight:650]"
+        data-loading={props.loading ? "true" : undefined}
+        aria-busy={props.loading ? "true" : undefined}
+      >
+        {displayValue()}
+      </span>
+      <Show when={isInteractive()}>
+        <span class="text-[10px] text-[color:var(--text-muted)] transition-colors group-hover:text-[color:var(--text-primary)]" aria-hidden>↗</span>
+      </Show>
+    </button>
+  )
+}
+
 function HomeMetricCard(props: {
   label: string
   value: string
@@ -968,16 +1012,6 @@ function HomeMetricCard(props: {
   tone?: "warning" | "default"
   onClick?: () => void
   disabled?: boolean
-  /**
-   * v0.7.3 / audit June 2026: when the underlying data source is
-   * still loading, show a stable skeleton ("—") instead of the
-   * live count. The live count flickers as the opencode server
-   * discovers projects incrementally and as the goal/attention
-   * query resolves asynchronously. A stable skeleton prevents
-   * the metric strip from showing "3 → 7 → 4" during boot, which
-   * the user reads as "different number of projects every time I
-   * open the app". Once the data settles, `value` is shown.
-   */
   loading?: boolean
 }) {
   const isInteractive = () => !!props.onClick && !props.disabled
