@@ -1,5 +1,17 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
-  import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
+import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+} from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
@@ -73,7 +85,8 @@ const HOME_ROW_BASE = `${HOME_ROW_LAYOUT} border-0`
 const HOME_ROW = `${HOME_ROW_BASE} border border-transparent px-3 text-[13px] tracking-[0.01em] [font-weight:530] text-[color:var(--text-muted)] hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] hover:text-[color:var(--text-primary)] focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:text-[color:var(--text-primary)]`
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
 const HOME_PROJECT_NAV_ROW = `${HOME_ROW_LAYOUT} h-8 gap-2 border border-transparent px-2.5 [font-weight:500] text-[color:var(--text-muted)] hover:border-[color:var(--border-subtle)] hover:[background:var(--bg-panel-hover)] hover:text-[color:var(--text-primary)] data-[selected]:border-[color:var(--border-medium)] data-[selected]:[background:var(--bg-panel-elevated)] data-[selected]:text-[color:var(--text-primary)] focus-visible:border-[color:var(--border-medium)] focus-visible:[background:var(--bg-panel-hover)] focus-visible:text-[color:var(--text-primary)] focus-visible:outline-none`
-const HOME_SECTION_LABEL = "text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-secondary)] [font-weight:620]"
+const HOME_SECTION_LABEL =
+  "text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-secondary)] [font-weight:620]"
 const HOME_PANEL =
   "relative overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] shadow-[var(--shadow-soft)] backdrop-blur-[18px]"
 const HOME_PANEL_GLOW =
@@ -125,6 +138,79 @@ function homeSessionSearchKey(record: HomeSessionRecord) {
   return `${pathKey(record.session.directory)}:${record.session.id}`
 }
 
+type HomeProjectOverview = {
+  project: LocalProject
+  projectName: string
+  branch?: string
+  isPinned: boolean
+  liveSessions: number
+  sessionCount: number
+  activeGoals: number
+  attentionCount: number
+  diffCount: number
+  lastActiveAt: number
+}
+
+type HomeSessionDeckRecord = {
+  record: HomeSessionRecord
+  title: string
+  branch?: string
+  goal?: HomeGoalRecord
+  attention?: HomeAttentionRecord
+  status: SessionStatus["type"]
+  diffCount: number
+  live: boolean
+  updatedAt: number
+  startedAt: number
+}
+
+type StatusBadgeTone = "default" | "info" | "success" | "warning" | "danger"
+
+function homeRelativeTime(value?: number) {
+  if (!value) return "just now"
+  return DateTime.fromMillis(value).toRelative({ style: "short" }) ?? "just now"
+}
+
+function homeStatusTone(input: {
+  status: SessionStatus["type"]
+  attention?: HomeAttentionRecord
+  goal?: HomeGoalRecord
+  live: boolean
+}) {
+  if (input.attention?.kind === "error" || input.attention?.kind === "goal-limit") {
+    return { labelKey: "home.status.error", tone: "danger" as const }
+  }
+  if (input.attention?.kind === "permission" || input.attention?.kind === "question") {
+    return { labelKey: "home.status.waiting", tone: "warning" as const }
+  }
+  if (input.attention?.kind === "goal-stalled") {
+    return { labelKey: "home.status.stalled", tone: "warning" as const }
+  }
+  if (input.status === "retry") return { labelKey: "home.status.retrying", tone: "warning" as const }
+  if (input.goal?.status === "paused") return { labelKey: "home.status.paused", tone: "info" as const }
+  if (input.live || input.status === "busy") return { labelKey: "home.status.live", tone: "success" as const }
+  return { labelKey: "home.status.idle", tone: "default" as const }
+}
+
+function homeAttentionTone(kind: HomeAttentionKind): StatusBadgeTone {
+  switch (kind) {
+    case "permission":
+    case "question":
+      return "warning"
+    case "goal-limit":
+    case "goal-stalled":
+    case "retry":
+      return "warning"
+    case "error":
+      return "danger"
+    case "response":
+      return "success"
+    case "project":
+    default:
+      return "info"
+  }
+}
+
 export default function Home() {
   const settings = useSettings()
   return (
@@ -156,8 +242,7 @@ function HomeDesign() {
   })
   const [now, setNow] = createSignal(Date.now())
   const formattedTime = createMemo(() => {
-    const d = new Date(now())
-    return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) + " UTC"
+    return DateTime.fromMillis(now()).toFormat("HH:mm")
   })
   onMount(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000)
@@ -254,14 +339,15 @@ function HomeDesign() {
     return project ? language.t("home.sessions.projectBoard", { project }) : language.t("home.sessions.liveBoard")
   })
   const groups = createMemo(() => groupSessions(records(), language, selectedProjectName()))
-  const liveSessionCount = createMemo(() =>
-    allRecords().filter((record) =>
-      isHomeSessionLive({
-        record,
-        sync: focusedSync(),
-        permission,
-      }),
-    ).length,
+  const liveSessionCount = createMemo(
+    () =>
+      allRecords().filter((record) =>
+        isHomeSessionLive({
+          record,
+          sync: focusedSync(),
+          permission,
+        }),
+      ).length,
   )
   const activeGoalRecords = createMemo(() => goalLoad.data?.goals ?? [])
   const activeGoalCount = createMemo(() => activeGoalRecords().length)
@@ -284,9 +370,151 @@ function HomeDesign() {
   })
   const attentionCount = createMemo(() => attentionRecords().length)
   const attentionLoading = createMemo(
-    () => (sessionLoad.isLoading && sessionLoad.data === undefined) || (goalLoad.isLoading && goalLoad.data === undefined),
+    () =>
+      (sessionLoad.isLoading && sessionLoad.data === undefined) || (goalLoad.isLoading && goalLoad.data === undefined),
   )
   const latestRecord = createMemo(() => records()[0])
+  const openedProjectKeys = createMemo(() => new Set(openedProjects().map((project) => pathKey(project.worktree))))
+  const goalBySessionID = createMemo(
+    () => new Map(activeGoalRecords().flatMap((goal) => (goal.sessionID ? [[goal.sessionID, goal] as const] : []))),
+  )
+  const goalByDirectory = createMemo(
+    () => new Map(activeGoalRecords().map((goal) => [pathKey(goal.directory), goal] as const)),
+  )
+  const attentionBySessionID = createMemo(
+    () =>
+      new Map(attentionRecords().flatMap((record) => (record.session ? [[record.session.id, record] as const] : []))),
+  )
+  const sessionCards = createMemo<HomeSessionDeckRecord[]>(() =>
+    records()
+      .map((record) => {
+        const store = focusedSync().child(record.session.directory, { bootstrap: false })[0]
+        const goal =
+          goalBySessionID().get(record.session.id) ?? goalByDirectory().get(pathKey(record.session.directory))
+        const attention = attentionBySessionID().get(record.session.id)
+        const updatedAt = Math.max(
+          record.session.time.updated ?? record.session.time.created,
+          goal?.updated ?? 0,
+          attention?.time ?? 0,
+        )
+        return {
+          record,
+          title: sessionTitle(record.session.title) || record.session.id,
+          branch: store.vcs?.branch?.trim() || undefined,
+          goal,
+          attention,
+          status: store.session_status[record.session.id]?.type ?? "idle",
+          diffCount: store.session_diff[record.session.id]?.length ?? 0,
+          live: isHomeSessionLive({
+            record,
+            sync: focusedSync(),
+            permission,
+          }),
+          updatedAt,
+          startedAt: record.session.time.created,
+        }
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt),
+  )
+  const sessionCardByKey = createMemo(
+    () => new Map(sessionCards().map((card) => [homeSessionSearchKey(card.record), card] as const)),
+  )
+  const attentionSummary = createMemo(() => {
+    const records = attentionRecords()
+    return {
+      approvals: records.filter((record) => record.kind === "permission").length,
+      questions: records.filter((record) => record.kind === "question").length,
+      failures: records.filter(
+        (record) => record.kind === "error" || record.kind === "retry" || record.kind === "goal-limit",
+      ).length,
+      stalled: records.filter((record) => record.kind === "goal-stalled").length,
+    }
+  })
+  const sessionSummary = createMemo(() => ({
+    waiting: attentionSummary().approvals + attentionSummary().questions,
+    retrying: attentionRecords().filter((record) => record.kind === "retry").length,
+    total: sessionCards().length,
+  }))
+  const goalSummary = createMemo(() => ({
+    blocked: goalAttentionRecords().filter((record) => record.kind === "goal-limit" || record.kind === "goal-stalled")
+      .length,
+  }))
+  const providerSummary = createMemo(() => {
+    const directory = selectedProject()?.worktree ?? newSessionProject()?.worktree
+    const provider = directory
+      ? focusedSync().child(directory, { bootstrap: false })[0].provider
+      : focusedSync().data.provider
+    return {
+      connected: provider.connected.length,
+      total: provider.all.size,
+    }
+  })
+  const mcpSummary = createMemo(() => {
+    const states = new Map<string, string>()
+    for (const directory of projectDirectories()) {
+      const [store] = focusedSync().child(directory, { bootstrap: false, mcp: true })
+      for (const [name, status] of Object.entries(store.mcp ?? {})) {
+        states.set(name, status.status)
+      }
+    }
+    const summary = { total: states.size, connected: 0, failed: 0, degraded: 0 }
+    for (const status of states.values()) {
+      if (status === "connected") summary.connected += 1
+      else if (status === "failed") summary.failed += 1
+      else if (status === "needs_auth" || status === "needs_client_registration") summary.degraded += 1
+    }
+    return summary
+  })
+  const projectOverviews = createMemo<HomeProjectOverview[]>(() =>
+    projects()
+      .map((project) => {
+        const keys = new Set(directories(project).map((directory) => pathKey(directory)))
+        const cards = sessionCards().filter((card) => keys.has(pathKey(card.record.session.directory)))
+        const goals = activeGoalRecords().filter((goal) => keys.has(pathKey(goal.directory)))
+        const attention = attentionRecords().filter((record) => keys.has(pathKey(record.directory)))
+        const branch =
+          cards.map((card) => card.branch).find(Boolean) ??
+          directories(project)
+            .map((directory) => focusedSync().child(directory, { bootstrap: false })[0].vcs?.branch?.trim())
+            .find(Boolean)
+        return {
+          project,
+          projectName: displayName(project),
+          branch: branch || undefined,
+          isPinned: openedProjectKeys().has(pathKey(project.worktree)),
+          liveSessions: cards.filter((card) => card.live).length,
+          sessionCount: cards.length,
+          activeGoals: goals.length,
+          attentionCount: attention.length,
+          diffCount: cards.reduce((total, card) => total + card.diffCount, 0),
+          lastActiveAt: Math.max(
+            0,
+            ...cards.map((card) => card.updatedAt),
+            ...goals.map((goal) => goal.updated),
+            ...attention.map((record) => record.time),
+          ),
+        }
+      })
+      .sort((a, b) => {
+        const aBusy = Number(a.liveSessions > 0 || a.activeGoals > 0)
+        const bBusy = Number(b.liveSessions > 0 || b.activeGoals > 0)
+        return bBusy - aBusy || b.lastActiveAt - a.lastActiveAt || a.projectName.localeCompare(b.projectName)
+      }),
+  )
+  const projectOverviewMap = createMemo(
+    () => new Map(projectOverviews().map((overview) => [pathKey(overview.project.worktree), overview] as const)),
+  )
+  const runningProjects = createMemo(() =>
+    projectOverviews().filter((project) => project.liveSessions > 0 || project.activeGoals > 0),
+  )
+  const pinnedProjects = createMemo(() =>
+    projectOverviews().filter((project) => project.isPinned && !(project.liveSessions > 0 || project.activeGoals > 0)),
+  )
+  const recentProjects = createMemo(() =>
+    projectOverviews().filter((project) => !project.isPinned && !(project.liveSessions > 0 || project.activeGoals > 0)),
+  )
+  const recentThreads = createMemo(() => sessionCards().slice(0, 4))
+  const daemonStatus = createMemo(() => global.servers.health[state.selection.server]?.healthy)
 
   function setSelection(next: HomeProjectSelection) {
     batch(() => {
@@ -475,8 +703,9 @@ function HomeDesign() {
       notification.session.markViewed(record.session.id)
       return true
     }
-    const directoriesToClear = directories(record.project)
-      .filter((directory) => notification.project.unseenCount(directory) > 0)
+    const directoriesToClear = directories(record.project).filter(
+      (directory) => notification.project.unseenCount(directory) > 0,
+    )
     if (directoriesToClear.length === 0) return false
     directoriesToClear.forEach((directory) => notification.project.markViewed(directory))
     return true
@@ -594,7 +823,7 @@ function HomeDesign() {
   return (
     <div
       data-component="home-shell"
-      class="relative isolate m-1.5 flex-1 self-stretch overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--border-subtle)] [background:var(--bg-shell)] shadow-[var(--shadow-soft)]"
+      class="relative isolate m-1.5 flex-1 self-stretch overflow-x-hidden overflow-y-auto rounded-[var(--radius-xl)] border border-[color:var(--border-subtle)] [background:var(--bg-shell)] shadow-[var(--shadow-soft)]"
     >
       <div
         aria-hidden
@@ -604,9 +833,13 @@ function HomeDesign() {
         aria-hidden
         class="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.88),transparent_82%)]"
       />
-      <div class="relative mx-auto grid h-full w-full max-w-[1360px] gap-3 px-5 pb-5 pt-2 md:px-6 lg:grid-cols-[252px_minmax(0,1fr)] xl:px-7">
+      <div class="relative mx-auto grid min-h-full w-full max-w-[1360px] gap-3 px-5 pb-5 pt-2 md:px-6 lg:grid-cols-[252px_minmax(0,1fr)] xl:px-7">
         <HomeProjectColumn
           projects={projects()}
+          projectOverviewMap={projectOverviewMap()}
+          runningProjects={runningProjects()}
+          pinnedProjects={pinnedProjects()}
+          recentProjects={recentProjects()}
           selected={state.selection}
           focusServer={focusServer}
           selectProject={selectProject}
@@ -634,22 +867,28 @@ function HomeDesign() {
                 aria-hidden
                 class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(110,92,255,0.18),transparent_34%),linear-gradient(135deg,rgba(94,106,210,0.14),transparent_48%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent_44%)]"
               />
-              <div aria-hidden class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.32),transparent)]" />
-              <div class="relative flex min-w-0 flex-col gap-2 px-4 py-3 md:px-5 md:py-4">
-                <div class="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+              <div
+                aria-hidden
+                class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.32),transparent)]"
+              />
+              <div class="relative flex min-w-0 flex-col gap-3 px-4 py-3 md:px-5 md:py-4">
+                <div class="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div class="flex min-w-0 items-start gap-3">
                     <Logo class="h-7 w-[156px] opacity-95" />
                     <div class="min-w-0">
-                      <h1 class="truncate text-[20px] leading-6 tracking-[-0.03em] text-[color:var(--text-primary)] [font-weight:610] md:text-[24px] md:leading-7">
-                        {language.t("home.header.kicker")}
-                      </h1>
-                      <div class="mt-0.5 text-[9px] italic tracking-[0.1em] text-[color:var(--text-muted)] [font-weight:560]">
-                        {language.t("home.header.edition")}
+                      <div class="flex min-w-0 flex-wrap items-center gap-2">
+                        <h1 class="truncate text-[20px] leading-6 tracking-[-0.03em] text-[color:var(--text-primary)] [font-weight:610] md:text-[24px] md:leading-7">
+                          {language.t("home.header.kicker")}
+                        </h1>
+                        <StatusBadge label={language.t("home.header.edition")} tone="info" />
                       </div>
+                      <p class="mt-1 max-w-[640px] text-[12px] leading-5 text-[color:var(--text-muted)] [font-weight:480]">
+                        {language.t("home.header.subtitle")}
+                      </p>
                     </div>
                   </div>
-                  <div class="flex min-w-0 flex-wrap items-center gap-2 xl:max-w-[560px] xl:justify-end">
-                    <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <div class="flex min-w-0 flex-col gap-2 xl:items-end">
+                    <div class="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
                       <ButtonV2
                         data-action="home-primary-new-session"
                         variant="contrast"
@@ -671,12 +910,27 @@ function HomeDesign() {
                       >
                         {language.t("home.actions.openProject")}
                       </ButtonV2>
+                      <ButtonV2
+                        data-action="home-header-search"
+                        variant="ghost-muted"
+                        size="large"
+                        icon="magnifying-glass"
+                        class="[font-weight:530]"
+                        onClick={focusSessionSearchControl}
+                      >
+                        {language.t("home.actions.search")}
+                      </ButtonV2>
                     </div>
-                    <div class="flex items-center gap-1 rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                      <span class="px-2 text-[10px] tabular-nums text-[color:var(--text-muted)] [font-weight:500] select-none">
-                        {formattedTime()}
-                      </span>
-                      <div class="h-4 w-px bg-white/10" />
+                    <div class="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+                      <StatusBadge label={`${language.t("home.header.localTime")} ${formattedTime()}`} tone="default" />
+                      <StatusBadge
+                        label={`${language.t("home.header.daemon")} ${daemonStatus() === false ? language.t("home.status.offline") : daemonStatus() ? language.t("home.status.online") : language.t("home.status.pending")}`}
+                        tone={daemonStatus() === false ? "danger" : daemonStatus() ? "success" : "default"}
+                      />
+                      <StatusBadge
+                        label={`${language.t("home.header.mcp")} ${mcpSummary().connected}/${mcpSummary().total || 0}`}
+                        tone={mcpSummary().failed > 0 ? "danger" : mcpSummary().degraded > 0 ? "warning" : "success"}
+                      />
                       <ButtonV2
                         data-action="home-header-settings"
                         variant="ghost-muted"
@@ -701,12 +955,15 @@ function HomeDesign() {
               </div>
             </div>
 
-            <div data-component="home-metric-strip" class="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <div data-component="home-metric-strip" class="grid grid-cols-2 gap-2 lg:grid-cols-3 2xl:grid-cols-6">
               <HomeMetricChip
                 label={language.t("home.projects")}
                 value={String(projects().length)}
                 loading={focusedSync().data === undefined}
-                detail={language.t("home.metrics.projects.detail")}
+                detail={language.t("home.metrics.projects.secondary", {
+                  running: runningProjects().length,
+                  pinned: pinnedProjects().length,
+                })}
                 icon="folder-add-left"
                 disabled={projects().length === 0 || focusedSync().data === undefined}
                 onClick={() => openProjectsDialog()}
@@ -715,7 +972,15 @@ function HomeDesign() {
                 label={language.t("home.metrics.liveSessions")}
                 value={String(liveSessionCount())}
                 loading={sessionLoad.isLoading && sessionLoad.data === undefined}
-                detail={liveSessionCount() > 0 ? language.t("home.metrics.liveSessions.detail") : language.t("home.metrics.liveSessions.detail.idle")}
+                detail={
+                  liveSessionCount() > 0
+                    ? language.t("home.metrics.liveSessions.secondary", {
+                        waiting: sessionSummary().waiting,
+                        retrying: sessionSummary().retrying,
+                        total: sessionSummary().total,
+                      })
+                    : language.t("home.metrics.liveSessions.detail.idle")
+                }
                 icon="status-active"
                 disabled={liveSessionCount() === 0 || (sessionLoad.isLoading && sessionLoad.data === undefined)}
                 onClick={focusSessionSearchControl}
@@ -724,7 +989,11 @@ function HomeDesign() {
                 label={language.t("home.metrics.activeGoals")}
                 value={String(activeGoalCount())}
                 loading={goalLoad.isLoading && goalLoad.data === undefined}
-                detail={activeGoalCount() > 0 ? language.t("home.metrics.activeGoals.detail") : language.t("home.metrics.activeGoals.detail.idle")}
+                detail={
+                  activeGoalCount() > 0
+                    ? language.t("home.metrics.activeGoals.secondary", { blocked: goalSummary().blocked })
+                    : language.t("home.metrics.activeGoals.detail.idle")
+                }
                 icon="status"
                 disabled={goalLoad.isLoading && goalLoad.data === undefined}
                 onClick={() => openGoalsDialog()}
@@ -733,21 +1002,58 @@ function HomeDesign() {
                 label={language.t("home.metrics.needsAttention")}
                 value={String(attentionCount())}
                 loading={attentionLoading()}
-                detail={attentionCount() > 0 ? language.t("home.metrics.needsAttention.detail") : language.t("home.metrics.needsAttention.detail.clear")}
+                detail={
+                  attentionCount() > 0
+                    ? language.t("home.metrics.needsAttention.secondary", {
+                        approvals: attentionSummary().approvals,
+                        failures: attentionSummary().failures,
+                      })
+                    : language.t("home.metrics.needsAttention.detail.clear")
+                }
                 icon="help"
                 tone="warning"
                 disabled={attentionCount() === 0 || attentionLoading()}
                 onClick={() => openAttentionDialog()}
               />
+              <HomeMetricChip
+                label={language.t("home.metrics.mcp")}
+                value={mcpSummary().total > 0 ? `${mcpSummary().connected}/${mcpSummary().total}` : "—"}
+                detail={
+                  mcpSummary().total > 0
+                    ? language.t("home.metrics.mcp.secondary", {
+                        failed: mcpSummary().failed,
+                        degraded: mcpSummary().degraded,
+                      })
+                    : language.t("home.metrics.mcp.empty")
+                }
+                icon="settings-gear"
+                tone={mcpSummary().failed > 0 ? "warning" : "default"}
+                disabled={false}
+                onClick={openSettings}
+              />
+              <HomeMetricChip
+                label={language.t("home.metrics.routing")}
+                value={String(providerSummary().connected)}
+                detail={language.t("home.metrics.routing.secondary", {
+                  connected: providerSummary().connected,
+                  total: providerSummary().total,
+                })}
+                icon="status"
+                disabled={false}
+                onClick={openSettings}
+              />
             </div>
 
-            <div class="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_224px]">
+            <div class="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
               <section
                 data-component="home-live-board"
                 class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3 pb-3 pt-3 xl:min-h-0`}
               >
                 <div aria-hidden class={HOME_PANEL_GLOW} />
-                <div aria-hidden class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]" />
+                <div
+                  aria-hidden
+                  class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]"
+                />
                 <div class="mb-2 flex items-center justify-between gap-2 px-1">
                   <div class="min-w-0">
                     <div class="flex items-center gap-2 truncate text-[15px] leading-5 text-[color:var(--text-primary)] [font-weight:560]">
@@ -813,12 +1119,12 @@ function HomeDesign() {
                       <Show
                         when={groups().length > 0}
                         fallback={
-                          <div class="flex min-w-0 flex-col gap-2.5">
-                            <HomeSessionGroupHeader
-                              title={language.t("home.sessions.empty")}
-                              onNewSession={newSessionProject() ? openNewSession : undefined}
-                            />
-                          </div>
+                          <HomeSessionEmptyState
+                            canResume={!!latestRecord()}
+                            onStartSession={newSessionProject() ? openNewSession : undefined}
+                            onOpenProject={focusedServer() ? () => chooseProject(focusedServer()!) : undefined}
+                            onResumeRecent={latestRecord() ? openLatestSession : undefined}
+                          />
                         }
                       >
                         <For each={groups()}>
@@ -830,14 +1136,18 @@ function HomeDesign() {
                               />
                               <div class="overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] divide-y divide-white/5">
                                 <For each={group.sessions}>
-                                  {(record) => (
-                                    <HomeSessionRow
-                                      record={record}
-                                      server={state.selection.server}
-                                      activeServer={state.selection.server === server.key}
-                                      openSession={openSession}
-                                    />
-                                  )}
+                                  {(record) => {
+                                    const card = sessionCardByKey().get(homeSessionSearchKey(record))
+                                    if (!card) return null
+                                    return (
+                                      <HomeSessionRow
+                                        card={card}
+                                        server={state.selection.server}
+                                        activeServer={state.selection.server === server.key}
+                                        openSession={openSession}
+                                      />
+                                    )
+                                  }}
                                 </For>
                               </div>
                             </div>
@@ -850,104 +1160,181 @@ function HomeDesign() {
               </section>
 
               <aside data-component="home-command-rail" class="flex min-h-0 flex-col">
-                <section data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-2.5`}>
-                  <div aria-hidden class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,191,90,0.16),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_24%)]" />
+                <section data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-3`}>
+                  <div
+                    aria-hidden
+                    class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,191,90,0.16),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_24%)]"
+                  />
                   <div class="relative flex min-h-0 flex-1 flex-col">
-                    <div class="min-w-0">
-                      <div class="min-w-0">
-                        <div class="flex min-w-0 items-center gap-2">
-                          <span class="h-2 w-2 shrink-0 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(255,191,90,0.32)]" aria-hidden />
-                          <span class={HOME_SECTION_LABEL}>{language.t("home.attention.title")}</span>
-                        </div>
-                        <div class="mt-1 text-[12px] leading-5 text-[color:var(--text-primary)] [font-weight:540]">
-                          {language.t("home.attention.subtitle")}
-                        </div>
+                    <div class="flex min-w-0 flex-col gap-1">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <span
+                          class="h-2 w-2 shrink-0 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(255,191,90,0.32)]"
+                          aria-hidden
+                        />
+                        <span class={HOME_SECTION_LABEL}>{language.t("home.attention.title")}</span>
+                      </div>
+                      <div class="text-[12px] leading-5 text-[color:var(--text-primary)] [font-weight:540]">
+                        {language.t("home.attention.subtitle")}
+                      </div>
+                      <div class="mt-1 flex flex-wrap gap-1.5">
+                        <StatusBadge
+                          label={`${language.t("home.attention.summary.approvals")} ${attentionSummary().approvals}`}
+                          tone="warning"
+                        />
+                        <StatusBadge
+                          label={`${language.t("home.attention.summary.failures")} ${attentionSummary().failures}`}
+                          tone={attentionSummary().failures > 0 ? "danger" : "default"}
+                        />
+                        <StatusBadge
+                          label={`${language.t("home.attention.summary.stalled")} ${attentionSummary().stalled}`}
+                          tone={attentionSummary().stalled > 0 ? "warning" : "default"}
+                        />
+                        <StatusBadge
+                          label={`${language.t("home.attention.summary.mcp")} ${mcpSummary().failed + mcpSummary().degraded}`}
+                          tone={mcpSummary().failed > 0 ? "danger" : mcpSummary().degraded > 0 ? "warning" : "success"}
+                        />
                       </div>
                     </div>
-                    <div class="mt-2.5 h-px bg-white/6" />
+                    <div class="mt-3 h-px bg-white/6" />
                     <Show
                       when={attentionRecords().length > 0}
-                      fallback={<p class="mt-2.5 text-[11px] leading-5 text-[color:var(--text-muted)]">{language.t("home.attention.empty")}</p>}
+                      fallback={
+                        <div class="mt-3 rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] p-3 text-[11px] leading-5 text-[color:var(--text-muted)]">
+                          <p>{language.t("home.attention.empty")}</p>
+                          <div class="mt-2">
+                            <ButtonV2 variant="ghost-muted" size="normal" onClick={openAttentionDialog}>
+                              {language.t("home.metrics.needsAttention")}
+                            </ButtonV2>
+                          </div>
+                        </div>
+                      }
                     >
-                      <div class="mt-2.5 min-h-0 flex-1 overflow-hidden">
-                        <ul class="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] divide-y divide-white/5">
-                          <For each={attentionRecords().slice(0, 4)}>
-                            {(record) => (
-                              <li>
-                                <div class="flex min-w-0 items-stretch gap-2 px-2 py-2">
-                                  <button
-                                    type="button"
-                                    class="flex min-w-0 flex-1 items-start gap-2 rounded-[var(--radius-sm)] border border-transparent px-0 text-left transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-amber-300/18 hover:text-[color:var(--text-primary)] focus-visible:-translate-y-px focus-visible:border-amber-300/24 focus-visible:outline-none"
-                                    onClick={() => openAttentionRecord(record)}
-                                  >
-                                    <span class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-amber-300/16 bg-amber-300/10 text-amber-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" aria-hidden>
-                                      <IconV2 name="help" size="small" />
-                                    </span>
-                                    <span class="min-w-0 flex-1">
-                                      <span class="block truncate text-[11px] leading-4 text-[color:var(--text-primary)] [font-weight:560]">
-                                        {record.session ? sessionTitle(record.session.title) || record.session.id : record.projectName}
-                                      </span>
-                                      <span class="mt-0.5 flex items-center gap-1.5">
-                                        <span class="truncate text-[9px] uppercase tracking-[0.12em] text-amber-100 [font-weight:620]">
-                                          {record.reason}
-                                        </span>
-                                        <span class={`inline-flex shrink-0 items-center rounded border px-1 py-px text-[7px] leading-3 [font-weight:600] ${attentionKindBadge(record.kind).color}`}>
-                                          {attentionKindBadge(record.kind).label}
-                                        </span>
-                                      </span>
-                                      <Show when={record.detail}>
-                                        <span class="mt-0.5 block truncate text-[10px] leading-4 text-[color:var(--text-muted)]">{record.detail}</span>
-                                      </Show>
-                                      <span class="mt-0.5 block truncate text-[10px] text-[color:var(--text-muted)]">{record.projectName}</span>
-                                    </span>
-                                  </button>
-                                  <Show when={record.clearable}>
-                                    <button
-                                      type="button"
-                                      class="shrink-0 self-start rounded-[var(--radius-sm)] border border-transparent px-2 py-1 text-[10px] text-[color:var(--text-muted)] transition-[background-color,border-color,color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:border-amber-300/24 hover:bg-black/15 hover:text-[color:var(--text-primary)] focus-visible:-translate-y-px focus-visible:border-amber-300/24 focus-visible:bg-black/20 focus-visible:outline-none"
-                                      onClick={() => clearAttentionRecord(record)}
-                                      aria-label={language.t("home.attention.clear", { reason: record.reason })}
-                                    >
-                                      {language.t("home.attention.clear.short")}
-                                    </button>
-                                  </Show>
-                                </div>
-                              </li>
-                            )}
-                          </For>
-                        </ul>
+                      <ul class="mt-3 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                        <For each={attentionRecords().slice(0, 5)}>
+                          {(record) => (
+                            <AttentionItem
+                              record={record}
+                              onOpen={() => openAttentionRecord(record)}
+                              onClear={record.clearable ? () => clearAttentionRecord(record) : undefined}
+                            />
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                  </div>
+                </section>
+                <section data-component="home-quick-actions" class={`${HOME_PANEL} mt-2 flex flex-col p-2.5`}>
+                  <div
+                    aria-hidden
+                    class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(110,92,255,0.12),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%)]"
+                  />
+                  <div class="relative flex min-w-0 flex-col">
+                    <span class={HOME_SECTION_LABEL}>{language.t("home.quick.title")}</span>
+                    <p class="mt-1 text-[11px] leading-5 text-[color:var(--text-muted)]">
+                      {language.t("home.quick.subtitle")}
+                    </p>
+                    <div class="mt-2 flex flex-col gap-1.5">
+                      <QuickActionButton
+                        title={language.t("home.quick.start")}
+                        detail={language.t("home.quick.start.detail")}
+                        icon="plus"
+                        emphasis
+                        onClick={openNewSession}
+                      />
+                      <QuickActionButton
+                        title={language.t("home.quick.project")}
+                        detail={language.t("home.quick.project.detail")}
+                        icon="folder-add-left"
+                        onClick={() => focusedServer() && chooseProject(focusedServer()!)}
+                        disabled={!focusedServer()}
+                      />
+                      <QuickActionButton
+                        title={language.t("home.quick.search")}
+                        detail={language.t("home.quick.search.detail")}
+                        icon="magnifying-glass"
+                        onClick={focusSessionSearchControl}
+                      />
+                      <QuickActionButton
+                        title={language.t("home.quick.resume")}
+                        detail={language.t("home.quick.resume.detail")}
+                        icon="status-active"
+                        onClick={openLatestSession}
+                        disabled={!latestRecord()}
+                      />
+                      <QuickActionButton
+                        title={language.t("home.quick.mcp")}
+                        detail={language.t("home.quick.mcp.detail")}
+                        icon="settings-gear"
+                        onClick={openSettings}
+                      />
+                      <QuickActionButton
+                        title={language.t("home.quick.scan")}
+                        detail={language.t("home.quick.scan.detail")}
+                        icon="status"
+                        disabled
+                        badge={language.t("home.quick.placeholder")}
+                      />
+                      <QuickActionButton
+                        title={language.t("home.quick.logs")}
+                        detail={language.t("home.quick.logs.detail")}
+                        icon="help"
+                        disabled
+                        badge={language.t("home.quick.placeholder")}
+                      />
+                    </div>
+                  </div>
+                </section>
+                <section data-component="home-recent-threads" class={`${HOME_PANEL} mt-2 flex min-h-0 flex-col p-2.5`}>
+                  <div
+                    aria-hidden
+                    class="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%)]"
+                  />
+                  <div class="relative flex min-h-0 flex-col">
+                    <span class={HOME_SECTION_LABEL}>{language.t("home.recent.title")}</span>
+                    <Show
+                      when={recentThreads().length > 0}
+                      fallback={
+                        <p class="mt-2 text-[11px] leading-5 text-[color:var(--text-muted)]">
+                          {language.t("home.recent.empty")}
+                        </p>
+                      }
+                    >
+                      <div class="mt-2 flex min-h-0 flex-col gap-1.5 overflow-y-auto pr-1">
+                        <For each={recentThreads()}>
+                          {(card) => (
+                            <HomeRecentThreadRow card={card} onOpen={() => openSession(card.record.session)} />
+                          )}
+                        </For>
                       </div>
                     </Show>
                   </div>
-                  </section>
-                  <section data-component="home-quick-actions" class={`${HOME_PANEL} mt-1.5 flex flex-col p-2`}>
-                    <div aria-hidden class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(110,92,255,0.12),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%)]" />
-                    <div class="relative flex min-w-0 flex-col">
-                      <span class={HOME_SECTION_LABEL}>{language.t("home.actions.quickAccess")}</span>
-                      <div class="mt-1.5 flex flex-col">
-                        <button type="button" class={HOME_QUICK_ACTION} onClick={focusSessionSearchControl}>
-                          <IconV2 name="search" size="small" />
-                          <span class="truncate">{language.t("home.actions.search.detail")}</span>
-                        </button>
-                        <button type="button" class={HOME_QUICK_ACTION} onClick={openNewSession}>
-                          <IconV2 name="plus" size="small" />
-                          <span class="truncate">{language.t("home.actions.newSession.detail")}</span>
-                        </button>
-                        <Show when={latestRecord()}>
-                          <button type="button" class={HOME_QUICK_ACTION} onClick={openLatestSession}>
-                            <IconV2 name="status-active" size="small" />
-                            <span class="truncate">{language.t("home.actions.resumeLast.detail")}</span>
-                          </button>
-                        </Show>
-                      </div>
-                    </div>
-                  </section>
-                </aside>
+                </section>
+              </aside>
             </div>
           </div>
         </section>
       </div>
     </div>
+  )
+}
+
+function StatusBadge(props: { label: string; tone?: StatusBadgeTone; class?: string }) {
+  const tone = () => props.tone ?? "default"
+  return (
+    <span
+      data-component="home-status-badge"
+      class={`inline-flex min-w-0 items-center gap-1 rounded-[999px] border px-2 py-1 text-[9px] uppercase tracking-[0.12em] [font-weight:620] ${props.class ?? ""}`}
+      classList={{
+        "border-[color:var(--border-subtle)] bg-white/5 text-[color:var(--text-muted)]": tone() === "default",
+        "border-cyan-400/18 bg-cyan-400/10 text-cyan-200": tone() === "info",
+        "border-emerald-400/18 bg-emerald-400/10 text-emerald-200": tone() === "success",
+        "border-amber-300/18 bg-amber-300/10 text-amber-100": tone() === "warning",
+        "border-red-400/18 bg-red-400/10 text-red-200": tone() === "danger",
+      }}
+    >
+      <span class="truncate">{props.label}</span>
+    </span>
   )
 }
 
@@ -963,9 +1350,8 @@ function HomeMetricChip(props: {
 }) {
   const isInteractive = () => !!props.onClick && !props.disabled
   const displayValue = () => (props.loading ? "—" : props.value)
-  const ariaLabel = () => props.detail
-    ? `${props.label}: ${displayValue()}. ${props.detail}`
-    : `${props.label}: ${displayValue()}`
+  const ariaLabel = () =>
+    props.detail ? `${props.label}: ${displayValue()}. ${props.detail}` : `${props.label}: ${displayValue()}`
   return (
     <button
       type="button"
@@ -1002,11 +1388,179 @@ function HomeMetricChip(props: {
         {displayValue()}
       </span>
       <Show when={isInteractive()}>
-        <span class="text-[10px] text-[color:var(--text-muted)] transition-colors group-hover:text-[color:var(--text-primary)]" aria-hidden>↗</span>
+        <span class="text-[10px] text-[color:var(--text-muted)] transition-colors group-hover:text-[color:var(--text-primary)]" aria-hidden>
+          ↗
+        </span>
       </Show>
     </button>
   )
 }
+
+function QuickActionButton(props: {
+  title: string
+  detail: string
+  icon: Parameters<typeof IconV2>[0]["name"]
+  onClick?: () => void
+  disabled?: boolean
+  emphasis?: boolean
+  badge?: string
+}) {
+  return (
+    <button
+      type="button"
+      data-component="home-control-tile"
+      data-emphasis={props.emphasis ? "true" : undefined}
+      class={`${HOME_QUICK_ACTION} h-8 px-2.5 disabled:cursor-default disabled:opacity-65`}
+      classList={{
+        "hover:[background:var(--bg-panel-hover)] focus-visible:outline-none": !props.disabled,
+      }}
+      onClick={() => !props.disabled && props.onClick?.()}
+      disabled={props.disabled}
+      title={props.detail}
+    >
+      <span class="flex size-4 shrink-0 items-center justify-center rounded-[3px] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] text-[color:var(--accent-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <IconV2 name={props.icon} size="small" />
+      </span>
+      <span class="min-w-0 flex-1 truncate text-[12px] text-[color:var(--text-primary)] [font-weight:540]">
+        {props.title}
+      </span>
+      <Show when={props.badge}>{(badge) => <StatusBadge label={badge()} tone="default" />}</Show>
+    </button>
+  )
+}
+
+function AttentionItem(props: { record: HomeAttentionRecord; onOpen: () => void; onClear?: () => void }) {
+  const language = useLanguage()
+  return (
+    <li
+      data-component="home-attention-item"
+      class="rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+    >
+      <div class="flex items-start gap-2.5">
+        <span
+          class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-amber-300/16 bg-amber-300/10 text-amber-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+          aria-hidden
+        >
+          <IconV2 name="help" size="small" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span class="truncate text-[12px] leading-4 text-[color:var(--text-primary)] [font-weight:560]">
+              {props.record.session
+                ? sessionTitle(props.record.session.title) || props.record.session.id
+                : props.record.projectName}
+            </span>
+            <StatusBadge label={props.record.reason} tone={homeAttentionTone(props.record.kind)} />
+          </div>
+          <Show when={props.record.detail}>
+            <p class="mt-1 text-[11px] leading-5 text-[color:var(--text-muted)]">{props.record.detail}</p>
+          </Show>
+          <div class="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[10px] text-[color:var(--text-muted)]">
+            <span class="truncate">{props.record.projectName}</span>
+            <span>•</span>
+            <span>{homeRelativeTime(props.record.time)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="mt-2 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          class="rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-primary)] transition-[background-color,border-color,color] duration-[140ms] ease-out hover:[background:var(--bg-panel-hover)] focus-visible:outline-none"
+          onClick={props.onOpen}
+        >
+          {language.t("home.attention.action.open")}
+        </button>
+        <Show when={props.onClear}>
+          {(onClear) => (
+            <button
+              type="button"
+              class="rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)] transition-[background-color,border-color,color] duration-[140ms] ease-out hover:[background:var(--bg-panel-hover)] hover:text-[color:var(--text-primary)] focus-visible:outline-none"
+              onClick={() => onClear()}
+              aria-label={language.t("home.attention.clear", { reason: props.record.reason })}
+            >
+              {language.t("home.attention.clear.short")}
+            </button>
+          )}
+        </Show>
+      </div>
+    </li>
+  )
+}
+
+function HomeSessionEmptyState(props: {
+  canResume: boolean
+  onStartSession?: () => void
+  onOpenProject?: () => void
+  onResumeRecent?: () => void
+}) {
+  const language = useLanguage()
+  return (
+    <div class="rounded-[var(--radius-lg)] border border-dashed border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div class="mx-auto flex size-10 items-center justify-center rounded-[16px] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] text-[color:var(--accent-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <IconV2 name="status-active" />
+      </div>
+      <h3 class="mt-2.5 text-[15px] leading-5 text-[color:var(--text-primary)] [font-weight:600]">
+        {language.t("home.sessions.empty.title")}
+      </h3>
+      <p class="mx-auto mt-1.5 max-w-[520px] text-[11px] leading-5 text-[color:var(--text-muted)]">
+        {language.t("home.sessions.empty.copy")}
+      </p>
+      <div class="mt-3 flex flex-col gap-1.5">
+        <QuickActionButton
+          title={language.t("home.quick.start")}
+          detail={language.t("home.quick.start.detail")}
+          icon="plus"
+          emphasis
+          onClick={props.onStartSession}
+          disabled={!props.onStartSession}
+        />
+        <QuickActionButton
+          title={language.t("home.quick.project")}
+          detail={language.t("home.quick.project.detail")}
+          icon="folder-add-left"
+          onClick={props.onOpenProject}
+          disabled={!props.onOpenProject}
+        />
+        <QuickActionButton
+          title={language.t("home.quick.scan")}
+          detail={language.t("home.quick.scan.detail")}
+          icon="status"
+          disabled
+          badge={language.t("home.quick.placeholder")}
+        />
+        <QuickActionButton
+          title={language.t("home.quick.resume")}
+          detail={language.t("home.quick.resume.detail")}
+          icon="status-active"
+          onClick={props.onResumeRecent}
+          disabled={!props.canResume || !props.onResumeRecent}
+        />
+      </div>
+    </div>
+  )
+}
+
+function HomeRecentThreadRow(props: { card: HomeSessionDeckRecord; onOpen: () => void }) {
+  const language = useLanguage()
+  const status = () => homeStatusTone(props.card)
+  return (
+    <button
+      type="button"
+      class="flex min-w-0 items-center gap-2 rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] px-2.5 py-2 text-left transition-[background-color,border-color,transform] duration-[140ms] ease-out hover:-translate-y-px hover:[background:var(--bg-panel-hover)] focus-visible:outline-none"
+      onClick={props.onOpen}
+    >
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-[12px] text-[color:var(--text-primary)] [font-weight:550]">{props.card.title}</div>
+        <div class="mt-0.5 truncate text-[10px] text-[color:var(--text-muted)]">
+          {props.card.record.projectName} · {homeRelativeTime(props.card.updatedAt)}
+        </div>
+      </div>
+      <StatusBadge label={language.t(status().labelKey)} tone={status().tone} />
+    </button>
+  )
+}
+
+const MetricCard = HomeMetricChip
 
 function ProjectsDialogBody(props: {
   projects: LocalProject[]
@@ -1073,9 +1627,7 @@ function GoalsDialogBody(props: {
                 >
                   <span class="mt-1.5 h-1.5 w-1.5 rounded-full bg-sky-400 shrink-0" aria-hidden />
                   <div class="min-w-0 flex-1">
-                    <div class="truncate text-v2-text-text-base [font-weight:530]">
-                      {record.condition || record.id}
-                    </div>
+                    <div class="truncate text-v2-text-text-base [font-weight:530]">{record.condition || record.id}</div>
                     <div class="mt-0.5 truncate text-[12px] text-v2-text-text-weaker">
                       {record.projectName} · {record.status}
                     </div>
@@ -1160,6 +1712,10 @@ function AttentionDialogBody(props: {
 
 function HomeProjectColumn(props: {
   projects: LocalProject[]
+  projectOverviewMap: Map<string, HomeProjectOverview>
+  runningProjects: HomeProjectOverview[]
+  pinnedProjects: HomeProjectOverview[]
+  recentProjects: HomeProjectOverview[]
   selected: HomeProjectSelection
   focusServer: (server: ServerConnection.Any) => void
   selectProject: (server: ServerConnection.Any, directory: string) => void
@@ -1176,18 +1732,20 @@ function HomeProjectColumn(props: {
   const controller = useServerManagementController({ navigateOnAdd: false })
   return (
     <aside class="flex min-h-0 min-w-0 flex-col pb-5 pt-5 lg:pt-7" aria-label={props.language.t("home.projects")}>
-      <nav
-        data-component="home-project-tree"
-        class={`${HOME_PANEL} flex min-h-0 flex-1 min-w-0 flex-col gap-1.5 p-2`}
-      >
+      <nav data-component="home-project-tree" class={`${HOME_PANEL} flex min-h-0 flex-1 min-w-0 flex-col gap-1.5 p-2`}>
         <div aria-hidden class={HOME_PANEL_GLOW} />
-        <div aria-hidden class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]" />
-        <div class="flex h-7 min-w-0 items-center justify-between px-1">
-          <div class={HOME_SECTION_LABEL}>{props.language.t("home.projects")}</div>
-          <div class="flex items-center gap-1.5">
-            <span class="rounded-[999px] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] px-2 py-0.5 text-[10px] tabular-nums text-[color:var(--text-muted)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              {props.projects.length}
-            </span>
+        <div
+          aria-hidden
+          class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]"
+        />
+        <div class="grid min-h-[36px] grid-cols-[auto_1fr_auto] items-center gap-2 px-1.5">
+          <span class="justify-self-start rounded-[999px] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] px-2 py-0.5 text-[10px] tabular-nums text-[color:var(--text-muted)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            {props.projects.length}
+          </span>
+          <div class="flex justify-center">
+            <div class={HOME_SECTION_LABEL}>{props.language.t("home.projects")}</div>
+          </div>
+          <div class="flex justify-end">
             <Show when={global.servers.list().length === 1}>
               <IconButtonV2
                 data-action="home-add-project"
@@ -1205,7 +1763,50 @@ function HomeProjectColumn(props: {
           when={global.servers.list().length > 1}
           fallback={
             <div class="min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <HomeProjectList {...props} server={global.servers.list()[0]!} />
+              <div class="flex min-w-0 flex-col gap-3 pb-1">
+                <HomeProjectSection
+                  title={props.language.t("home.projects.running")}
+                  empty={props.language.t("home.projects.emptyRunning")}
+                  items={props.runningProjects}
+                  server={global.servers.list()[0]!}
+                  selected={props.selected}
+                  selectProject={props.selectProject}
+                  openNewSession={props.openNewSession}
+                  editProject={props.editProject}
+                  closeProject={props.closeProject}
+                  clearNotifications={props.clearNotifications}
+                  unseenCount={props.unseenCount}
+                  language={props.language}
+                />
+                <HomeProjectSection
+                  title={props.language.t("home.projects.pinned")}
+                  empty={props.language.t("home.projects.emptyPinned")}
+                  items={props.pinnedProjects}
+                  server={global.servers.list()[0]!}
+                  selected={props.selected}
+                  selectProject={props.selectProject}
+                  openNewSession={props.openNewSession}
+                  editProject={props.editProject}
+                  closeProject={props.closeProject}
+                  clearNotifications={props.clearNotifications}
+                  unseenCount={props.unseenCount}
+                  language={props.language}
+                />
+                <HomeProjectSection
+                  title={props.language.t("home.projects.recent")}
+                  empty={props.language.t("home.projects.emptyRecent")}
+                  items={props.recentProjects}
+                  server={global.servers.list()[0]!}
+                  selected={props.selected}
+                  selectProject={props.selectProject}
+                  openNewSession={props.openNewSession}
+                  editProject={props.editProject}
+                  closeProject={props.closeProject}
+                  clearNotifications={props.clearNotifications}
+                  unseenCount={props.unseenCount}
+                  language={props.language}
+                />
+              </div>
             </div>
           }
         >
@@ -1214,7 +1815,8 @@ function HomeProjectColumn(props: {
               const key = ServerConnection.key(item)
               const healthy = () => !!global.servers.health[key]?.healthy
               const serverCtx = global.createServerCtx(item)
-              const serverProjects = () => resolveHomeServerProjects(serverCtx.projects.list(), serverCtx.sync.data.project)
+              const serverProjects = () =>
+                resolveHomeServerProjects(serverCtx.projects.list(), serverCtx.sync.data.project)
               return (
                 <div class="flex min-h-0 flex-1 min-w-0 flex-col gap-1.5 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <HomeServerRow
@@ -1301,9 +1903,67 @@ function HomeServerRow(props: {
   )
 }
 
+function HomeProjectSection(props: {
+  title: string
+  empty: string
+  items: HomeProjectOverview[]
+  server: ServerConnection.Any
+  selected: HomeProjectSelection
+  selectProject: (server: ServerConnection.Any, directory: string) => void
+  openNewSession: (server: ServerConnection.Any, directory: string) => void
+  editProject: (server: ServerConnection.Any, project: LocalProject) => void
+  closeProject: (server: ServerConnection.Any, directory: string) => void
+  clearNotifications: (server: ServerConnection.Any, project: LocalProject) => void
+  unseenCount: (server: ServerConnection.Any, project: LocalProject) => number
+  language: ReturnType<typeof useLanguage>
+}) {
+  return (
+    <section class="flex min-w-0 flex-col gap-1.5">
+      <div class="flex items-center justify-between px-1">
+        <span class={HOME_SECTION_LABEL}>{props.title}</span>
+        <Show when={props.items.length > 0}>
+          <span class="text-[10px] tabular-nums text-[color:var(--text-muted)]">{props.items.length}</span>
+        </Show>
+      </div>
+      <Show
+        when={props.items.length > 0}
+        fallback={
+          <div class="rounded-[var(--radius-md)] border border-dashed border-[color:var(--border-subtle)] px-3 py-2 text-[10px] leading-4 text-[color:var(--text-muted)]">
+            {props.empty}
+          </div>
+        }
+      >
+        <div class="flex min-w-0 flex-col gap-2">
+          <For each={props.items}>
+            {(overview) => (
+              <HomeProjectRow
+                project={overview.project}
+                overview={overview}
+                server={props.server}
+                selected={
+                  props.selected.server === ServerConnection.key(props.server) &&
+                  props.selected.directory === overview.project.worktree
+                }
+                unseenCount={props.unseenCount(props.server, overview.project)}
+                selectProject={props.selectProject}
+                openNewSession={props.openNewSession}
+                editProject={props.editProject}
+                closeProject={props.closeProject}
+                clearNotifications={props.clearNotifications}
+                language={props.language}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+    </section>
+  )
+}
+
 function HomeProjectList(props: {
   server: ServerConnection.Any
   projects: LocalProject[]
+  projectOverviewMap?: Map<string, HomeProjectOverview>
   selected: HomeProjectSelection
   selectProject: (server: ServerConnection.Any, directory: string) => void
   openNewSession: (server: ServerConnection.Any, directory: string) => void
@@ -1319,6 +1979,7 @@ function HomeProjectList(props: {
         {(project) => (
           <HomeProjectRow
             project={project}
+            overview={props.projectOverviewMap?.get(pathKey(project.worktree))}
             server={props.server}
             selected={
               props.selected.server === ServerConnection.key(props.server) &&
@@ -1340,6 +2001,7 @@ function HomeProjectList(props: {
 
 function HomeProjectRow(props: {
   project: LocalProject
+  overview?: HomeProjectOverview
   server: ServerConnection.Any
   selected: boolean
   unseenCount: number
@@ -1588,10 +2250,7 @@ function HomeSessionSearch(props: {
                         {language.t("home.sessions.search.sessions")}
                       </p>
                       <div aria-hidden class="mx-4 mt-3 h-px bg-white/6" />
-                      <div
-                        ref={listRef}
-                        class="mt-3 flex max-h-80 flex-col gap-1 overflow-y-auto px-3 pb-1"
-                      >
+                      <div ref={listRef} class="mt-3 flex max-h-80 flex-col gap-1 overflow-y-auto px-3 pb-1">
                         <For each={props.results}>
                           {(record) => (
                             <HomeSessionSearchResultRow
@@ -1617,7 +2276,8 @@ function HomeSessionSearch(props: {
           classList={{
             "hover:border-[color:var(--border-medium)] hover:[background:var(--bg-panel-hover)] focus-within:border-[color:var(--border-medium)] focus-within:[background:var(--bg-panel-hover)] focus-within:shadow-[0_0_0_1px_rgba(99,201,255,0.10),0_18px_44px_rgba(0,0,0,0.22)]":
               !props.open,
-            "border-[color:var(--border-medium)] [background:var(--bg-panel-hover)] shadow-[0_0_0_1px_rgba(99,201,255,0.12)]": props.open,
+            "border-[color:var(--border-medium)] [background:var(--bg-panel-hover)] shadow-[0_0_0_1px_rgba(99,201,255,0.12)]":
+              props.open,
           }}
         >
           <span class="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--border-subtle)] [background:var(--bg-panel)] text-[color:var(--accent-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
@@ -1704,7 +2364,8 @@ function HomeSessionSearchResultRow(props: {
       aria-selected={props.selected}
       classList={{
         [HOME_SEARCH_RESULT_ROW]: true,
-        "border-[color:var(--border-medium)] [background:var(--bg-panel-hover)] text-[color:var(--text-primary)]": props.selected,
+        "border-[color:var(--border-medium)] [background:var(--bg-panel-hover)] text-[color:var(--text-primary)]":
+          props.selected,
       }}
       onMouseEnter={() => props.onHighlight()}
       onClick={() => props.onSelect(props.record.session)}
@@ -1756,36 +2417,34 @@ function HomeSessionGroupHeader(props: { title: string; onNewSession?: () => voi
 }
 
 function HomeSessionRow(props: {
-  record: HomeSessionRecord
+  card: HomeSessionDeckRecord
   server: ServerConnection.Key
   activeServer: boolean
   openSession: (session: Session) => void
 }) {
-  const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
-
   return (
     <button
       type="button"
       data-component="home-session-row"
       class={`${HOME_ROW} h-8 gap-2 rounded-none bg-transparent px-3 py-1.5 pl-3`}
-      onClick={() => props.openSession(props.record.session)}
+      onClick={() => props.openSession(props.card.record.session)}
     >
       <HomeSessionLeading
-        project={props.record.project}
-        session={props.record.session}
+        project={props.card.record.project}
+        session={props.card.record.session}
         server={props.server}
         activeServer={props.activeServer}
       />
       <span
-        class={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-[color:var(--text-primary)] [font-weight:530] ${props.record.projectName ? "max-w-[min(68%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
+        class={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-[color:var(--text-primary)] [font-weight:530] ${props.card.record.projectName ? "max-w-[min(68%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
       >
-        {title()}
+        {props.card.title}
       </span>
-      <Show when={props.record.projectName}>
+      <Show when={props.card.record.projectName}>
         <>
           <span aria-hidden class="h-3.5 w-px shrink-0 bg-white/8" />
           <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-[color:var(--text-muted)] [font-weight:450]">
-            {props.record.projectName}
+            {props.card.record.projectName}
           </span>
         </>
       </Show>
@@ -1793,13 +2452,19 @@ function HomeSessionRow(props: {
   )
 }
 
+const ProjectRow = HomeProjectRow
+const SessionCard = HomeSessionRow
+
 function HomeSessionSkeleton(props: { label: string }) {
   return (
     <div class="flex min-w-0 flex-col gap-2">
       <div class="flex h-7 min-w-0 items-center justify-between px-1">
         <div class={HOME_SECTION_LABEL}>{props.label}</div>
       </div>
-      <div class="overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] divide-y divide-white/5" aria-hidden="true">
+      <div
+        class="overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] divide-y divide-white/5"
+        aria-hidden="true"
+      >
         <For each={[0, 1, 2, 3]}>{() => <div class="h-8 [background:var(--bg-panel-elevated)] opacity-70" />}</For>
       </div>
     </div>

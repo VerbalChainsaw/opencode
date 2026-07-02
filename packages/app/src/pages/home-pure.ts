@@ -21,6 +21,9 @@ export type HomeGoalRecord = {
   sessionID?: string
   status: GoalState["status"]
   condition: string
+  agentName?: string
+  lastReason?: string
+  tokensUsed: number
   updated: number
 }
 
@@ -131,6 +134,7 @@ export async function buildHomeGoalRecords(input: {
       if (!store.state) return null
       if (!(store.state.status === "active" || store.state.status === "paused")) return null
       const sessionID = homeGoalSessionID(store.state)
+      const agentName = typeof store.state.metadata?.agentName === "string" ? cleanText(store.state.metadata.agentName) : undefined
 
       return {
         id: store.state.id,
@@ -140,6 +144,9 @@ export async function buildHomeGoalRecords(input: {
         ...(sessionID ? { sessionID } : {}),
         status: store.state.status,
         condition: cleanText(store.state.condition),
+        ...(agentName ? { agentName } : {}),
+        lastReason: cleanText(store.state.lastEvaluation?.reason),
+        tokensUsed: store.state.tokensUsed,
         updated: store.state.lastEvaluation?.timestamp ?? store.state.startedAt,
       }
     }),

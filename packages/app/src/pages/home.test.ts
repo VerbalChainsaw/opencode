@@ -58,12 +58,7 @@ describe("home mission-control contract", () => {
       expect(src).toContain(key)
     }
     // And the four labels don't appear as raw `>Label<` markup.
-    for (const label of [
-      "Projects",
-      "Live Sessions",
-      "Active Goals",
-      "Needs Attention",
-    ]) {
+    for (const label of ["Projects", "Live Sessions", "Active Goals", "Needs Attention"]) {
       const pattern = new RegExp(`>\\s*${label}\\s*<`)
       expect(pattern.test(src)).toBe(false)
     }
@@ -73,18 +68,14 @@ describe("home mission-control contract", () => {
     // The dashboard keeps only the actions that still earn their space in
     // the hero / board chrome. They must stay routed through language.t().
     const src = await home()
-    for (const key of [
-      "home.actions.newSession",
-      "home.actions.resumeLast",
-      "home.actions.openProject",
-    ]) {
+    for (const key of ["home.actions.newSession", "home.actions.resumeLast", "home.actions.openProject"]) {
       expect(src).toContain(key)
     }
     for (const label of ["New Session", "Resume Last", "Open Project"]) {
       const pattern = new RegExp(`>\\s*${label}\\s*<`)
       expect(pattern.test(src)).toBe(false)
     }
-    expect(src).not.toContain('home.actions.openGoal.disabled')
+    expect(src).not.toContain("home.actions.openGoal.disabled")
   })
 
   test("ships the active-goal records memo for the goals surfaces", async () => {
@@ -92,12 +83,14 @@ describe("home mission-control contract", () => {
     expect(await uses("activeGoalRecords")).toBe(true)
   })
 
-  test("home removes the redundant control deck and keeps attention as the only side pod", async () => {
+  test("home keeps attention, quick actions, and recent threads in the right rail", async () => {
     const src = await home()
     expect(src).not.toContain('data-component="home-actions-panel"')
     expect(src).not.toContain('data-component="home-open-goal-disabled-reason"')
     expect(src).toContain('data-component="home-attention-panel"')
-    expect(src).toContain('attentionRecords().slice(0, 4)')
+    expect(src).toContain('data-component="home-quick-actions"')
+    expect(src).toContain('data-component="home-recent-threads"')
+    expect(src).toContain("attentionRecords().slice(0, 5)")
   })
 
   test("home opening window keeps the branded shell, responsive layout, and primary utilities", async () => {
@@ -117,7 +110,7 @@ describe("home mission-control contract", () => {
     expect(src).toContain('data-action="home-primary-open-project"')
     expect(src).toContain('data-action="home-header-settings"')
     expect(src).toContain('data-action="home-header-help"')
-    expect(src).not.toContain('liveSessionCount()}</span>')
+    expect(src).not.toContain("liveSessionCount()}</span>")
     expect(src).toMatch(/data-action="home-primary-new-session"[\s\S]{0,350}onClick=\{openNewSession\}/)
     expect(src).toMatch(/data-action="home-primary-open-project"[\s\S]{0,450}chooseProject\(focusedServer\(\)!\)/)
     expect(src).toMatch(/data-action="home-header-settings"[\s\S]{0,350}onClick=\{openSettings\}/)
@@ -186,13 +179,21 @@ describe("home mission-control contract", () => {
     const strip = src.match(/data-component="home-metric-strip"[\s\S]*?<\/div>\s*<\/div>/)
     expect(strip).toBeTruthy()
     // Projects card passes loading tied to focusedSync().data.
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.projects"\)\}[\s\S]*?loading=\{focusedSync\(\)\.data === undefined\}/)
+    expect(strip![0]).toMatch(
+      /label=\{language\.t\("home\.projects"\)\}[\s\S]*?loading=\{focusedSync\(\)\.data === undefined\}/,
+    )
     // Live sessions card passes loading tied to sessionLoad.
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?loading=\{sessionLoad\.isLoading/)
+    expect(strip![0]).toMatch(
+      /label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?loading=\{sessionLoad\.isLoading/,
+    )
     // Active goals card passes loading tied to goalLoad.
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?loading=\{goalLoad\.isLoading/)
+    expect(strip![0]).toMatch(
+      /label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?loading=\{goalLoad\.isLoading/,
+    )
     // Needs attention depends on both session and goal sources, so it uses the shared memo.
-    expect(strip![0]).toMatch(/label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?loading=\{attentionLoading\(\)\}/)
+    expect(strip![0]).toMatch(
+      /label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?loading=\{attentionLoading\(\)\}/,
+    )
   })
 
   test("home metric details switch to idle copy when counts are zero", async () => {
@@ -215,16 +216,20 @@ describe("home mission-control contract", () => {
     expect(src).toContain("type HomeAttentionRecord")
     expect(src).toContain("attentionRecords")
 
-    const attentionCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
+    const attentionCard = src.match(
+      /<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/,
+    )
     expect(attentionCard).toBeTruthy()
     expect(attentionCard![0]).toContain("attentionCount()")
     expect(src).toContain("const attentionLoading = createMemo")
     expect(attentionCard![0]).toContain("disabled={attentionCount() === 0 || attentionLoading()}")
 
-    const aside = src.match(/<For each=\{attentionRecords\(\)\.slice\(0, 4\)\}>[\s\S]{0,2500}/)
+    const aside = src.match(/<For each=\{attentionRecords\(\)\.slice\(0, 5\)\}>[\s\S]{0,2500}/)
     expect(aside).toBeTruthy()
     expect(aside![0]).toMatch(/openAttentionRecord\(record\)/)
-    expect(aside![0]).toContain("record.reason")
+    expect(aside![0]).toContain("record={record}")
+    expect(src).toContain("<AttentionItem")
+    expect(src).toContain("props.record.reason")
   })
 
   test("Live Sessions metric counts actually live records, not the recent-session limit", async () => {
@@ -270,7 +275,9 @@ describe("home mission-control contract", () => {
 
   test("Active Goals dialog uses localized purpose and empty-state copy", async () => {
     const src = await home()
-    const goalsCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
+    const goalsCard = src.match(
+      /<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/,
+    )
     expect(goalsCard).toBeTruthy()
     expect(goalsCard![0]).toContain("onClick={() => openGoalsDialog()}")
     expect(goalsCard![0]).toContain("disabled={goalLoad.isLoading && goalLoad.data === undefined}")
@@ -312,17 +319,23 @@ describe("home mission-control contract", () => {
     expect(projectsCard![0]).toMatch(/onClick=\{[^}]*openProjectsDialog/)
 
     // Active Goals card → openGoalsDialog
-    const goalsCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/)
+    const goalsCard = src.match(
+      /<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.activeGoals"\)\}[\s\S]*?\/>/,
+    )
     expect(goalsCard).toBeTruthy()
     expect(goalsCard![0]).toMatch(/onClick=\{[^}]*openGoalsDialog/)
 
     // Needs Attention card → openAttentionDialog
-    const attentionCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/)
+    const attentionCard = src.match(
+      /<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.needsAttention"\)\}[\s\S]*?\/>/,
+    )
     expect(attentionCard).toBeTruthy()
     expect(attentionCard![0]).toMatch(/onClick=\{[^}]*openAttentionDialog/)
 
     // Live Sessions card → focus the search input (not a dialog)
-    const sessionsCard = src.match(/<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?\/>/)
+    const sessionsCard = src.match(
+      /<HomeMetricChip[\s\S]*?label=\{language\.t\("home\.metrics\.liveSessions"\)\}[\s\S]*?\/>/,
+    )
     expect(sessionsCard).toBeTruthy()
     expect(sessionsCard![0]).toMatch(/onClick=\{/)
     // Specifically: it must trigger the search, not a dialog
@@ -331,7 +344,9 @@ describe("home mission-control contract", () => {
 
   test("project selection opens the owning project and keeps it selected", async () => {
     const src = await home()
-    const selectProject = src.match(/function selectProject\(conn: ServerConnection\.Any, directory: string\)\s*\{([\s\S]*?)\n  \}/)
+    const selectProject = src.match(
+      /function selectProject\(conn: ServerConnection\.Any, directory: string\)\s*\{([\s\S]*?)\n  \}/,
+    )
     expect(selectProject).toBeTruthy()
     expect(selectProject![1]).toContain("resolveHomeServerProjects(ctx.projects.list(), ctx.sync.data.project)")
     expect(selectProject![1]).toContain("findHomeProjectByDirectory")
@@ -452,13 +467,16 @@ describe("home mission-control contract", () => {
     expect(board).toContain("overflow-hidden")
     expect(board).toContain("min-h-[300px]")
     expect(board).toContain('data-component="home-live-board-scroll"')
-    expect(src).toContain("xl:grid-cols-[minmax(0,1fr)_224px]")
+    expect(src).toContain("lg:grid-cols-[minmax(0,1fr)_280px]")
     expect(board).toMatch(/<ScrollView[^>]*class="[^"]*min-h-0[^"]*flex-1[^"]*overflow-hidden/)
   })
 
   test("Projects tree is a framed navigation surface with outlined selectable rows", async () => {
     const src = await home()
-    const tree = src.slice(src.indexOf('data-component="home-project-tree"'), src.indexOf('data-component="home-project-row"'))
+    const tree = src.slice(
+      src.indexOf('data-component="home-project-tree"'),
+      src.indexOf('data-component="home-project-row"'),
+    )
     expect(tree).toContain('data-component="home-project-tree"')
     expect(src).toContain("const HOME_PANEL =")
     expect(src).toContain("const HOME_PANEL_GLOW =")
@@ -496,9 +514,10 @@ describe("home mission-control contract", () => {
   test("home polish uses consistent rounded panels and neutral warning surfaces", async () => {
     const src = await home()
     expect(src).not.toContain('data-component="home-actions-panel"')
-    expect(src).toContain('data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-2.5`}')
+    expect(src).toContain('data-component="home-attention-panel" class={`${HOME_PANEL} flex min-h-0 flex-col p-3`}')
+    expect(src).toContain('data-component="home-quick-actions"')
     expect(src).toContain('data-component="home-live-board"')
-    expect(src).toContain('class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3 pb-3 pt-3 xl:min-h-0`}')
+    expect(src).toContain("class={`${HOME_PANEL} flex min-h-[300px] min-w-0 flex-col px-3 pb-3 pt-3 xl:min-h-0`}")
     expect(src).toContain("rounded-[var(--radius-xl)]")
     expect(src).toContain("rounded-[var(--radius-md)]")
     expect(src).not.toContain("bg-amber-500/8")
@@ -508,22 +527,29 @@ describe("home mission-control contract", () => {
 
   test("attention rail copy stays compact instead of wrapping into a paragraph", async () => {
     const src = await home()
-    const attention = src.slice(src.indexOf('data-component="home-attention-panel"'), src.indexOf("function HomeMetricChip"))
-    expect(attention).toContain("block truncate text-[11px] leading-4 text-[color:var(--text-primary)]")
-    expect(attention).toContain("block truncate text-[10px] leading-4 text-[color:var(--text-muted)]")
-    expect(attention).toContain("truncate text-[9px] uppercase tracking-[0.12em] text-amber-100")
+    const attention = src.slice(
+      src.indexOf('data-component="home-attention-panel"'),
+      src.indexOf("function HomeMetricChip"),
+    )
+    expect(attention).toContain("text-[12px] leading-5 text-[color:var(--text-primary)] [font-weight:540]")
+    expect(attention).toContain("mt-3 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1")
+    expect(attention).toContain(
+      "rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] p-3 text-[11px] leading-5 text-[color:var(--text-muted)]",
+    )
+    expect(src).toContain("props.record.reason")
   })
 
-  test("top metric tiles stay squat and sleek instead of ballooning vertically", async () => {
+  test("top metric cards stay dense in the dashboard strip", async () => {
     const src = await home()
     expect(src).toContain('data-component="home-metric-chip"')
-    expect(src).toContain('h-9')
+    expect(src).toContain("flex h-9 shrink-0 items-center gap-2")
+    expect(src).toContain("title={props.detail}")
   })
 
   test("live board and side rails are denser so more records fit on screen", async () => {
     const src = await home()
-    expect(src).toContain('class={`${HOME_ROW} h-8 gap-2 rounded-none bg-transparent px-3 py-1.5 pl-3`}')
-    expect(src).toContain('attentionRecords().slice(0, 4)')
+    expect(src).toContain("overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-subtle)] [background:var(--bg-panel-elevated)] divide-y divide-white/5")
+    expect(src).toContain("attentionRecords().slice(0, 5)")
     expect(src).toContain('class="group/project relative flex h-8 min-w-0 items-center')
     expect(src).toContain('class="group/server relative flex h-8 min-w-0 items-center')
   })
